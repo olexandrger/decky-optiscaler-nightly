@@ -52,6 +52,12 @@ Bundles the **OptiScaler 10.0.0-pre1 nightly** (`nightly-20261030`, master
   already in place (settings only, applied at the next launch).
 - Leaving a Steam Deck preset for another FSR preset clears its FSR 4 model.
 
+### Changed
+
+- The plugin is named **Decky OptiScaler Nightly** in Decky, a separate plugin
+  from the original. Its settings are copied from "Decky OptiScaler" on first
+  start; uninstall the original.
+
 ### Added
 
 - **Update button.** The Quick Access panel checks this fork's latest release

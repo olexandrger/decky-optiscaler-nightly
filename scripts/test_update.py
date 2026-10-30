@@ -110,5 +110,41 @@ class CheckerTests(unittest.TestCase):
         self.assertEqual(update.installed_version(self.plugin), "")
 
 
+class RenameTests(unittest.TestCase):
+    """Renamed to "Decky OptiScaler Nightly": Decky gives it a new settings folder."""
+
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
+        self.root = Path(self.temp.name) / "settings"
+        self.old = self.root / "Decky OptiScaler"
+        self.new = self.root / "Decky OptiScaler Nightly"
+        self.old.mkdir(parents=True)
+        (self.old / "settings.json").write_text('{"libraries": ["/run/media/sd"]}')
+
+    def test_the_previous_plugins_settings_are_copied_once(self):
+        self.assertEqual(update.migrate_settings(self.new), "Decky OptiScaler")
+        self.assertEqual((self.new / "settings.json").read_text(), '{"libraries": ["/run/media/sd"]}')
+        self.assertTrue((self.old / "settings.json").exists())  # copied, not moved
+
+    def test_existing_settings_are_never_overwritten(self):
+        self.new.mkdir()
+        (self.new / "settings.json").write_text('{"mine": true}')
+        self.assertIsNone(update.migrate_settings(self.new))
+        self.assertEqual((self.new / "settings.json").read_text(), '{"mine": true}')
+
+    def test_nothing_to_copy_is_fine(self):
+        (self.old / "settings.json").unlink()
+        self.assertIsNone(update.migrate_settings(self.new))
+        self.assertFalse((self.new / "settings.json").exists())
+
+    def test_the_plugin_name_matches_what_the_updater_asks_decky_for(self):
+        root = Path(__file__).resolve().parents[1]
+        name = json.loads((root / "plugin.json").read_text())["name"]
+        self.assertEqual(name, "Decky OptiScaler Nightly")
+        banner = (root / "src" / "components" / "UpdateBanner.tsx").read_text()
+        self.assertIn(f'const PLUGIN_NAME = "{name}";', banner)
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -153,7 +153,10 @@ the latest release, and the Quick Access panel's **Update to …** button hands
 the zip and its SHA-256 (GitHub's asset digest, or the `.sha256` sidecar the
 workflow uploads) to Decky's own installer (`utilities/install_plugin`), which
 asks, verifies and replaces the plugin. Keep the asset name, the plugin name
-in `plugin.json` and `UPDATE_REPO` in step. Do not switch to a custom Decky
+in `plugin.json` ("Decky OptiScaler Nightly", which is also `PLUGIN_NAME` in
+`UpdateBanner.tsx`; a test holds them together) and `UPDATE_REPO` in step. The
+name differs from upstream's on purpose so the fork is a separate Decky plugin;
+`update.migrate_settings` copies the original plugin's settings once. Do not switch to a custom Decky
 store: Decky has one store at a time, and that would cut every other plugin
 off from official updates.
 

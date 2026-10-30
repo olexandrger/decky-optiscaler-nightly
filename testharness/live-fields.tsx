@@ -776,7 +776,7 @@ const tile = (host: Element, label: string) => {
     JSON.stringify(deckyCalls[0]), JSON.stringify([
       "utilities/install_plugin",
       "https://github.com/x/releases/download/v1/decky-optiscaler-nightly.zip",
-      "Decky OptiScaler", "dev", "a".repeat(64), 2,
+      "Decky OptiScaler Nightly", "dev", "a".repeat(64), 2,
     ]));
   delete (globalThis as any).window.DeckyBackend;
   delete fixtures.check_update;

@@ -112,7 +112,8 @@ jobs:
           # Nothing is committed back: each nightly archive is ~70 MB and would
           # pile up in git history daily. The release zip carries it; main keeps
           # the last hand-bundled build, and the next run bundles from there.
-          cp "out/Decky OptiScaler.zip" decky-optiscaler-nightly.zip
+          # package.py names the zip after plugin.json's name.
+          cp out/*.zip decky-optiscaler-nightly.zip
           # The in-plugin updater passes this to Decky's installer, which
           # refuses a zip whose SHA-256 does not match.
           sha256sum decky-optiscaler-nightly.zip | cut -d' ' -f1 > decky-optiscaler-nightly.zip.sha256

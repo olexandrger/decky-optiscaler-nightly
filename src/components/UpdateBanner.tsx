@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { checkUpdate, type UpdateInfo } from "../api";
 
 /** Decky's own plugin name, as plugin.json declares it. */
-const PLUGIN_NAME = "Decky OptiScaler";
+const PLUGIN_NAME = "Decky OptiScaler Nightly";
 /** Decky's PluginInstallType.UPDATE. */
 const INSTALL_TYPE_UPDATE = 2;
 

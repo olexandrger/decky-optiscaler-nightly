@@ -8,13 +8,18 @@ import decky
 sys.path.append(os.path.join(os.path.dirname(__file__), "py_modules"))
 
 from optiscaler.service import OptiScalerService  # noqa: E402
+from optiscaler import update  # noqa: E402
 
 
 class Plugin:
     service: OptiScalerService = None
 
     async def _main(self):
-        decky.logger.info("Decky OptiScaler starting")
+        decky.logger.info("Decky OptiScaler Nightly starting")
+        # Renamed from "Decky OptiScaler": bring its settings along once.
+        migrated = update.migrate_settings(decky.DECKY_PLUGIN_SETTINGS_DIR)
+        if migrated:
+            decky.logger.info("copied settings from %s", migrated)
         self.service = OptiScalerService(
             plugin_dir=decky.DECKY_PLUGIN_DIR,
             settings_dir=decky.DECKY_PLUGIN_SETTINGS_DIR,
@@ -29,12 +34,12 @@ class Plugin:
         self.service.prime_wiki()
 
     async def _unload(self):
-        decky.logger.info("Decky OptiScaler unloading")
+        decky.logger.info("Decky OptiScaler Nightly unloading")
         if getattr(self, "service", None):
             self.service.close()
 
     async def _uninstall(self):
-        decky.logger.info("Decky OptiScaler uninstalled")
+        decky.logger.info("Decky OptiScaler Nightly uninstalled")
 
     # -- OptiScaler's own overlay -----------------------------------------
     async def toggle_menu(self, target_dir: str) -> dict:
