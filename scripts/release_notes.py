@@ -9,10 +9,12 @@ build that is attached, not the one the workflow meant to make:
 
 - the OptiScaler nightly in bin/ (version, tag, link) and the FidelityFX
   upscaler inside it, with the archive's and the zip's SHA-256;
-- OptiScaler's own changes, taken from that nightly's release on
-  optiscaler/OptiScaler-nightly (its "changes in the last 24 hours" list);
-- this fork's commits since its previous nightly release, or since the
-  upstream release it is based on for the first one;
+- OptiScaler's changes since this fork's previous build: the upstream commit
+  each nightly was built from, compared on optiscaler/OptiScaler, so nightlies
+  skipped in between are covered. The first build has nothing to compare with
+  and quotes its nightly's own "last 24 hours" list instead;
+- this fork's commits since its previous build, or for the first build since
+  the point it branched from the upstream plugin;
 - the test counts the release was gated on, when their logs are given.
 
 The GitHub API is optional: without it (or offline) the OptiScaler section
@@ -35,6 +37,7 @@ sys.path.insert(0, str(ROOT / "py_modules"))
 from optiscaler import constants, fsr4build  # noqa: E402
 
 NIGHTLY_REPO = "optiscaler/OptiScaler-nightly"
+OPTISCALER_REPO = "optiscaler/OptiScaler"
 UPSTREAM_PLUGIN = "danielcamilo1/decky-optiscaler"
 ASSET = "decky-optiscaler-nightly.zip"
 
@@ -58,12 +61,10 @@ def nightly_tag():
     return f"nightly-{match.group(1)}" if match else None
 
 
-def nightly_release(tag):
-    """The upstream nightly release as the API returns it, or None."""
-    if not tag:
-        return None
+def gh_api(path):
+    """GET a GitHub REST path; None when it cannot be read (offline, rate limit, 404)."""
     request = urllib.request.Request(
-        f"https://api.github.com/repos/{NIGHTLY_REPO}/releases/tags/{tag}",
+        f"https://api.github.com/{path}",
         headers={"Accept": "application/vnd.github+json"},
     )
     token = os.environ.get("GITHUB_TOKEN") or os.environ.get("GH_TOKEN")
@@ -72,9 +73,56 @@ def nightly_release(tag):
     try:
         with urllib.request.urlopen(request, timeout=30) as response:
             return json.load(response)
-    except Exception as exc:  # network, rate limit, missing release: degrade
-        print(f"note: could not read {NIGHTLY_REPO} {tag}: {exc}", file=sys.stderr)
+    except Exception as exc:  # degrade: the notes fall back to links
+        print(f"note: could not read {path}: {exc}", file=sys.stderr)
         return None
+
+
+def nightly_release(tag):
+    """The upstream nightly release as the API returns it, or None."""
+    return gh_api(f"repos/{NIGHTLY_REPO}/releases/tags/{tag}") if tag else None
+
+
+def built_commit(release):
+    """The optiscaler/OptiScaler commit a nightly was built from.
+
+    The nightly workflow lists the day's commits newest first with full-SHA
+    links, so the first link is the HEAD it built. A day without commits has no
+    list; then it is the last master commit before the release was created.
+    """
+    if not release:
+        return None
+    match = re.search(r"github\.com/optiscaler/OptiScaler/commit/([0-9a-f]{40})",
+                      release.get("body") or "")
+    if match:
+        return match.group(1)
+    when = release.get("created_at")
+    found = gh_api(f"repos/{OPTISCALER_REPO}/commits?sha=master&per_page=1&until={when}") if when else None
+    return found[0]["sha"] if found else None
+
+
+def optiscaler_changes(previous_tag, current_tag):
+    """OptiScaler commits between two nightlies, newest first.
+
+    Returns (lines, compare_url, total) or None when either end is unknown.
+    """
+    previous, current = nightly_release(previous_tag), nightly_release(current_tag)
+    base, head = built_commit(previous), built_commit(current)
+    if not base or not head:
+        return None
+    if base == head:
+        return [], None, 0
+    compare = gh_api(f"repos/{OPTISCALER_REPO}/compare/{base}...{head}")
+    if not compare:
+        return None
+    lines = []
+    for commit in reversed(compare.get("commits", [])):  # API is oldest first
+        if len(commit.get("parents", [])) > 1:
+            continue
+        subject = commit["commit"]["message"].splitlines()[0]
+        author = (commit.get("author") or {}).get("login") or commit["commit"]["author"]["name"]
+        lines.append(f"- [`{commit['sha'][:8]}`]({commit['html_url']}) {subject} ({author})")
+    return lines, compare.get("html_url"), compare.get("total_commits", len(lines))
 
 
 def demote(markdown, levels=1):
@@ -84,17 +132,32 @@ def demote(markdown, levels=1):
 
 
 def previous_release_tag(current):
-    """This fork's last nightly tag before `current`, else the upstream base tag."""
-    tags = [t for t in git("tag", "--list", "v*", "--sort=-creatordate").splitlines() if t]
-    nightly = [t for t in tags if "-nightly." in t and t != current]
-    if nightly:
-        return nightly[0]
-    base = [t for t in tags if "-nightly." not in t]
-    return base[0] if base else None
+    """This fork's last nightly release tag before `current`, or None for the first."""
+    tags = [t for t in git("tag", "--list", "v*-nightly.*", "--sort=-creatordate").splitlines() if t]
+    earlier = [t for t in tags if t != current]
+    return earlier[0] if earlier else None
+
+
+def previous_nightly(release_tag):
+    """The OptiScaler nightly a fork release bundled: v0.0.7-nightly.20261029 -> nightly-20261029."""
+    match = re.search(r"-nightly\.(\d{8})$", release_tag or "")
+    return f"nightly-{match.group(1)}" if match else None
+
+
+def fork_base():
+    """Where this fork branched from the upstream plugin, for the first release.
+
+    Forks do not inherit upstream's tags, so the upstream branch is fetched and
+    the merge base used: every commit after it is this fork's own.
+    """
+    git("fetch", "--quiet", "--no-tags", f"https://github.com/{UPSTREAM_PLUGIN}", "main")
+    return git("merge-base", "HEAD", "FETCH_HEAD") or None
 
 
 def fork_commits(since, repo):
-    log_range = f"{since}..HEAD" if since else "HEAD~15..HEAD"
+    if not since:
+        return []
+    log_range = f"{since}..HEAD"
     lines = git("log", "--no-merges", "--format=%h%x1f%H%x1f%s", log_range).splitlines()
     out = []
     for line in lines:
@@ -131,9 +194,9 @@ def main():
     version = package["version"]
     current_tag = f"v{version}"
     tag = nightly_tag()
-    release = nightly_release(tag)
     archive = ROOT / "bin" / constants.PAYLOAD_ARCHIVE
-    since = previous_release_tag(current_tag)
+    previous_tag = previous_release_tag(current_tag)
+    previous_nightly_tag = previous_nightly(previous_tag)
 
     out = []
     out.append(f"> [!WARNING]\n> **Experimental fork build for tinkering, not intended for real use.** "
@@ -162,24 +225,56 @@ def main():
     out.append(f"| `{ASSET}` SHA-256 | `{sha256(args.zip)}` |")
     out.append("")
 
-    out.append(f"## OptiScaler changes in {tag or 'this nightly'}")
-    out.append("")
-    body = (release or {}).get("body", "").strip()
-    if body:
-        # The nightly's own heading ("Changes in the Last 24 Hours") would
-        # repeat ours; drop it and keep the list.
-        body = re.sub(r"^#{1,6} Changes in the Last 24 Hours\s*\n+", "", body, flags=re.I | re.M)
-        out.append(demote(body, 2))
-    elif nightly_link:
-        out.append(f"See the [{tag} release notes]({nightly_link}).")
+    # OptiScaler: what changed since the nightly the previous build carried.
+    changes = optiscaler_changes(previous_nightly_tag, tag) if previous_nightly_tag else None
+    if changes is not None:
+        lines, compare_url, total = changes
+        out.append(f"## OptiScaler changes since the last build ({previous_nightly_tag} → {tag})")
+        out.append("")
+        if not lines:
+            out.append("- None: the same OptiScaler build as last time.")
+        else:
+            limit = 60
+            out.extend(lines[:limit])
+            if total > limit:
+                out.append(f"- …and {total - limit} more")
+        if compare_url:
+            out.append("")
+            out.append(f"[Full comparison]({compare_url})")
     else:
-        out.append("Not recorded.")
+        heading = (f"## OptiScaler changes in {tag}" if tag else "## OptiScaler changes")
+        out.append(heading)
+        out.append("")
+        if previous_nightly_tag:
+            out.append(f"_Could not compare with {previous_nightly_tag}; "
+                       "showing this nightly's own list (the 24 hours before it)._")
+        else:
+            out.append("_First build of this fork: showing this nightly's own list "
+                       "(the 24 hours before it)._")
+        out.append("")
+        body = ((nightly_release(tag) or {}).get("body") or "").strip()
+        if body:
+            # The nightly's own heading would repeat ours; keep only the list.
+            body = re.sub(r"^#{1,6} Changes in the Last 24 Hours\s*\n+", "", body, flags=re.I | re.M)
+            out.append(demote(body, 2))
+        elif nightly_link:
+            out.append(f"See the [{tag} release notes]({nightly_link}).")
     out.append("")
 
+    # The fork: its own commits since the previous build.
+    since = previous_tag or fork_base()
     commits = fork_commits(since, repo)
-    out.append(f"## Fork changes since {since}" if since else "## Recent fork changes")
+    if previous_tag:
+        out.append(f"## Fork changes since the last build ({previous_tag})")
+    else:
+        out.append("## Fork changes (first build: everything since branching from upstream)")
     out.append("")
-    out.extend(commits or ["- No plugin changes; only the bundled OptiScaler nightly is new."])
+    if commits:
+        out.extend(commits)
+    elif since:
+        out.append("- None: only the bundled OptiScaler nightly is new.")
+    else:
+        out.append("- Not recorded (could not find where this fork branched from upstream).")
     out.append("")
 
     counts = test_counts(args.selftest_log, args.fsr4_log)
