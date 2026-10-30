@@ -91,6 +91,7 @@ jobs:
           python3 scripts/test_fsr4.py 2>&1 | tee fsr4.log
           python3 scripts/selftest.py 2>&1 | tee selftest.log
           python3 scripts/test_install.py 2>&1 | tee install.log
+          python3 scripts/test_update.py
           HARNESS=run.tsx node testharness/build-and-run.mjs 2>&1 | tee harness.log
           grep -q "React errors/warnings: 0" harness.log
           if grep -E ": false$" harness.log; then exit 1; fi
@@ -112,6 +113,9 @@ jobs:
           # pile up in git history daily. The release zip carries it; main keeps
           # the last hand-bundled build, and the next run bundles from there.
           cp "out/Decky OptiScaler.zip" decky-optiscaler-nightly.zip
+          # The in-plugin updater passes this to Decky's installer, which
+          # refuses a zip whose SHA-256 does not match.
+          sha256sum decky-optiscaler-nightly.zip | cut -d' ' -f1 > decky-optiscaler-nightly.zip.sha256
           # What is inside, OptiScaler's own changes in this nightly, this
           # fork's commits since its last release, and the test counts.
           python3 scripts/release_notes.py --zip decky-optiscaler-nightly.zip \
@@ -119,10 +123,11 @@ jobs:
           cat release-notes.md
           if gh release view "v$VERSION" >/dev/null 2>&1; then
             # Re-run for the same nightly: replace the zip and refresh the notes.
-            gh release upload "v$VERSION" decky-optiscaler-nightly.zip --clobber
+            gh release upload "v$VERSION" decky-optiscaler-nightly.zip \
+              decky-optiscaler-nightly.zip.sha256 --clobber
             gh release edit "v$VERSION" --notes-file release-notes.md --latest
             exit 0
           fi
-          gh release create "v$VERSION" decky-optiscaler-nightly.zip \
+          gh release create "v$VERSION" decky-optiscaler-nightly.zip decky-optiscaler-nightly.zip.sha256 \
             --target "$(git rev-parse HEAD)" --latest --title "Decky OptiScaler $VERSION" \
             --notes-file release-notes.md

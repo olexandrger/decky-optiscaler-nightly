@@ -64,6 +64,9 @@ jobs:
       - name: Install safety
         run: python3 scripts/test_install.py
 
+      - name: In-plugin updater
+        run: python3 scripts/test_update.py
+
       # Includes check_version_pin(), which holds asi/optiscaler_ref/ to the
       # exact OptiScaler tag whose release sits in bin/.
       - name: Backend selftest

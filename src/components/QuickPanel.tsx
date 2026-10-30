@@ -12,6 +12,7 @@ import { BasicPanel } from "./BasicPanel";
 import { GamesList } from "./GamesList";
 import { LiveTiles } from "./LiveStats";
 import { TabStrip } from "./TabStrip";
+import { UpdateBanner } from "./UpdateBanner";
 import { Centered, Notice, Pill } from "./Common";
 import { MULTIPLIER_KEY, MULTIPLIER_SECTION, supportsMultiplier } from "../config/basic";
 import { curatedLabel } from "../config/labels";
@@ -41,6 +42,7 @@ export function QuickPanel({
 
   return (
     <>
+      <UpdateBanner />
       <TabStrip
         tabs={[
           { id: "now", title: "Now Playing" },

@@ -126,6 +126,7 @@ npx tsc --noEmit
 pnpm build
 python3 scripts/test_fsr4.py
 python3 scripts/test_install.py   # a failed or interrupted install leaves the folder as it was
+python3 scripts/test_update.py    # the in-plugin updater
 python3 scripts/selftest.py
 HARNESS=run.tsx node testharness/build-and-run.mjs          # "React errors/warnings: 0", no line ending ": false"
 HARNESS=all-options.tsx node testharness/build-and-run.mjs  # "real React errors: 0"
@@ -146,6 +147,15 @@ so the Deck installs from a stable URL:
 ```
 https://github.com/olexandrger/decky-optiscaler-nightly/releases/latest/download/decky-optiscaler-nightly.zip
 ```
+
+Installed plugins update themselves: `py_modules/optiscaler/update.py` reads
+the latest release, and the Quick Access panel's **Update to …** button hands
+the zip and its SHA-256 (GitHub's asset digest, or the `.sha256` sidecar the
+workflow uploads) to Decky's own installer (`utilities/install_plugin`), which
+asks, verifies and replaces the plugin. Keep the asset name, the plugin name
+in `plugin.json` and `UPDATE_REPO` in step. Do not switch to a custom Decky
+store: Decky has one store at a time, and that would cut every other plugin
+off from official updates.
 
 Release notes come from `scripts/release_notes.py`. Builds are compared by tag:
 fork commits since the previous `v*-nightly.*` tag, and OptiScaler commits between

@@ -54,6 +54,9 @@ Bundles the **OptiScaler 10.0.0-pre1 nightly** (`nightly-20261030`, master
 
 ### Added
 
+- **Update button.** The Quick Access panel checks this fork's latest release
+  and offers **Update to …**, which goes through Decky's own installer (its
+  confirmation, SHA-256 check and reload). Releases carry a `.sha256` sidecar.
 - **OptiScaler menu** button in the Quick Access panel while a game runs. It
   closes the Quick Access menu and presses the game's `[Menu] ShortcutKey`
   (Insert by default) on a uinput virtual keyboard, opening or closing

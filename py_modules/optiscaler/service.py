@@ -19,7 +19,7 @@ from .constants import (
 )
 from .inifile import IniFile
 from .payload import Payload
-from . import keys
+from . import keys, update
 from .schema import SCHEMA, valid as _valid
 from .settings import Settings
 from .sysinfo import gpu_info
@@ -846,6 +846,17 @@ class OptiScalerService:
         except Exception as exc:
             self.log.warning("could not press the OptiScaler menu key: %s", exc)
             return {"ok": False, "error": str(exc)}
+
+    async def check_update(self, force=False):
+        """Whether the fork has a newer release than this build."""
+        if not hasattr(self, "_updates"):
+            self._updates = update.UpdateChecker(self.plugin_dir)
+        try:
+            return {"ok": True, **await self._run(self._updates.check, force)}
+        except Exception as exc:
+            self.log.info("update check failed: %s", exc)
+            return {"ok": False, "error": str(exc),
+                    "current": update.installed_version(self.plugin_dir)}
 
     def close(self):
         """Release what the service holds open (the virtual keyboard)."""

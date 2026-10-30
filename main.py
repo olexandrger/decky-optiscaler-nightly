@@ -40,6 +40,10 @@ class Plugin:
     async def toggle_menu(self, target_dir: str) -> dict:
         return await self.service.toggle_menu(target_dir)
 
+    # -- updates (this fork's GitHub releases) ----------------------------
+    async def check_update(self, force: bool = False) -> dict:
+        return await self.service.check_update(force)
+
     # -- status ----------------------------------------------------------
     async def get_status(self) -> dict:
         return await self.service.get_status()

@@ -189,3 +189,18 @@ export const setLogging = callable<[targetDir: string, enabled: boolean], Action
 export const toggleMenu = callable<[targetDir: string], { ok: boolean; error?: string; vk?: number }>(
   "toggle_menu"
 );
+
+export interface UpdateInfo {
+  ok: boolean;
+  error?: string;
+  current: string;
+  latest?: string;
+  available?: boolean;
+  url?: string;
+  sha256?: string;
+  page?: string;
+}
+
+/** Whether this fork has a newer release than the installed build. */
+export const checkUpdate = callable<[force?: boolean], UpdateInfo>("check_update");
+

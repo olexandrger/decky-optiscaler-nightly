@@ -57,7 +57,12 @@ Install on the Deck: Decky → Settings → Developer mode on → **Install Plug
 https://github.com/olexandrger/decky-optiscaler-nightly/releases/latest/download/decky-optiscaler-nightly.zip
 ```
 
-Then run **Install** again on each game so its folder gets this build. Releases
+Then run **Install** again on each game so its folder gets this build.
+
+After that, updates come to you: when a newer release exists, the Quick Access
+panel shows **Update to …**. It hands the release to Decky's own installer,
+which asks before replacing the plugin and checks the zip's SHA-256. No URL to
+paste again. Releases
 come from the **Bundle OptiScaler nightly** workflow: daily after upstream's
 nightly, or by hand from the Actions tab ("Run workflow", tick *release current
 build* to publish what is already bundled).

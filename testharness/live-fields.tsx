@@ -745,6 +745,43 @@ const tile = (host: Element, label: string) => {
   fixtures.get_live_status = withAsi;
   await act(async () => panel.root.unmount());
 
+  console.log("=== updating the plugin through Decky's installer ===");
+  // No update: nothing is shown.
+  fixtures.check_update = { ok: true, current: "0.0.7-nightly.20261031",
+    latest: "0.0.7-nightly.20261031", available: false };
+  panel = await open();
+  check("no update, no update button", (panel.node.textContent ?? "").includes("Update to"), false);
+  await act(async () => panel.root.unmount());
+  // A failed check is silent too: it is not the user's problem.
+  fixtures.check_update = { ok: false, error: "offline", current: "0.0.7-nightly.20261030" };
+  panel = await open();
+  check("a failed check shows nothing", (panel.node.textContent ?? "").includes("Update to"), false);
+  await act(async () => panel.root.unmount());
+  // An update: the button, and the exact call to Decky's own installer.
+  fixtures.check_update = { ok: true, current: "0.0.7-nightly.20261030",
+    latest: "0.0.7-nightly.20261031", available: true,
+    url: "https://github.com/x/releases/download/v1/decky-optiscaler-nightly.zip",
+    sha256: "a".repeat(64), page: "https://github.com/x/releases/tag/v1" };
+  const deckyCalls: any[][] = [];
+  (globalThis as any).window.DeckyBackend = {
+    call: async (...args: any[]) => { deckyCalls.push(args); },
+  };
+  panel = await open();
+  const updateButton = all(panel.node, '[data-mock="ButtonItem"]')
+    .find((b) => (b.textContent ?? "").includes("Update to 0.0.7-nightly.20261031")) as HTMLElement | undefined;
+  check("an update shows the version it updates to", Boolean(updateButton), true);
+  await act(async () => { updateButton?.click(); });
+  await settle(20);
+  check("pressing it asks Decky's installer, with the zip, its hash and UPDATE",
+    JSON.stringify(deckyCalls[0]), JSON.stringify([
+      "utilities/install_plugin",
+      "https://github.com/x/releases/download/v1/decky-optiscaler-nightly.zip",
+      "Decky OptiScaler", "dev", "a".repeat(64), 2,
+    ]));
+  delete (globalThis as any).window.DeckyBackend;
+  delete fixtures.check_update;
+  await act(async () => panel.root.unmount());
+
   const real = errors.filter((e) => !e.includes("not wrapped in act"));
   console.log(`\nreal React errors: ${real.length}`);
   for (const e of real) console.log(`  ${e}`);
