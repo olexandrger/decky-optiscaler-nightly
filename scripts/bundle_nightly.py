@@ -124,7 +124,9 @@ def flatten(extracted):
 def version_label(dll, archive_name):
     major, minor, hotfix, build = pe_file_version(dll) or (0, 0, 0, 0)
     label = f"{major}.{minor}.{hotfix}-pre{build}"
-    stamp = re.search(r"_(\d{8})\.7z$", archive_name)
+    # Upstream names it OptiScaler_v10.0.0-pre1_20261030.7z; this repo stores
+    # OptiScaler-10.0.0-pre1-20261030.7z, which re-bundling after a rebase reads.
+    stamp = re.search(r"[_-](\d{8})\.7z$", archive_name)
     return f"{label}-{stamp.group(1)}" if stamp else label
 
 
