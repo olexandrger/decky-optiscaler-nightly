@@ -670,6 +670,44 @@ async function render(name: string, element: React.ReactElement) {
   await settle();
   console.log(`  turning one off narrows the button: ${
     gdFresh.host.textContent!.includes("Do both")}`);
+
+  // Pressing it: the backend install with the plan's filename, then Steam's
+  // launch options, recorded first so removing OptiScaler can put them back.
+  const installs: any[][] = [];
+  const steamWrites: any[][] = [];
+  const order: string[] = [];
+  const realInstall = fixtures.install;
+  const realRecord = fixtures.record_launch_options;
+  fixtures.install = (...args: any[]) => { installs.push(args); order.push("install"); return { ok: true }; };
+  fixtures.record_launch_options = (...args: any[]) => { order.push("record"); return realRecord; };
+  (globalThis as any).SteamClient = {
+    Apps: { SetAppLaunchOptions: (...args: any[]) => { steamWrites.push(args); order.push("steam"); } },
+  };
+  const pressSetUp = async (host: HTMLElement) => {
+    const button = findAll(host, '[data-mock="DialogButton"]')
+      .find((b) => /Do (both|all three)|Set up/.test(b.textContent ?? "")) as HTMLElement | undefined;
+    await act(async () => { button?.click(); });
+    await settle(50);
+    return Boolean(button);
+  };
+  console.log(`  the set-up button is there to press: ${await pressSetUp(gdFresh.host)}`);
+  console.log(`  it installs into the target folder with the plan's filename and OptiPatcher: ${
+    JSON.stringify(installs[0]) === JSON.stringify(["/games/Cyberpunk 2077/bin/x64", "dxgi.dll", false, true])}`);
+  console.log(`  then sets Steam's launch options for this game, wiki flag included: ${
+    JSON.stringify(steamWrites[0]) === JSON.stringify([1091500, 'WINEDLLOVERRIDES="dxgi=n,b" %command% -dx12'])}`);
+  console.log(`  and records the old ones before overwriting them: ${
+    order.join(",") === "install,record,steam"}`);
+
+  // A failed install must not touch Steam's launch options: they would point
+  // at a dxgi.dll override for an OptiScaler that is not there.
+  installs.length = 0; steamWrites.length = 0; order.length = 0;
+  fixtures.install = (...args: any[]) => { installs.push(args); return { ok: false, error: "No space left on device" }; };
+  await pressSetUp(gdFresh.host);
+  console.log(`  a failed install is attempted once: ${installs.length === 1}`);
+  console.log(`  and leaves Steam's launch options alone: ${steamWrites.length === 0}`);
+  fixtures.install = realInstall;
+  fixtures.record_launch_options = realRecord;
+  (globalThis as any).SteamClient = undefined;
   fixtures.get_game = detail;
 
   // -- a game that needs REFramework ----------------------------------------

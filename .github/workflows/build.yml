@@ -31,7 +31,10 @@ jobs:
           python-version: "3.11"
 
       - name: Install dependencies
-        run: pnpm install --frozen-lockfile
+        run: |
+          pnpm install --frozen-lockfile
+          # 7-Zip and bsdtar: the two archivers the plugin unpacks the payload with.
+          sudo apt-get update -qq && sudo apt-get install -y -qq p7zip-full libarchive-tools
 
       # The UI's controls, types, ranges and help text are derived from the
       # comments in defaults/OptiScaler.reference.ini. Regenerating here proves
