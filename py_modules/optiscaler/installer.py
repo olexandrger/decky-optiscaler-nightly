@@ -535,6 +535,153 @@ def _stash(target, path, logger=None):
     return path.name
 
 
+#: Where an install keeps what it replaced until it has finished. Inside the
+#: game folder so every move is a rename on the same filesystem.
+INSTALL_STAGING = ".decky-optiscaler-install"
+_JOURNAL = "journal.json"
+
+
+class _Journal:
+    """Undo log for one install: everything it writes can be put back.
+
+    Every path the install is about to create, overwrite or remove goes through
+    ``prepare`` first. If something is there it is moved into the staging folder
+    (a rename, so instant) and a "restore" is recorded; otherwise a "remove" is.
+    The log is saved after each entry, so a plugin that dies half way leaves
+    enough behind for ``recover_interrupted`` to finish the rollback later.
+    """
+
+    def __init__(self, target):
+        self.target = Path(target)
+        self.dir = self.target / INSTALL_STAGING
+        self.dir.mkdir()
+        self.ops = []
+        self._count = 0
+        self._save()
+
+    def _save(self):
+        (self.dir / _JOURNAL).write_text(json.dumps(self.ops), encoding="utf-8")
+
+    def _rel(self, path):
+        return str(Path(path).relative_to(self.target))
+
+    def prepare(self, path):
+        """Call before writing to, replacing or removing `path`."""
+        path = Path(path)
+        if path.exists() or path.is_symlink():
+            self._count += 1
+            saved = f"{self._count:04d}"
+            shutil.move(str(path), str(self.dir / saved))
+            self.ops.append({"op": "restore", "path": self._rel(path), "saved": saved})
+        else:
+            self.ops.append({"op": "remove", "path": self._rel(path)})
+        self._save()
+
+    def ensure_dir(self, path):
+        """Create a directory, recording it so an undo removes it if it is left empty."""
+        path = Path(path)
+        if path.is_dir():
+            return
+        self.ops.append({"op": "rmdir", "path": self._rel(path)})
+        self._save()
+        path.mkdir(parents=True)
+
+    def saved_path(self, path):
+        """Where `prepare` moved `path`, or None."""
+        rel = self._rel(path)
+        for op in reversed(self.ops):
+            if op["op"] == "restore" and op["path"] == rel:
+                return self.dir / op["saved"]
+        return None
+
+    def write_file(self, source, path):
+        self.prepare(path)
+        shutil.copy2(source, path)
+
+    def write_tree(self, source, path):
+        self.prepare(path)
+        shutil.copytree(source, path)
+
+    def write_text(self, path, text):
+        self.prepare(path)
+        Path(path).write_text(text, encoding="utf-8")
+
+    def remove(self, path):
+        self.prepare(path)
+
+    def stash(self, name):
+        """Set the game's own `name` aside in the backup folder, as _stash does."""
+        path = self.target / name
+        self.prepare(path)
+        original = self.saved_path(path)
+        stash_dir = backup_dir(self.target)
+        self.ensure_dir(stash_dir)
+        destination = stash_dir / name
+        # An earlier install already preserved the original; keep the oldest.
+        if not destination.exists():
+            self.prepare(destination)
+            (shutil.copytree if original.is_dir() else shutil.copy2)(original, destination)
+        return name
+
+    def unstash(self, name):
+        """Put the game's own `name` back from the backup folder."""
+        stashed = backup_dir(self.target) / name
+        if not stashed.exists():
+            return False
+        self.prepare(stashed)
+        original = self.saved_path(stashed)
+        path = self.target / name
+        self.prepare(path)
+        (shutil.copytree if original.is_dir() else shutil.copy2)(original, path)
+        return True
+
+    def commit(self):
+        shutil.rmtree(self.dir, ignore_errors=True)
+
+    def rollback(self):
+        _undo(self.target, self.dir, self.ops)
+
+
+def _undo(target, staging, ops):
+    for op in reversed(ops):
+        path = target / op["path"]
+        if op["op"] == "rmdir":
+            try:
+                path.rmdir()
+            except OSError:
+                pass
+            continue
+        if path.is_dir() and not path.is_symlink():
+            shutil.rmtree(path, ignore_errors=True)
+        elif path.exists() or path.is_symlink():
+            path.unlink()
+        if op["op"] == "restore":
+            saved = staging / op["saved"]
+            if saved.exists() or saved.is_symlink():
+                path.parent.mkdir(parents=True, exist_ok=True)
+                shutil.move(str(saved), str(path))
+    shutil.rmtree(staging, ignore_errors=True)
+
+
+def recover_interrupted(target_dir, logger=None):
+    """Finish rolling back an install that stopped half way (plugin killed, power lost).
+
+    Returns True when there was one to roll back.
+    """
+    target = Path(target_dir)
+    staging = target / INSTALL_STAGING
+    if not staging.is_dir():
+        return False
+    try:
+        ops = json.loads((staging / _JOURNAL).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        ops = []
+    if logger:
+        logger.warning("rolling back an interrupted install in %s", target)
+    _undo(target, staging, ops)
+    return True
+
+
 def install(target_dir, payload_root, filename=DEFAULT_PROXY, preserve_ini=True,
             logger=None, live_asi=None, optipatcher=None, reframework_files=None,
             reframework_revision=None):
@@ -567,6 +714,24 @@ def install(target_dir, payload_root, filename=DEFAULT_PROXY, preserve_ini=True,
     if not source_dll.is_file():
         raise FileNotFoundError(f"payload incomplete, missing {source_dll}")
 
+    recover_interrupted(target, logger)
+    journal = _Journal(target)
+    try:
+        result = _install(target, payload, filename, preserve_ini, logger, live_asi,
+                          optipatcher, reframework_files, reframework_revision, journal)
+    except BaseException:
+        journal.rollback()
+        raise
+    journal.commit()
+    result["fsr4"] = fsr4_status(target)
+    return result
+
+
+def _install(target, payload, filename, preserve_ini, logger, live_asi, optipatcher,
+             reframework_files, reframework_revision, journal):
+    """install()'s steps. Every write goes through `journal`, so a failure anywhere
+    leaves the game folder exactly as it was."""
+    source_dll = payload / "OptiScaler.dll"
     previous = detect(target)
     old_manifest = read_manifest(target) or {}
     selected_build = old_manifest.get("fsr4_build") or {}
@@ -595,15 +760,12 @@ def install(target_dir, payload_root, filename=DEFAULT_PROXY, preserve_ini=True,
         stale_path = target / stale
         if not _looks_like_optiscaler(stale_path):
             continue
-        stale_path.unlink(missing_ok=True)
+        journal.remove(stale_path)
         # If we displaced the game's own dll to install there, put it back now
         # rather than leaving the game without it until uninstall.
         if backups.pop(stale, None):
-            stashed = backup_dir(target) / stale
-            if stashed.is_file():
-                shutil.move(str(stashed), str(stale_path))
-                if logger:
-                    logger.info("restored original %s while moving proxy", stale)
+            if journal.unstash(stale) and logger:
+                logger.info("restored original %s while moving proxy", stale)
         elif logger:
             logger.info("removed previous OptiScaler proxy %s", stale)
 
@@ -612,8 +774,8 @@ def install(target_dir, payload_root, filename=DEFAULT_PROXY, preserve_ini=True,
         if dest.exists() and dest_name not in backups and dest_name not in created:
             # Only stash files that belong to the game, not our own leftovers.
             if dest_name not in old_files and not _looks_like_optiscaler(dest):
-                backups[dest_name] = _stash(target, dest, logger)
-        shutil.copy2(src, dest)
+                backups[dest_name] = journal.stash(dest_name)
+        journal.write_file(src, dest)
         if dest_name not in created:
             created.append(dest_name)
 
@@ -626,27 +788,23 @@ def install(target_dir, payload_root, filename=DEFAULT_PROXY, preserve_ini=True,
     for name in RETIRED_PAYLOAD_FILES:
         if name not in old_files:
             continue
-        (target / name).unlink(missing_ok=True)
+        journal.remove(target / name)
         if backups.pop(name, None):
-            stashed = backup_dir(target) / name
-            if stashed.is_file():
-                shutil.move(str(stashed), str(target / name))
+            journal.unstash(name)
         if logger:
             logger.info("removed retired payload file %s", name)
     for name in RETIRED_PAYLOAD_DIRS:
         if name not in old_dirs:
             continue
-        shutil.rmtree(target / name, ignore_errors=True)
+        journal.remove(target / name)
         if backups.pop(name, None):
-            stashed = backup_dir(target) / name
-            if stashed.is_dir():
-                shutil.move(str(stashed), str(target / name))
+            journal.unstash(name)
         if logger:
             logger.info("removed retired payload dir %s/", name)
 
     ini_path = target / INI_NAME
     if not (preserve_ini and ini_path.is_file()):
-        shutil.copy2(payload / INI_NAME, ini_path)
+        journal.write_file(payload / INI_NAME, ini_path)
     if INI_NAME not in created:
         created.append(INI_NAME)
 
@@ -664,8 +822,8 @@ def install(target_dir, payload_root, filename=DEFAULT_PROXY, preserve_ini=True,
             continue
         dest = target / name
         if dest.exists() and name not in backups and name not in old_dirs:
-            backups[name] = _stash(target, dest, logger)
-        shutil.copytree(src, dest, dirs_exist_ok=True)
+            backups[name] = journal.stash(name)
+        journal.write_tree(src, dest)
         if name not in created_dirs:
             created_dirs.append(name)
 
@@ -687,6 +845,8 @@ def install(target_dir, payload_root, filename=DEFAULT_PROXY, preserve_ini=True,
     # frame generation and the upscaler can be changed without a restart.
     live_result = {"installed": False, "error": None}
     if live_asi:
+        journal.ensure_dir(target / live.PLUGIN_SUBDIR)
+        journal.prepare(target / live.PLUGIN_SUBDIR / live.ASI_NAME)
         outcome = live.install_asi(target, live_asi, logger)
         if outcome.get("ok"):
             live_result["installed"] = True
@@ -700,6 +860,8 @@ def install(target_dir, payload_root, filename=DEFAULT_PROXY, preserve_ini=True,
     # (Red Dead Redemption 2 among them) need it to expose their DLSS inputs.
     patcher_result = {"installed": False, "error": None}
     if optipatcher:
+        journal.ensure_dir(target / live.PLUGIN_SUBDIR)
+        journal.prepare(target / live.PLUGIN_SUBDIR / OPTIPATCHER_NAME)
         outcome = live.install_plugin_asi(target, optipatcher, OPTIPATCHER_NAME, logger)
         if outcome.get("ok"):
             patcher_result["installed"] = True
@@ -724,7 +886,7 @@ def install(target_dir, payload_root, filename=DEFAULT_PROXY, preserve_ini=True,
         "backups": backups,
         "backup_dir": BACKUP_DIR,
     }
-    (target / MANIFEST_NAME).write_text(json.dumps(manifest, indent=2), encoding="utf-8")
+    journal.write_text(target / MANIFEST_NAME, json.dumps(manifest, indent=2))
 
     return {
         "path": str(target),
@@ -738,7 +900,6 @@ def install(target_dir, payload_root, filename=DEFAULT_PROXY, preserve_ini=True,
         "dirs": created_dirs,
         "backups": backups,
         "backup_dir": str(backup_dir(target)),
-        "fsr4": fsr4_status(target),
         "live": live_result,
     }
 
@@ -751,15 +912,44 @@ def launch_option(filename):
     return f'WINEDLLOVERRIDES="{stem}=n,b" %command%'
 
 
-def uninstall(target_dir, remove_ini=True, logger=None):
-    """Remove OptiScaler, restoring everything it displaced."""
+def _same_bytes(path, reference):
+    """Whether `path` is byte-identical to `reference` (size first, then hash)."""
+    try:
+        if not reference.is_file() or path.stat().st_size != reference.stat().st_size:
+            return False
+    except OSError:
+        return False
+    return fsr4build.digest(path) == fsr4build.digest(reference)
+
+
+def _same_tree(path, reference):
+    """Whether directory `path` holds exactly `reference`'s files, byte for byte."""
+    if not reference.is_dir():
+        return False
+    ours = sorted(p.relative_to(path) for p in path.rglob("*") if p.is_file())
+    theirs = sorted(p.relative_to(reference) for p in reference.rglob("*") if p.is_file())
+    return ours == theirs and all(_same_bytes(path / rel, reference / rel) for rel in ours)
+
+
+def uninstall(target_dir, remove_ini=True, logger=None, payload_root=None):
+    """Remove OptiScaler, restoring everything it displaced.
+
+    Without a manifest (OptiScaler put there by hand, or by an old plugin) the
+    plugin cannot know which files are its own. A file named like one of
+    OptiScaler's is then removed only if it is byte-identical to the bundled
+    copy in `payload_root`; anything else is left in place and reported in
+    "left", because the game may ship a file of the same name.
+    """
     target = Path(target_dir)
     if not target.is_dir():
         raise NotADirectoryError(f"path does not exist: {target}")
 
+    recover_interrupted(target, logger)
     manifest = read_manifest(target)
     removed = []
     restored = []
+    left = []
+    payload = Path(payload_root) if payload_root else None
 
     if manifest:
         for name in manifest.get("files", []):
@@ -783,14 +973,22 @@ def uninstall(target_dir, remove_ini=True, logger=None):
                 removed.append(name)
         for name in PAYLOAD_FILES + RETIRED_PAYLOAD_FILES + FSR4_SUPPORT_FILES:
             path = target / name
-            if path.is_file():
+            if not path.is_file():
+                continue
+            if payload and _same_bytes(path, payload / name):
                 path.unlink()
                 removed.append(name)
+            else:
+                left.append(name)
         for name in PAYLOAD_DIRS + RETIRED_PAYLOAD_DIRS + ["DlssOverrides"]:
             path = target / name
-            if path.is_dir():
+            if not path.is_dir():
+                continue
+            if payload and _same_tree(path, payload / name):
                 shutil.rmtree(path, ignore_errors=True)
                 removed.append(name + "/")
+            else:
+                left.append(name + "/")
         if remove_ini and (target / INI_NAME).is_file():
             (target / INI_NAME).unlink()
             removed.append(INI_NAME)
@@ -827,6 +1025,8 @@ def uninstall(target_dir, remove_ini=True, logger=None):
         "path": str(target),
         "removed": removed,
         "restored": restored,
+        # Files named like OptiScaler's that could not be shown to be ours.
+        "left": left,
         "backup_dir": str(backup_dir(target)),
     }
 

@@ -90,8 +90,10 @@ jobs:
           # Logs feed the "checks this release passed" part of the notes.
           python3 scripts/test_fsr4.py 2>&1 | tee fsr4.log
           python3 scripts/selftest.py 2>&1 | tee selftest.log
+          python3 scripts/test_install.py 2>&1 | tee install.log
           HARNESS=run.tsx node testharness/build-and-run.mjs 2>&1 | tee harness.log
           grep -q "React errors/warnings: 0" harness.log
+          if grep -E ": false$" harness.log; then exit 1; fi
           HARNESS=all-options.tsx node testharness/build-and-run.mjs 2>&1 | tee all-options.log
           grep -q "real React errors: 0" all-options.log
           HARNESS=live-fields.tsx node testharness/build-and-run.mjs
@@ -113,7 +115,7 @@ jobs:
           # What is inside, OptiScaler's own changes in this nightly, this
           # fork's commits since its last release, and the test counts.
           python3 scripts/release_notes.py --zip decky-optiscaler-nightly.zip \
-            --selftest-log selftest.log --fsr4-log fsr4.log > release-notes.md
+            --selftest-log selftest.log --fsr4-log fsr4.log --install-log install.log > release-notes.md
           cat release-notes.md
           if gh release view "v$VERSION" >/dev/null 2>&1; then
             # Re-run for the same nightly: replace the zip and refresh the notes.

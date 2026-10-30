@@ -57,6 +57,10 @@ jobs:
       - name: Steam Deck FSR4 lifecycle
         run: python3 scripts/test_fsr4.py
 
+      # A failed or interrupted install must leave the game folder as it was.
+      - name: Install safety
+        run: python3 scripts/test_install.py
+
       # Includes check_version_pin(), which holds asi/optiscaler_ref/ to the
       # exact OptiScaler tag whose release sits in bin/.
       - name: Backend selftest
@@ -69,6 +73,9 @@ jobs:
           set -o pipefail
           HARNESS=run.tsx node testharness/build-and-run.mjs 2>&1 | tee harness.log
           grep -q "React errors/warnings: 0" harness.log
+          # run.tsx reports what it saw as "<expectation>: true"; one that
+          # printed false is a failed expectation, not just a log line.
+          if grep -E ": false$" harness.log; then exit 1; fi
 
       - name: All-options harness
         run: |

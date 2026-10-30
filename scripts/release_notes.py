@@ -157,7 +157,7 @@ def fork_commits(since, repo):
     return out
 
 
-def test_counts(selftest_log, fsr4_log):
+def test_counts(selftest_log, fsr4_log, install_log=None):
     found = []
     if selftest_log and Path(selftest_log).is_file():
         match = re.search(r"(\d+) passed, (\d+) failed", Path(selftest_log).read_text(errors="replace"))
@@ -169,6 +169,12 @@ def test_counts(selftest_log, fsr4_log):
         if match:
             status = "OK" if re.search(r"^OK", text, re.M) else "FAILED"
             found.append(f"FSR 4 lifecycle: {match.group(1)} tests, {status}")
+    if install_log and Path(install_log).is_file():
+        text = Path(install_log).read_text(errors="replace")
+        match = re.search(r"Ran (\d+) tests?", text)
+        if match:
+            status = "OK" if re.search(r"^OK", text, re.M) else "FAILED"
+            found.append(f"install safety: {match.group(1)} tests, {status}")
     return found
 
 
@@ -177,6 +183,7 @@ def main():
     parser.add_argument("--zip", required=True, help="the plugin zip being attached")
     parser.add_argument("--selftest-log")
     parser.add_argument("--fsr4-log")
+    parser.add_argument("--install-log")
     args = parser.parse_args()
 
     repo = os.environ.get("GITHUB_REPOSITORY", "")
@@ -259,7 +266,7 @@ def main():
         out.extend(commits or ["- None: only the bundled OptiScaler nightly is new."])
         out.append("")
 
-    counts = test_counts(args.selftest_log, args.fsr4_log)
+    counts = test_counts(args.selftest_log, args.fsr4_log, args.install_log)
     if counts:
         out.append("## Checks this release passed")
         out.append("")

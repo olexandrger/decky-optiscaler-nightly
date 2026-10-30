@@ -739,8 +739,17 @@ class OptiScalerService:
 
     async def uninstall(self, target_dir, remove_ini=True):
         try:
+            # Without a manifest, only files identical to the bundled ones are
+            # removed, so uninstall needs the payload to compare against.
+            try:
+                payload_root = await self.ensure_payload()
+            except Exception as exc:
+                self.log.warning("uninstall without the payload to compare: %s", exc)
+                payload_root = None
             async with self._mutation_lock:
-                result = await self._run(installer.uninstall, target_dir, remove_ini, self.log)
+                result = await self._run(
+                    installer.uninstall, target_dir, remove_ini, self.log, payload_root
+                )
             return {"ok": True, **result}
         except Exception as exc:
             self.log.exception("uninstall failed for %s", target_dir)
