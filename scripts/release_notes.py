@@ -13,8 +13,9 @@ build that is attached, not the one the workflow meant to make:
   each nightly was built from, compared on optiscaler/OptiScaler, so nightlies
   skipped in between are covered. The first build has nothing to compare with
   and quotes its nightly's own "last 24 hours" list instead;
-- this fork's commits since its previous build, or for the first build since
-  the point it branched from the upstream plugin;
+- this fork's commits since its previous build. Builds are found by tag: each
+  release is tagged v<plugin version>-nightly.<date>, and the first one compares
+  with the upstream release tag the fork is based on (v0.0.7) when it exists;
 - the test counts the release was gated on, when their logs are given.
 
 The GitHub API is optional: without it (or offline) the OptiScaler section
@@ -132,26 +133,23 @@ def demote(markdown, levels=1):
 
 
 def previous_release_tag(current):
-    """This fork's last nightly release tag before `current`, or None for the first."""
-    tags = [t for t in git("tag", "--list", "v*-nightly.*", "--sort=-creatordate").splitlines() if t]
-    earlier = [t for t in tags if t != current]
-    return earlier[0] if earlier else None
+    """The tag this build is compared with.
+
+    This fork's last nightly release before `current`; for the first build, the
+    newest plain release tag (the upstream release the fork is based on).
+    """
+    tags = [t for t in git("tag", "--list", "v*", "--sort=-creatordate").splitlines() if t]
+    nightly = [t for t in tags if "-nightly." in t and t != current]
+    if nightly:
+        return nightly[0]
+    plain = [t for t in tags if "-nightly." not in t]
+    return plain[0] if plain else None
 
 
 def previous_nightly(release_tag):
     """The OptiScaler nightly a fork release bundled: v0.0.7-nightly.20261029 -> nightly-20261029."""
     match = re.search(r"-nightly\.(\d{8})$", release_tag or "")
     return f"nightly-{match.group(1)}" if match else None
-
-
-def fork_base():
-    """Where this fork branched from the upstream plugin, for the first release.
-
-    Forks do not inherit upstream's tags, so the upstream branch is fetched and
-    the merge base used: every commit after it is this fork's own.
-    """
-    git("fetch", "--quiet", "--no-tags", f"https://github.com/{UPSTREAM_PLUGIN}", "main")
-    return git("merge-base", "HEAD", "FETCH_HEAD") or None
 
 
 def fork_commits(since, repo):
@@ -261,20 +259,21 @@ def main():
             out.append(f"See the [{tag} release notes]({nightly_link}).")
     out.append("")
 
-    # The fork: its own commits since the previous build.
-    since = previous_tag or fork_base()
-    commits = fork_commits(since, repo)
-    if previous_tag:
+    # The fork: its own commits since the previous build's tag.
+    commits = fork_commits(previous_tag, repo)
+    if previous_tag and previous_nightly_tag:
         out.append(f"## Fork changes since the last build ({previous_tag})")
+    elif previous_tag:
+        out.append(f"## Fork changes since upstream {previous_tag}")
     else:
-        out.append("## Fork changes (first build: everything since branching from upstream)")
+        out.append("## Fork changes")
     out.append("")
     if commits:
         out.extend(commits)
-    elif since:
+    elif previous_tag:
         out.append("- None: only the bundled OptiScaler nightly is new.")
     else:
-        out.append("- Not recorded (could not find where this fork branched from upstream).")
+        out.append("- Not listed: no earlier release tag to compare with.")
     out.append("")
 
     counts = test_counts(args.selftest_log, args.fsr4_log)
