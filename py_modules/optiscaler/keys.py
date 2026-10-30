@@ -123,7 +123,8 @@ def _device():
         fcntl.ioctl(fd, UI_SET_EVBIT, EV_KEY)
         for code in sorted(set(VK_TO_EVDEV.values())):
             fcntl.ioctl(fd, UI_SET_KEYBIT, code)
-        setup = struct.pack(UINPUT_SETUP_FORMAT, BUS_USB, 0x1209, 0x0D05, 1,
+        # Generic ids (as python-evdev's UInput uses): no registered vendor.
+        setup = struct.pack(UINPUT_SETUP_FORMAT, BUS_USB, 0x0001, 0x0001, 1,
                             b"Decky OptiScaler menu key", 0)
         fcntl.ioctl(fd, UI_DEV_SETUP, setup)
         fcntl.ioctl(fd, UI_DEV_CREATE)

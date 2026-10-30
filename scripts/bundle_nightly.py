@@ -174,6 +174,14 @@ def main():
             if current and tag.endswith(current.group(1)):
                 print(f"{tag} is already bundled")
                 sys.exit(3)
+            # CI never commits the archive back, so main keeps an older one; a
+            # release tag for this nightly's date means it was already built.
+            date = tag.rsplit("-", 1)[-1]
+            released = subprocess.run(["git", "tag", "--list", f"v*-nightly.{date}"], cwd=ROOT,
+                                      capture_output=True, text=True).stdout.strip()
+            if released:
+                print(f"{tag} is already released as {released.splitlines()[0]}")
+                sys.exit(3)
         archive = download_latest(scratch) if args.latest else Path(args.archive).resolve()
         extracted = scratch / "x"
         run([seven, "x", "-y", f"-o{extracted}", str(archive)])
@@ -189,11 +197,15 @@ def main():
 
         out_name = f"OptiScaler-{version}.7z"
         out = BIN / out_name
+        # Packed under a temporary name first: a failed repack must not leave
+        # bin/ without an archive. -mf=off: no BCJ2/BCJ filters (plain LZMA2,
+        # which bsdtar and every 7-Zip read). Members relative to root.
+        packed = scratch / out_name
+        subprocess.run([seven, "a", "-t7z", "-mx=7", "-mf=off", "-mmt=on", str(packed), "."],
+                       cwd=root, check=True, capture_output=True)
         for old in BIN.glob("OptiScaler-*.7z"):
             old.unlink()
-        # -mf=off: no BCJ2/BCJ filters, -mmt: threads. Members relative to root.
-        subprocess.run([seven, "a", "-t7z", "-mx=7", "-mf=off", "-mmt=on", str(out), "."],
-                       cwd=root, check=True, capture_output=True)
+        shutil.move(str(packed), str(out))
         shutil.copy2(root / "OptiScaler.ini", REFERENCE_INI)
 
         source = CONSTANTS.read_text(encoding="utf-8")

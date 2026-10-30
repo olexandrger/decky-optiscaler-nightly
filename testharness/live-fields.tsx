@@ -374,6 +374,17 @@ const tile = (host: Element, label: string) => {
   check("setup says next launch", host5.textContent!.includes("FSR 4 RDNA2 ready for the next launch"), true);
   check("no community DLL warning is left", host5.textContent!.includes("anti-cheat"), false);
 
+  // Leaving a Deck preset for the plain FSR 4 one must take its model with it,
+  // or the ini still matches the Deck preset and OptiScaler keeps running it.
+  setIni({ Upscalers: { Dx12Upscaler: "ffx" }, FSR: { Fsr4GpuSupport: "4", Fsr4Model: "3", UpscalerIndex: "0" } });
+  await settle(200);
+  await act(async () => {
+    (all(control(host5, "Override upscaler with"), '[data-opt-value="fsr4"]')[0] as HTMLElement)?.click();
+  });
+  await settle(300);
+  check("leaving Lite for FSR 3.X/4 clears the model", ini.FSR.Fsr4Model, "auto");
+  check("and the panel shows what was picked", selected(host5, "Override upscaler with"), "fsr4");
+
   await act(async () => root5.unmount());
   liveBackend = "ffx";
   setIni({ FSR: { Fsr4GpuSupport: "auto", Fsr4Model: "auto" } });

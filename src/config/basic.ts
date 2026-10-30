@@ -31,7 +31,7 @@ const change = (section: string, key: string, value: string): OptionChange => ({
 
 /**
  * `[FSR] Fsr4GpuSupport` for the INT8 model (OptiScaler 10+: 0 none, 1 FP8,
- * 2 INT8, 3 INT8-2, 4 INT8 Lite). Mirrors `FSR4_INT8_SUPPORT` in constants.py.
+ * 2 INT8, 3 INT8-2, 4 INT8 Lite). Mirrors FSR4_DECK_MODELS["int8"] in constants.py.
  */
 export const FSR4_INT8_SUPPORT = "2";
 
@@ -87,6 +87,9 @@ function upscalerPreset(
   // is Fsr4GpuSupport (2 = INT8), which replaced Fsr4ForceEnableInt8.
   if (int8 !== undefined) {
     changes.push(change("FSR", "Fsr4GpuSupport", int8 ? FSR4_INT8_SUPPORT : AUTO));
+    // A Deck preset's model would otherwise outlive it: the ini would still
+    // match that preset and OptiScaler would keep running its model.
+    if (!int8) changes.push(change("FSR", "Fsr4Model", AUTO));
   }
   return {
     id,
@@ -164,13 +167,13 @@ export const UPSCALER_PRESETS: Preset[] = [
   deckPreset(
     "fsr4-lite",
     "FSR 4 Lite — Steam Deck",
-    "AMD's INT8 Lite model, the one AMD assigns to the Deck's APU: lightest FSR 4. Close the game first.",
+    "AMD's INT8 Lite model, the one AMD assigns to the Deck's APU: lightest FSR 4. Applies on the next launch.",
     "3", "4"
   ),
   deckPreset(
     "fsr4-rdna2",
     "FSR 4 RDNA2 — Steam Deck",
-    "AMD's INT8 model for RDNA 2: better image than Lite, costs more GPU time on the Deck. Close the game first.",
+    "AMD's INT8 model for RDNA 2: better image than Lite, costs more GPU time on the Deck. Applies on the next launch.",
     "2", "3"
   ),
   upscalerPreset(

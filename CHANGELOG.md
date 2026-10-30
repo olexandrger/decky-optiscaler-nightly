@@ -39,6 +39,19 @@ Bundles the **OptiScaler 10.0.0-pre1 nightly** (`nightly-20261030`, master
   newest) and rewrites every pinned value; `.github/workflows/nightly.yml`
   runs it daily.
 
+### Fixed
+
+- **A failed or interrupted install no longer damages the game folder.** Install
+  is journaled: any error rolls every change back, and an install killed half way
+  is rolled back by the next install or uninstall. Before, uninstalling after a
+  failed install could delete game files sharing OptiScaler's names, and a retry
+  could leave stray FidelityFX DLLs behind (inherited from upstream).
+- Uninstall without a manifest removes only files identical to the bundled ones
+  and reports the rest as left in place.
+- Steam Deck presets work while the game runs when the bundled upscaler is
+  already in place (settings only, applied at the next launch).
+- Leaving a Steam Deck preset for another FSR preset clears its FSR 4 model.
+
 ### Added
 
 - **OptiScaler menu** button in the Quick Access panel while a game runs. It

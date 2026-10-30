@@ -342,8 +342,18 @@ def deck_preset_changes(model):
     }
 
 
-def _replace_fsr4(target, source, recorded, deck_model=None):
-    manifest = require_stopped_install(target)
+def require_managed_install(target_dir):
+    """The manifest of an install this plugin made, or an error."""
+    manifest = read_manifest(Path(target_dir).resolve())
+    if not manifest or manifest.get("plugin") != "decky-optiscaler":
+        raise ValueError("Install OptiScaler with this plugin first.")
+    return manifest
+
+
+def _replace_fsr4(target, source, recorded, deck_model=None, replace_dll=True):
+    # Swapping the DLL needs the game closed; writing only the ini does not
+    # (OptiScaler reads it at the next launch).
+    manifest = require_stopped_install(target) if replace_dll else require_managed_install(target)
     target = Path(target)
     if FFX_UPSCALER_DLL not in manifest.get("files", []):
         raise ValueError("Reinstall OptiScaler before changing its upscaler build.")
@@ -356,7 +366,8 @@ def _replace_fsr4(target, source, recorded, deck_model=None):
             if existed[name]:
                 shutil.copy2(target / name, staging / name)
         try:
-            atomic_copy(source, target / FFX_UPSCALER_DLL)
+            if replace_dll:
+                atomic_copy(source, target / FFX_UPSCALER_DLL)
             if deck_model:
                 if not existed[INI_NAME]:
                     raise FileNotFoundError("OptiScaler.ini not found")
@@ -399,15 +410,21 @@ def install_fsr4_build(target_dir, dll_path, build, logger=None, enable_int8=Fal
 def enable_fsr4_deck(target_dir, payload_root, model, logger=None):
     """A Steam Deck FSR 4 preset: the bundled upscaler plus one of its models.
 
-    Puts the bundled DLL back first (replacing a community build if one is in
-    the folder), then writes the preset's settings, as one rollback-safe step.
+    Puts the bundled DLL back first if something else is there (a community
+    build), then writes the preset's settings, as one rollback-safe step. When
+    the bundled DLL is already in place, which is the usual case, only the
+    settings change, so it works while the game runs and applies at its next
+    launch; swapping a DLL still needs the game closed.
     """
     if model not in FSR4_DECK_MODELS:
         raise ValueError(f"Unknown Steam Deck FSR 4 model: {model}")
     source = Path(payload_root) / FFX_UPSCALER_DLL
-    if fsr4build.digest(source) != fsr4build.BUNDLED_BUILD["file_sha256"]:
+    bundled = fsr4build.BUNDLED_BUILD["file_sha256"]
+    if fsr4build.digest(source) != bundled:
         raise ValueError("Bundled FSR 4 DLL checksum mismatch")
-    _replace_fsr4(target_dir, source, {}, model)
+    current = Path(target_dir) / FFX_UPSCALER_DLL
+    in_place = current.is_file() and fsr4build.digest(current) == bundled
+    _replace_fsr4(target_dir, source, {}, model, replace_dll=not in_place)
     return {"path": str(target_dir), "model": model,
             "label": FSR4_DECK_MODELS[model]["label"],
             "build": fsr4build.identify(Path(target_dir) / FFX_UPSCALER_DLL)}
@@ -560,7 +577,11 @@ class _Journal:
         self._save()
 
     def _save(self):
-        (self.dir / _JOURNAL).write_text(json.dumps(self.ops), encoding="utf-8")
+        # Written to a temp file and renamed over, so a crash never leaves a
+        # half-written journal for recover_interrupted to misread.
+        temp = self.dir / (_JOURNAL + ".tmp")
+        temp.write_text(json.dumps(self.ops), encoding="utf-8")
+        os.replace(temp, self.dir / _JOURNAL)
 
     def _rel(self, path):
         return str(Path(path).relative_to(self.target))
@@ -599,8 +620,15 @@ class _Journal:
         shutil.copy2(source, path)
 
     def write_tree(self, source, path):
+        """Copy `source` over `path`, merging into what is there as copytree's
+        dirs_exist_ok does, with the previous contents kept for an undo."""
         self.prepare(path)
-        shutil.copytree(source, path)
+        previous = self.saved_path(path)
+        if previous is not None and previous.is_dir():
+            shutil.copytree(previous, path)
+            shutil.copytree(source, path, dirs_exist_ok=True)
+        else:
+            shutil.copytree(source, path)
 
     def write_text(self, path, text):
         self.prepare(path)
@@ -636,6 +664,11 @@ class _Journal:
         return True
 
     def commit(self):
+        # Removing the journal is the commit point: from here on a crash leaves
+        # staging without a journal, which recover_interrupted only cleans up.
+        # Deleting staging first could leave a journal pointing at saved files
+        # that are already gone, and "undoing" that would lose the originals.
+        (self.dir / _JOURNAL).unlink()
         shutil.rmtree(self.dir, ignore_errors=True)
 
     def rollback(self):
@@ -672,10 +705,12 @@ def recover_interrupted(target_dir, logger=None):
     staging = target / INSTALL_STAGING
     if not staging.is_dir():
         return False
-    try:
-        ops = json.loads((staging / _JOURNAL).read_text(encoding="utf-8"))
-    except (OSError, ValueError):
-        ops = []
+    journal = staging / _JOURNAL
+    if not journal.is_file():
+        # The install had committed and was only cleaning up.
+        shutil.rmtree(staging, ignore_errors=True)
+        return False
+    ops = json.loads(journal.read_text(encoding="utf-8"))  # written atomically
     if logger:
         logger.warning("rolling back an interrupted install in %s", target)
     _undo(target, staging, ops)

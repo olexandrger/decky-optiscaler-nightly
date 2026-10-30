@@ -336,7 +336,18 @@ class DeckModelTests(unittest.TestCase):
         self.assertFalse(self.enable('fp8')['ok'])
         self.assertEqual(before, self.snapshot())
 
-    def test_running_game_is_rejected(self):
+    def test_with_the_bundled_dll_in_place_a_running_game_only_gets_settings(self):
+        # The usual case: nothing to swap, so the game may be running; the
+        # model applies at its next launch.
+        dll_before = (self.target/FFX_UPSCALER_DLL).read_bytes()
+        with patch.object(installer.live, 'status', return_value={'attached': True}):
+            result = self.enable('lite')
+        self.assertTrue(result['ok'], result)
+        self.assertEqual(self.values()['FSR']['Fsr4Model'], '3')
+        self.assertEqual((self.target/FFX_UPSCALER_DLL).read_bytes(), dll_before)
+
+    def test_swapping_a_dll_while_the_game_runs_is_refused(self):
+        (self.target/FFX_UPSCALER_DLL).write_bytes(b'some other upscaler build')
         before = self.snapshot()
         with patch.object(installer.live, 'status', return_value={'attached': True}):
             self.assertFalse(self.enable('lite')['ok'])

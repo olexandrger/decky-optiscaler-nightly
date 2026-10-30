@@ -89,6 +89,16 @@ ancestor of `main`; that is expected.
 `CLAUDE.md` only imports this file. Upstream's `.gitignore` excludes `CLAUDE.md`,
 so it is tracked here with `git add -f`; leave upstream's `.gitignore` alone.
 
+## Installing is transactional
+
+`installer.install` routes every write through `_Journal`: whatever a path held
+is moved into `.decky-optiscaler-install/` with an undo record first, a failure
+rolls everything back, and an install killed half way is rolled back by the next
+install or uninstall (`recover_interrupted`). Any new write in `_install` must go
+through the journal too; `scripts/test_install.py` fails every write in turn and
+will catch one that does not. Uninstall without a manifest only removes files
+byte-identical to the bundled payload.
+
 ## Bundling a newer nightly
 
 ```bash
@@ -115,8 +125,9 @@ Run all of these before pushing; CI runs the same set.
 npx tsc --noEmit
 pnpm build
 python3 scripts/test_fsr4.py
+python3 scripts/test_install.py   # a failed or interrupted install leaves the folder as it was
 python3 scripts/selftest.py
-HARNESS=run.tsx node testharness/build-and-run.mjs          # "React errors/warnings: 0"
+HARNESS=run.tsx node testharness/build-and-run.mjs          # "React errors/warnings: 0", no line ending ": false"
 HARNESS=all-options.tsx node testharness/build-and-run.mjs  # "real React errors: 0"
 HARNESS=live-fields.tsx node testharness/build-and-run.mjs  # exits non-zero on failure
 python3 scripts/package.py

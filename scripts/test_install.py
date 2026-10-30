@@ -177,6 +177,32 @@ class InstallSafetyTests(unittest.TestCase):
                 installer.uninstall(self.game, logger=LOG, payload_root=self.payload)
                 self.assertEqual(snapshot(self.game), before)
 
+    def test_a_crash_while_committing_does_not_undo_the_install(self):
+        # Killed after the commit point (journal gone) but before staging was
+        # cleared: the next run must keep the finished install.
+        real_rmtree = shutil.rmtree
+        def leave_staging(path, *a, **k):
+            if Path(path).name == installer.INSTALL_STAGING:
+                raise KeyboardInterrupt("killed")
+            return real_rmtree(path, *a, **k)
+        with mock.patch.object(installer.shutil, "rmtree", side_effect=leave_staging), \
+                self.assertRaises(KeyboardInterrupt):
+            installer.install(self.game, self.payload, "dxgi.dll", logger=LOG)
+        self.assertTrue((self.game / installer.INSTALL_STAGING).is_dir())
+        installed = {k: v for k, v in snapshot(self.game).items()
+                     if not k.startswith(installer.INSTALL_STAGING)}
+        self.assertFalse(installer.recover_interrupted(self.game, LOG))
+        self.assertEqual(snapshot(self.game), installed)
+        self.assertEqual((self.game / BACKUP_DIR / "libxess.dll").read_bytes(), b"the game's own XeSS")
+
+    def test_reinstall_merges_into_payload_folders(self):
+        # Upstream copies Licenses/ and D3D12_OptiScaler/ over what is there
+        # (copytree dirs_exist_ok); a file added inside one survives a reinstall.
+        installer.install(self.game, self.payload, "dxgi.dll", logger=LOG)
+        (self.game / "D3D12_OptiScaler" / "extra.txt").write_bytes(b"added later")
+        installer.install(self.game, self.payload, "dxgi.dll", logger=LOG)
+        self.assertEqual((self.game / "D3D12_OptiScaler" / "extra.txt").read_bytes(), b"added later")
+
     def test_a_successful_install_leaves_no_staging_behind(self):
         installer.install(self.game, self.payload, "dxgi.dll", logger=LOG)
         self.assertFalse((self.game / installer.INSTALL_STAGING).exists())
