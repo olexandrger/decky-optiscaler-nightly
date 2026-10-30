@@ -15,6 +15,9 @@ What it does, in order:
    the FSR 4 build swap, verify, backup and uninstall paths keep working.
 3. Repacks it as ``bin/OptiScaler-<version>.7z`` (plain LZMA2, which every
    archiver the plugin looks for can read) and removes the previous archive.
+   The archive is never committed (bin/.gitignore): CI bundles the newest
+   nightly before testing and packaging, and so does a local checkout before
+   running the tests.
 4. Rewrites the pinned values in ``py_modules/optiscaler/constants.py``:
    version, archive name, SHA-256, the payload file/dir lists (retiring
    anything a previous bundle shipped that this one does not), and the hash
@@ -27,6 +30,7 @@ import argparse
 import ast
 import hashlib
 import json
+import os
 import re
 import shutil
 import struct
@@ -90,7 +94,12 @@ def archiver():
 
 def download_latest(dest_dir):
     api = f"https://api.github.com/repos/{NIGHTLY_REPO}/releases?per_page=1"
-    with urllib.request.urlopen(api, timeout=60) as response:
+    request = urllib.request.Request(api, headers={"Accept": "application/vnd.github+json"})
+    # CI downloads on every push; anonymous API calls share a 60/hour limit per runner IP.
+    token = os.environ.get("GITHUB_TOKEN") or os.environ.get("GH_TOKEN")
+    if token:
+        request.add_header("Authorization", f"Bearer {token}")
+    with urllib.request.urlopen(request, timeout=60) as response:
         release = json.load(response)[0]
     asset = next((a for a in release["assets"] if a["name"].endswith(".7z")), None)
     if not asset:
@@ -156,41 +165,13 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     parser.add_argument("archive", nargs="?", help="nightly .7z to bundle")
     parser.add_argument("--latest", action="store_true", help=f"download the newest {NIGHTLY_REPO} build")
-    parser.add_argument("--if-newer", action="store_true",
-                        help="with --latest: exit 3 without changing anything if that build is already bundled")
-    parser.add_argument("--skip-released", action="store_true",
-                        help="with --if-newer: also exit 3 if a v*-nightly.<date>* tag already released "
-                             "that build (for runs that only release a new nightly)")
     args = parser.parse_args()
     if bool(args.archive) == args.latest:
         parser.error("give an archive path or --latest, not both")
-    if args.skip_released and not args.if_newer:
-        parser.error("--skip-released needs --if-newer")
 
     seven = archiver()
     with tempfile.TemporaryDirectory() as scratch:
         scratch = Path(scratch)
-        if args.latest and args.if_newer:
-            current = re.search(r'^PAYLOAD_ARCHIVE\s*=\s*"OptiScaler-.*?-(\d{8})\.7z"',
-                                CONSTANTS.read_text(encoding="utf-8"), re.M)
-            api = f"https://api.github.com/repos/{NIGHTLY_REPO}/releases?per_page=1"
-            with urllib.request.urlopen(api, timeout=60) as response:
-                tag = json.load(response)[0]["tag_name"]
-            if current and tag.endswith(current.group(1)):
-                print(f"{tag} is already bundled")
-                sys.exit(3)
-            # CI never commits the archive back, so main keeps an older one; a
-            # release tag for this nightly's date means it was already built.
-            # Only a run with nothing else to release may stop here: a release
-            # of fork changes must still bundle this nightly, or it would ship
-            # main's older archive and downgrade OptiScaler.
-            date = tag.rsplit("-", 1)[-1]
-            # Tags carry a run number after the date (v0.0.7-nightly.<date>.<run>).
-            released = subprocess.run(["git", "tag", "--list", f"v*-nightly.{date}*"], cwd=ROOT,
-                                      capture_output=True, text=True).stdout.strip()
-            if released and args.skip_released:
-                print(f"{tag} is already released as {released.splitlines()[0]}")
-                sys.exit(3)
         archive = download_latest(scratch) if args.latest else Path(args.archive).resolve()
         extracted = scratch / "x"
         run([seven, "x", "-y", f"-o{extracted}", str(archive)])

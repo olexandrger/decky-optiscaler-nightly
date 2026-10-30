@@ -1,9 +1,9 @@
 name: Bundle OptiScaler nightly
 
 # optiscaler/OptiScaler-nightly publishes at 04:00 UTC; run after it. Each run
-# bundles the newest nightly if it is not the one already in bin/, and
-# publishes when there is a new nightly, when main has commits since the last
-# release, or when forced. Versions are <base>-nightly.<date>.<run number>, so
+# publishes when there is a nightly no release carries yet, when main has
+# commits since the last release, or when forced; it then downloads and bundles
+# the newest nightly (no OptiScaler archive is committed to the repo). Versions are <base>-nightly.<date>.<run number>, so
 # every published build is its own release. It runs the
 # same checks as build.yml and publishes a release with the plugin zip (nothing
 # is committed back to the branch). A nightly that breaks the checks is not
@@ -14,8 +14,8 @@ name: Bundle OptiScaler nightly
 #   https://github.com/<owner>/<repo>/releases/latest/download/decky-optiscaler-nightly.zip
 # which is what Decky's "Install Plugin from URL" wants.
 #
-# Run it by hand with "release current build" ticked to publish what is in bin/
-# without waiting for a newer nightly.
+# Run it by hand with "Release the current build" ticked to publish the current
+# main with the newest nightly without waiting for anything new.
 on:
   schedule:
     - cron: "37 5 * * *"
@@ -61,43 +61,33 @@ jobs:
           sudo apt-get update -qq && sudo apt-get install -y -qq p7zip-full libarchive-tools
           pnpm install --frozen-lockfile
 
-      - name: Bundle the newest nightly
+      - name: Decide, and bundle the newest nightly
         id: bundle
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          # Fork changes count as much as a new nightly: release when main has
-          # commits the last release does not.
+          # Release when there is a nightly no release carries yet, when main
+          # has commits the last release does not, or when forced.
+          nightly=$(gh api 'repos/optiscaler/OptiScaler-nightly/releases?per_page=1' --jq '.[0].tag_name')
+          date="${nightly##*-}"
+          released=$(git tag --list "v*-nightly.${date}*" | head -1)
           last=$(git tag --list 'v*-nightly.*' --sort=-creatordate | head -1)
           changed=false
           if [ -z "$last" ] || [ "$(git rev-list -n1 "$last")" != "$(git rev-parse HEAD)" ]; then
             changed=true
           fi
+          echo "newest nightly: $nightly (released as: ${released:-not yet})"
           echo "last release: ${last:-none}, fork changed since: $changed"
-          # main keeps an older archive (nothing is committed back), so a
-          # release always bundles the newest nightly. Only a run with no fork
-          # changes and no force stops early on a nightly already released.
-          skip=--skip-released
-          if [ "$changed" = "true" ] || [ "${{ inputs.force }}" = "true" ]; then
-            skip=
-          fi
-          set +e
-          python3 scripts/bundle_nightly.py --latest --if-newer $skip
-          code=$?
-          set -e
-          if [ "$code" = 3 ]; then
-            echo "fresh=false" >> "$GITHUB_OUTPUT"
-          else
-            [ "$code" = 0 ] || exit "$code"
-            echo "fresh=true" >> "$GITHUB_OUTPUT"
-            python3 scripts/generate_schema.py
-          fi
-          echo "bundled: $(grep -oP '^PAYLOAD_ARCHIVE = "\K[^"]+' py_modules/optiscaler/constants.py)"
-          if [ "$code" = 0 ] || [ "$changed" = "true" ] || [ "${{ inputs.force }}" = "true" ]; then
-            echo "release=true" >> "$GITHUB_OUTPUT"
-          else
+          if [ -n "$released" ] && [ "$changed" = "false" ] && [ "${{ inputs.force }}" != "true" ]; then
+            echo "nothing new to release"
             echo "release=false" >> "$GITHUB_OUTPUT"
+            exit 0
           fi
+          echo "release=true" >> "$GITHUB_OUTPUT"
+          # No archive is committed: every release bundles the newest nightly.
+          python3 scripts/bundle_nightly.py --latest
+          python3 scripts/generate_schema.py
           # Every published build gets its own version: <base>-nightly.<date>.<run>.
           # The in-plugin updater compares versions, so a fork-only change on the
           # same nightly has to read as new.
@@ -134,8 +124,7 @@ jobs:
           VERSION: ${{ steps.bundle.outputs.version }}
         run: |
           # Nothing is committed back: each nightly archive is ~70 MB and would
-          # pile up in git history daily. The release zip carries it; main keeps
-          # the last hand-bundled build, and the next run bundles from there.
+          # pile up in git history daily. The release zip carries it.
           # package.py names the zip after plugin.json's name.
           cp out/*.zip decky-optiscaler-nightly.zip
           # The in-plugin updater passes this to Decky's installer, which

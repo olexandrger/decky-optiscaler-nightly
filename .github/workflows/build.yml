@@ -51,6 +51,19 @@ jobs:
           python3 scripts/generate_asi_layout.py
           git diff --exit-code -- asi/generated/config_mirror.h py_modules/optiscaler/live_fields.json
 
+      # Nightly fork: no OptiScaler archive is committed. Everything below runs
+      # against the newest nightly, the one the next release would ship, so a
+      # nightly that breaks the plugin fails here, on the push, not on the Deck.
+      # The schema is regenerated from that nightly's INI (the check above held
+      # the committed snapshot to the committed INI).
+      - name: Bundle the newest OptiScaler nightly
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          python3 scripts/bundle_nightly.py --latest
+          python3 scripts/generate_schema.py
+          git diff --stat
+
       - name: Typecheck
         run: npx tsc --noEmit
 
@@ -67,8 +80,8 @@ jobs:
       - name: In-plugin updater
         run: python3 scripts/test_update.py
 
-      # Includes check_version_pin(), which holds asi/optiscaler_ref/ to the
-      # exact OptiScaler tag whose release sits in bin/.
+      # Includes check_version_pin() (the archive in bin/ is the one
+      # constants.py pins) and the real-payload install/upgrade/uninstall.
       - name: Backend selftest
         run: python3 scripts/selftest.py
 

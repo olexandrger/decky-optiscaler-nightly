@@ -93,7 +93,8 @@ Resolving conflicts, by file kind:
 | Files | Resolution |
 |---|---|
 | Generated: `src/config/generatedSchema.ts`, `py_modules/optiscaler/schema_generated.py`, `asi/generated/config_mirror.h`, `py_modules/optiscaler/live_fields.json` | Take either side, then regenerate: `python3 scripts/generate_schema.py`, `python3 scripts/generate_asi_layout.py`. Never merge them by hand. |
-| `bin/OptiScaler-*.7z`, `defaults/OptiScaler.reference.ini`, and the pinned values in `py_modules/optiscaler/constants.py` (`OPTISCALER_VERSION`, `PAYLOAD_*`, `FSR4_BUNDLED_*`, payload/retired lists) | Keep the fork's side, then re-run `scripts/bundle_nightly.py` (on the bundled `.7z` or `--latest`) so they are consistent. Upstream will keep pinning 0.9.x; that is expected. |
+| `bin/OptiScaler-*.7z` | Keep it deleted: the fork commits no OptiScaler archive (`bin/.gitignore`). An upstream bump shows as modify/delete; resolve with `git rm`. |
+| `defaults/OptiScaler.reference.ini`, and the pinned values in `py_modules/optiscaler/constants.py` (`OPTISCALER_VERSION`, `PAYLOAD_*`, `FSR4_BUNDLED_*`, payload/retired lists) | Keep the fork's side, then re-run `scripts/bundle_nightly.py --latest` so they are consistent. Upstream will keep pinning 0.9.x; that is expected. |
 | `asi/` (live-control ASI) | Accept upstream's source changes, but keep the ASI out of `bin/` (see above). |
 | Steam Deck FSR 4 (`basic.ts` presets, `installer.py`, `fsr4build.py`, `test_fsr4.py`) | Keep the fork's Lite/RDNA2 presets. Do not bring back the 4.1.1b preset or download. |
 | Identity names (`MANIFEST_NAME`, `BACKUP_DIR`, `LAUNCH_RECORD_NAME`, `PLUGIN_ID`, `ROUTE`, storage keys, context-menu marker) | Keep the fork's `-nightly` names. A new file, folder, route or key upstream adds gets its own `-nightly` name too. |
@@ -120,7 +121,13 @@ every write in turn and will catch one that does not. Uninstall only removes
 this plugin's own installs (its manifest lists them); anything else is foreign
 and refused (see "Exclusive with upstream's plugin").
 
-## Bundling a newer nightly
+## The OptiScaler archive is not committed
+
+`bin/` holds no OptiScaler archive in git (`bin/.gitignore`); about 70 MB per
+nightly would only grow history. Both workflows download the newest nightly and
+bundle it before testing: `build.yml` on every push, so a nightly that breaks
+the plugin fails CI, and `nightly.yml` before it packages a release. Locally,
+bundle one before running the checks:
 
 ```bash
 python3 scripts/bundle_nightly.py --latest   # or a downloaded .7z path
@@ -129,18 +136,22 @@ python3 scripts/generate_schema.py
 
 `bundle_nightly.py` flattens OptiScaler 10's `OptiScaler/` dependency folder into
 the game-folder layout this plugin installs (OptiScaler 10 falls back to the exe
-folder when that subfolder is missing), repacks the archive, and rewrites every
-pinned value: version, archive name and SHA-256, payload file and dir lists
-(retiring files a previous bundle shipped), the bundled FidelityFX upscaler hash,
-and the plugin version (`<base>-nightly.<date>`). Do not hand-edit those values.
+folder when that subfolder is missing), repacks the archive into `bin/`, and
+rewrites every pinned value: version, archive name and SHA-256, payload file and
+dir lists (retiring files a previous bundle shipped), the bundled FidelityFX
+upscaler hash, and the plugin version (`<base>-nightly.<date>`). Do not hand-edit
+those values.
 
-The nightly workflow does this daily and **does not commit the archive back**
-(about 70 MB per day would bloat history); the release zip carries it. Commit a
-new archive by hand only when the fork's own code needs a newer OptiScaler.
+The committed constants, reference INI and generated schema are a snapshot of
+the nightly the code was last written against. CI rewrites them in its working
+tree and never commits them. Commit them yourself only when the fork's code
+depends on a newer nightly's INI (new keys in the panel, say). `package.py`
+refuses to build without exactly the pinned archive in `bin/`.
 
 ## Checks
 
-Run all of these before pushing; CI runs the same set.
+Run all of these before pushing; CI runs the same set, against the newest
+nightly. Bundle one first (see above); selftest fails without the archive.
 
 ```bash
 npx tsc --noEmit
@@ -161,8 +172,11 @@ checked on a Deck: `OptiScaler.log` in the game folder is the source of truth.
 
 ## Releases
 
-`nightly.yml` publishes when there is a new nightly, when `main` has commits
-since the last release, or when run by hand with "Release the current build".
+`nightly.yml` publishes when the newest nightly has no release yet (no
+`v*-nightly.<its date>*` tag), when `main` has commits since the last release, or
+when run by hand with "Release the current build". It then downloads and bundles
+the newest nightly; a run with nothing to release downloads nothing. A failed run
+creates no tag, so the next day retries.
 Each published build is its own full release (not a prerelease) tagged
 `v<base>-nightly.<date>.<run number>` (the run number makes fork-only changes on
 the same nightly a new version, which the updater needs), with the asset

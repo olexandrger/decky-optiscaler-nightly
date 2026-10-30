@@ -93,6 +93,11 @@ async def run():
         print("\nPayload")
         status = await service.get_status()
         check("bundled archive present", status["archive_present"], status["archive_path"])
+        if not status["archive_present"]:
+            # Nightly fork: no archive is committed. Everything after this
+            # installs it, so stop here rather than fail a hundred times.
+            sys.exit("no OptiScaler archive in bin/: run `python3 scripts/bundle_nightly.py --latest` "
+                     "(or give it a downloaded .7z), then re-run the selftest")
         check("an extractor is available", bool(status["extractor"]), status["extractor"])
         if not status["extractor"]:
             print("  (no 7z/bsdtar — skipping install tests)")
@@ -1592,9 +1597,14 @@ def check_version_pin():
     if not ref.is_file():
         return
     text = ref.read_text(encoding="utf-8")
-    check("vendored headers name the shipped OptiScaler version",
-          f"v{constants.OPTISCALER_VERSION}" in text,
-          f"want v{constants.OPTISCALER_VERSION} in SOURCE_COMMIT.txt")
+    # Only the live-control ASI reads OptiScaler's memory through these
+    # headers. The nightly fork ships no ASI and bundles whichever nightly is
+    # newest, so pinning the headers to one nightly's date would fail every
+    # build after it for nothing.
+    if LIVE_ASI_SHIPPED:
+        check("vendored headers name the shipped OptiScaler version",
+              f"v{constants.OPTISCALER_VERSION}" in text,
+              f"want v{constants.OPTISCALER_VERSION} in SOURCE_COMMIT.txt")
     check("the shipped archive matches the pinned version",
           constants.OPTISCALER_VERSION in constants.PAYLOAD_ARCHIVE,
           constants.PAYLOAD_ARCHIVE)
@@ -1605,7 +1615,8 @@ def check_version_pin():
     # that library rather than by trusting the reference ini, which documents
     # whichever build *it* shipped with (4.0.2, where this carries 4.1.1).
     archive = ROOT / "bin" / constants.PAYLOAD_ARCHIVE
-    check("the shipped archive is present", archive.is_file(), str(archive))
+    check("the shipped archive is present", archive.is_file(),
+          f"{archive} -- run scripts/bundle_nightly.py --latest first")
     if archive.is_file():
         digest = hashlib.sha256(archive.read_bytes()).hexdigest()
         check("the shipped archive is the one the hash pins",
@@ -1643,7 +1654,8 @@ def check_bundled_payload_upgrade():
     print("\nBundled payload: install, upgrade from 0.9.x, uninstall")
     archive = ROOT / "bin" / constants.PAYLOAD_ARCHIVE
     if not archive.is_file():
-        check("the bundled archive is present", False, str(archive))
+        check("the bundled archive is present", False,
+              f"{archive} -- run scripts/bundle_nightly.py --latest first")
         return
 
     work = Path(tempfile.mkdtemp(prefix="optiscaler-payload-"))

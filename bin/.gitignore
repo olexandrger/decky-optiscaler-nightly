@@ -1,0 +1,3 @@
+# The OptiScaler archive is bundled by scripts/bundle_nightly.py (CI does it
+# before testing and packaging) and never committed: ~70 MB per nightly.
+OptiScaler-*.7z

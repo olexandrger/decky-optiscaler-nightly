@@ -69,10 +69,12 @@ panel shows **Update to …**. It hands the release to Decky's own installer,
 which asks before replacing the plugin and checks the zip's SHA-256. No URL to
 paste again. Releases
 come from the **Bundle OptiScaler nightly** workflow: daily after upstream's
-nightly, or by hand from the Actions tab ("Run workflow", tick *release current
-build* to publish what is already bundled).
+nightly, or by hand from the Actions tab ("Run workflow", tick *Release the
+current build* to publish without waiting for anything new).
 
-To bundle a newer nightly yourself:
+The OptiScaler archive is not in the repository. CI downloads the newest nightly
+before testing and packaging (a push is tested against the build the next
+release would ship). To build or test locally, bundle one first:
 
 ```
 python3 scripts/bundle_nightly.py --latest      # or a downloaded .7z

@@ -6,6 +6,7 @@ named after plugin.json's "name", holding the runtime files only.
 """
 
 import json
+import re
 import shutil
 import stat
 import sys
@@ -19,7 +20,7 @@ OUT_DIR = ROOT / "out"
 INCLUDE_FILES = ["plugin.json", "package.json", "main.py", "README.md", "LICENSE"]
 INCLUDE_DIRS = ["dist", "py_modules", "bin", "defaults"]
 
-EXCLUDE_NAMES = {"__pycache__", ".DS_Store", "node_modules", ".git"}
+EXCLUDE_NAMES = {"__pycache__", ".DS_Store", "node_modules", ".git", ".gitignore"}
 EXCLUDE_SUFFIXES = {".pyc", ".pyo", ".map", ".tmp"}
 
 
@@ -62,13 +63,26 @@ def check_bin():
     strays = [
         p for p in bin_dir.iterdir()
         if p.is_dir()
-        or (p.is_file() and p.suffix not in ALLOWED_BIN_SUFFIXES and p.name != ".DS_Store")
+        or (p.is_file() and p.suffix not in ALLOWED_BIN_SUFFIXES and p.name not in (".DS_Store", ".gitignore"))
     ]
     if strays:
         sys.exit(
             "bin/ contains unexpected files: "
             + ", ".join(p.name for p in strays)
             + "\nRemove them (they are probably an extracted payload) and re-run."
+        )
+
+    # Nightly fork: the archive is not in git; bundle_nightly.py puts it here
+    # and pins it in constants.py. A zip without it, or with a second one,
+    # would install nothing or carry 70 MB of dead weight.
+    constants = (ROOT / "py_modules" / "optiscaler" / "constants.py").read_text(encoding="utf-8")
+    pinned = re.search(r'^PAYLOAD_ARCHIVE\s*=\s*"([^"]+)"', constants, re.M).group(1)
+    archives = sorted(p.name for p in bin_dir.glob("*.7z"))
+    if archives != [pinned]:
+        sys.exit(
+            f"bin/ must hold exactly the pinned OptiScaler archive {pinned}, found: "
+            + (", ".join(archives) or "none")
+            + "\nRun `python3 scripts/bundle_nightly.py --latest` (or give it a downloaded .7z)."
         )
 
     asi = bin_dir / "decky_optiscaler_live.asi"
@@ -114,7 +128,7 @@ def main():
     print(f"  {len(entries)} files, {total / 1e6:.1f} MB uncompressed -> {size / 1e6:.1f} MB zip")
 
     # The bundled release dominates the size; call it out so it is not a surprise.
-    payload = next((r for _, r in entries if r.parts[0] == "bin"), None)
+    payload = next((r for _, r in entries if r.parts[0] == "bin" and r.suffix == ".7z"), None)
     if payload:
         print(f"  includes {payload} (OptiScaler release)")
     return archive
