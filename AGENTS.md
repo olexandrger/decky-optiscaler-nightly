@@ -185,7 +185,8 @@ name differs from upstream's on purpose so the fork is a separate Decky plugin
 store: Decky has one store at a time, and that would cut every other plugin
 off from official updates.
 
-Release notes come from `scripts/release_notes.py`. Builds are compared by tag:
-fork commits since the previous `v*-nightly.*` tag, and OptiScaler commits between
-the nightly that tag bundled and this one. Run the workflow by hand with
+Release notes come from `scripts/release_notes.py`: what is inside (with a link
+to the OptiScaler nightly's own release, which lists its changes), this fork's
+commits since the previous `v*-nightly.*` tag, and the test counts. OptiScaler's
+commit list is deliberately not repeated in the notes. Run the workflow by hand with
 "Release the current build" to publish without waiting for a newer nightly.
