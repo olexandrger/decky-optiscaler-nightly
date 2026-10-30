@@ -118,4 +118,18 @@ struct msvc_deque_raw {
     size_t size;
 };
 
+// std::map<K, V, Cmp> on MSVC with an empty comparator and allocator: the
+// compressed pairs collapse to the tree's head pointer and element count.
+// Never walked -- it only has to occupy the right number of bytes.
+struct msvc_map_raw {
+    void* head;
+    size_t size;
+};
+
+// std::mutex on MSVC x64: _Mtx_internal_imp_t, sized by xthreads.h as
+// _Mtx_internal_imp_size = 80 with 8-byte alignment. Never touched.
+struct alignas(8) msvc_mutex_raw {
+    unsigned char storage[80];
+};
+
 } // namespace optimirror

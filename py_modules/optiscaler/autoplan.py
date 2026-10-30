@@ -37,6 +37,8 @@ USER_OWNED = {
     ("Upscalers", "Dx11Upscaler"),
     ("Upscalers", "VulkanUpscaler"),
     ("FSR", "Fsr4Update"),
+    ("FSR", "Fsr4GpuSupport"),
+    ("FSR", "Fsr4Model"),
     ("FSR", "UpscalerIndex"),
     ("FSR", "FGIndex"),
     ("FrameGen", "Enabled"),

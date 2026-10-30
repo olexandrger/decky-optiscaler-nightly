@@ -42,7 +42,7 @@ BACKEND_CODES = (
     "xess", "xess_12",
     "fsr21", "fsr21_12",
     "fsr22", "fsr22_12",
-    "fsr31", "fsr31_12",
+    "ffx", "ffx_12", "fsr31", "fsr31_12",
     "dlss", "dlssd",
 )
 
@@ -70,7 +70,7 @@ FFX_UPSCALER_MAX = FFX_FG_MAX
 
 # Only the FidelityFX backend has FSR versions to choose between; every other
 # upscaler ignores the index entirely.
-FFX_BACKENDS = ("fsr31", "fsr31_12")
+FFX_BACKENDS = ("ffx", "ffx_12", "fsr31", "fsr31_12")
 
 # Which INI key names the backend for each graphics API. The live switch can
 # only push one id into State::newBackend, and DX12 is what OptiScaler is

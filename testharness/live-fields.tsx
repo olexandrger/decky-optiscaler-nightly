@@ -311,8 +311,12 @@ const tile = (host: Element, label: string) => {
     (all(control(host, "FSR version"), '[data-opt-value="0"]')[0] as HTMLElement).click();
   });
   await settle(200);
-  check("asking for FSR 4 on a supported GPU switches the upgrade path on",
-    ini.FSR.Fsr4Update, "true");
+  // OptiScaler 10 removed Fsr4Update: FSR 4 runs wherever the GPU supports
+  // it, so the version pick is the whole write and no upgrade flag goes in.
+  check("asking for FSR 4 on a supported GPU picks the FSR 4 index",
+    ini.FSR.UpscalerIndex, "0");
+  check("and writes no upgrade flag OptiScaler 10 no longer has",
+    ini.FSR.Fsr4Update === "true", false);
   setGpu(DECK_GPU);
 
   console.log("=== the INT8 preset on that same Deck ===");
@@ -397,8 +401,10 @@ const tile = (host: Element, label: string) => {
     (all(control(host6, "FSR version"), '[data-opt-value="0"]')[0] as HTMLElement).click();
   });
   await settle(200);
-  check("and asking for FSR 4 writes the upgrade path instead",
-    ini.FSR.Fsr4Update, "true");
+  check("and asking for FSR 4 picks the FSR 4 index",
+    ini.FSR.UpscalerIndex, "0");
+  check("without an upgrade flag OptiScaler 10 no longer has",
+    ini.FSR.Fsr4Update === "true", false);
   await act(async () => root6.unmount());
   detail.install.fsr4.ffx.version = "4.1.1.2740";
   setIni({ FSR: { Fsr4Update: "false", UpscalerIndex: "0" } });
@@ -585,7 +591,8 @@ const tile = (host: Element, label: string) => {
   panel = await open();
   check("and still agrees once the write lands",
     selected(panel.node, "Override upscaler with"), "fsr4");
-  check("the file has it", ini.Upscalers.Dx12Upscaler, "fsr31");
+  // OptiScaler 10's name for the FidelityFX backend.
+  check("the file has it", ini.Upscalers.Dx12Upscaler, "ffx");
 
   console.log("=== the FFX FG control on a game with one generator ===");
   FFX_VERSIONS.length = 0;

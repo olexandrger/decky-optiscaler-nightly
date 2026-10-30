@@ -1,9 +1,47 @@
 # Changelog
 
 Newest first. Each release ships `Decky OptiScaler.zip` for Decky Loader's
-*Install from URL* (Developer mode), and bundles **OptiScaler 0.9.4**.
+*Install from URL* (Developer mode), and bundles **OptiScaler 0.9.4**
+(the nightly fork bundles an OptiScaler nightly; see its entries).
 
 ## [Unreleased]
+
+## [0.0.7-nightly.20261030] - 2026-10-30 (nightly fork)
+
+Bundles the **OptiScaler 10.0.0-pre1 nightly** (`nightly-20261030`, master
+`e7e3872d`) instead of 0.9.4. Unofficial build; see "Nightly fork" in the README.
+
+### Changed
+
+- Payload is OptiScaler 10's dependency set, flattened next to the proxy:
+  `amd_fidelityfx_loader_{dx12,vk}`, the `_vk` upscaler and frame generation
+  DLLs, and `D3D12_OptiScaler/`. OptiScaler 10 falls back to the game folder when
+  there is no `OptiScaler/` subfolder, so install, verify, FSR 4 build swaps and
+  uninstall keep working as before.
+- Upgrading a game from a 0.9.x install removes what 10.0 no longer ships
+  (`fakenvapi.dll/.ini` — now built into OptiScaler — `amd_fidelityfx_dx12.dll`,
+  `amd_fidelityfx_vk.dll`, `D3D12_Optiscaler/`) and puts back anything of the
+  game's those had displaced.
+- Bundled FidelityFX upscaler is FSR 4.1.2; the community 4.1.1b Steam Deck build
+  still installs over it.
+- FSR presets write OptiScaler 10's keys: backend `ffx` / `ffx_12` (was `fsr31` /
+  `fsr31_12`, still recognised when reading), `Fsr4GpuSupport=2` for the Steam
+  Deck INT8 route (was `Fsr4ForceEnableInt8=true`). `Fsr4Update` no longer exists
+  and is no longer written.
+- Advanced settings are regenerated from 10.0's `OptiScaler.ini` (352 options,
+  37 sections). The schema generator now reads 10.0's comment shapes: a note
+  after the "Default (auto)" line, and upscalers that may also name a custom folder.
+- `scripts/bundle_nightly.py` bundles any nightly (`--latest` downloads the
+  newest) and rewrites every pinned value; `.github/workflows/nightly.yml`
+  runs it daily.
+
+### Removed
+
+- **Live in-game control is unavailable in this build.** The ASI mirrors
+  OptiScaler's `State`, which 10.0 rewrote (the upscaler switch is now an enum,
+  the FG flags and FSR version lists moved). The ASI is not shipped, so the panel
+  reports live control unavailable; settings apply on the next launch, and the
+  OptiScaler overlay (Insert) still changes them in game.
 
 ## [0.0.7] - 2026-09-18
 

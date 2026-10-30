@@ -155,8 +155,12 @@ class DeckFsr4Tests(unittest.TestCase):
         self.assertTrue(self.enable()['ok'])
         config = asyncio.run(self.service.read_config(str(self.target)))
         self.assertEqual(config['fsr4_build'], '4.1.1b')
-        self.assertEqual(config['values']['FSR']['Fsr4ForceEnableInt8'], 'true')
-        self.assertEqual(config['values']['FSR']['Fsr4Update'], 'auto')
+        # OptiScaler 10: Fsr4GpuSupport=2 (INT8) replaced Fsr4ForceEnableInt8,
+        # and the ffx backend ids replaced fsr31/fsr31_12.
+        self.assertEqual(config['values']['FSR']['Fsr4GpuSupport'], '2')
+        self.assertNotIn('Fsr4ForceEnableInt8', config['values']['FSR'])
+        self.assertEqual(config['values']['Upscalers']['Dx12Upscaler'], 'ffx')
+        self.assertEqual(config['values']['Upscalers']['Dx11Upscaler'], 'ffx_12')
         self.assertEqual(config['values']['FSR']['UpscalerIndex'], '0')
         self.assertEqual(config['values']['FrameGen']['FGOutput'], 'fsr3')
         self.assertTrue(installer.verify_install(self.target, self.payload)['complete'])

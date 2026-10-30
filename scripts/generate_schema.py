@@ -135,8 +135,38 @@ def find_numeric_choices(comments):
     return None
 
 
+# OptiScaler 10 lets Dx12Upscaler/VulkanUpscaler name a folder under 'custom'
+# as well as a built-in backend, and says so on a line of its own -- sometimes
+# after the "- Default (auto) is" spec, sometimes between the backend list and
+# a bare "Default (auto) is ..." line. Neither shape is a value spec.
+CUSTOM_FOLDER_RE = re.compile(r"^or the name of a folder\b", re.I)
+
+
 def infer(key, comments):
     """Infer {type, options, min, max, default} for a key from its comments."""
+    asides = [c for c in comments if CUSTOM_FOLDER_RE.match(c.strip())]
+    if asides:
+        comments = [c for c in comments if c not in asides]
+        # A spec line that only states the default borrows the value list from
+        # the line above it.
+        if len(comments) >= 2:
+            value_only, default_only = split_spec(comments[-1])
+            if default_only and not value_only.strip():
+                comments = comments[:-2] + [comments[-2].rstrip(" -") + " - " + comments[-1].strip()]
+        info, keep = infer(key, comments)
+        return info, keep + asides
+
+    # The spec is the line that states the default. 0.9.x always put it last;
+    # 10.x sometimes adds a note after it (UpscalerIndex: "Custom upscalers use
+    # UpscalerIndex in a section named after their folder"), which would
+    # otherwise be read as the spec and lose the default. Move such trailing
+    # notes in front of the spec so they still reach the description.
+    stated = [i for i, c in enumerate(comments) if DEFAULT_RE.search(c)]
+    # Keycodes keep their 0.9.x handling (the UI shows the key, not a default).
+    if key not in KEYCODE_KEYS and stated and stated[-1] != len(comments) - 1:
+        i = stated[-1]
+        comments = comments[:i] + comments[i + 1:] + [comments[i]]
+
     spec = comments[-1] if comments else ""
     value_part, default_part = split_spec(spec)
     low = value_part.lower().strip()

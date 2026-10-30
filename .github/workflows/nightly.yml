@@ -1,0 +1,90 @@
+name: Bundle OptiScaler nightly
+
+# optiscaler/OptiScaler-nightly publishes at 04:00 UTC; run after it. Each run
+# bundles the newest nightly if it is not the one already in bin/, runs the
+# same checks as build.yml, commits the result to this branch and publishes a
+# prerelease with the plugin zip. A nightly that breaks the checks is not
+# released -- the run fails and the previous build stays current.
+on:
+  schedule:
+    - cron: "37 5 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: nightly
+  cancel-in-progress: false
+
+jobs:
+  bundle:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: pnpm/action-setup@v6
+        with:
+          version: 10
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+
+      - name: Install tools
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y -qq p7zip-full
+          pnpm install --frozen-lockfile
+
+      - name: Bundle the newest nightly
+        id: bundle
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set +e
+          python3 scripts/bundle_nightly.py --latest --if-newer
+          code=$?
+          set -e
+          if [ "$code" = 3 ]; then echo "fresh=false" >> "$GITHUB_OUTPUT"; exit 0; fi
+          [ "$code" = 0 ] || exit "$code"
+          echo "fresh=true" >> "$GITHUB_OUTPUT"
+          python3 scripts/generate_schema.py
+          echo "version=$(node -p 'require("./package.json").version')" >> "$GITHUB_OUTPUT"
+
+      - name: Typecheck, build and test
+        if: steps.bundle.outputs.fresh == 'true'
+        run: |
+          npx tsc --noEmit
+          pnpm build
+          python3 scripts/test_fsr4.py
+          python3 scripts/selftest.py
+          set -o pipefail
+          HARNESS=run.tsx node testharness/build-and-run.mjs 2>&1 | tee harness.log
+          grep -q "React errors/warnings: 0" harness.log
+          HARNESS=all-options.tsx node testharness/build-and-run.mjs 2>&1 | tee all-options.log
+          grep -q "real React errors: 0" all-options.log
+          HARNESS=live-fields.tsx node testharness/build-and-run.mjs
+
+      - name: Package
+        if: steps.bundle.outputs.fresh == 'true'
+        run: python3 scripts/package.py
+
+      - name: Commit and release
+        if: steps.bundle.outputs.fresh == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ steps.bundle.outputs.version }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A bin defaults py_modules src package.json
+          git commit -m "Bundle OptiScaler nightly ($VERSION)"
+          git push
+          gh release create "v$VERSION" "out/Decky OptiScaler.zip" \
+            --prerelease --title "Decky OptiScaler $VERSION" \
+            --notes "Bundles the OptiScaler nightly of the same date from optiscaler/OptiScaler-nightly. Live in-game control is unavailable in nightly builds."

@@ -1,8 +1,8 @@
 """Shared constants for the Decky OptiScaler plugin."""
 
-OPTISCALER_VERSION = "0.9.4"
-PAYLOAD_ARCHIVE = "OptiScaler-0.9.4.7z"
-PAYLOAD_SHA256 = "575cb4df866116093df75af607e37fd70e10f5163e0f23fd5c804142e80ef0ad"
+OPTISCALER_VERSION = "10.0.0-pre1-20261030"
+PAYLOAD_ARCHIVE = "OptiScaler-10.0.0-pre1-20261030.7z"
+PAYLOAD_SHA256 = "840b93fe0bcbfad2ee1fd9dc9568d56d4d50bd73f555f60cd48784cae9a2ad9a"
 
 INI_NAME = "OptiScaler.ini"
 LOG_NAME = "OptiScaler.log"
@@ -129,19 +129,35 @@ DEFAULT_PROXY = "dxgi.dll"
 
 # Support libraries copied next to the proxy dll.
 PAYLOAD_FILES = [
-    "amd_fidelityfx_dx12.dll",
     "amd_fidelityfx_framegeneration_dx12.dll",
+    "amd_fidelityfx_framegeneration_vk.dll",
+    "amd_fidelityfx_loader_dx12.dll",
+    "amd_fidelityfx_loader_vk.dll",
     "amd_fidelityfx_upscaler_dx12.dll",
-    "amd_fidelityfx_vk.dll",
+    "amd_fidelityfx_upscaler_vk.dll",
     "dlssg_to_fsr3_amd_is_better.dll",
-    "fakenvapi.dll",
-    "fakenvapi.ini",
     "libxell.dll",
     "libxess.dll",
     "libxess_dx11.dll",
     "libxess_fg.dll",
 ]
-PAYLOAD_DIRS = ["D3D12_Optiscaler", "Licenses"]
+PAYLOAD_DIRS = [
+    "D3D12_OptiScaler",
+    "Licenses",
+]
+
+# Directories an earlier bundle shipped (0.9.x spelled D3D12_Optiscaler).
+RETIRED_PAYLOAD_DIRS = [
+    "D3D12_Optiscaler",
+]
+
+# Shipped by an earlier bundle, not by this one. An install that owns them removes them on upgrade.
+RETIRED_PAYLOAD_FILES = [
+    "amd_fidelityfx_dx12.dll",
+    "amd_fidelityfx_vk.dll",
+    "fakenvapi.dll",
+    "fakenvapi.ini",
+]
 
 # Extra files OptiScaler or its helpers create at runtime; removed on uninstall.
 RUNTIME_ARTIFACTS = [
@@ -195,6 +211,14 @@ FSR4_SUPPORT_FILES = ["amdxcffx64.dll", "amdxc64.dll"]
 # OptiScaler's own menu asks for before it will offer the FSR 3.X/4 entry off
 # the back of Fsr4ForceEnableInt8 (menu_common.cpp).
 FFX_UPSCALER_DLL = "amd_fidelityfx_upscaler_dx12.dll"
+# [FSR] Fsr4GpuSupport, OptiScaler 10+: 0 none, 1 FP8, 2 INT8, 3 INT8-2, 4 INT8 Lite.
+# INT8 is what 0.9.x's Fsr4ForceEnableInt8=true became; the plugin's Steam
+# Deck route (community 4.1.1b DLL through vkd3d-proton) is that model.
+FSR4_INT8_SUPPORT = "2"
+FSR4_INT8_SUPPORT_VALUES = ("2", "3", "4")
+# The FidelityFX backend ids. 10.0 renamed fsr31/fsr31_12 to ffx/ffx_12 and
+# still reads the old spellings, so both count when matching an ini.
+FFX_BACKEND_IDS = ("ffx", "ffx_12", "fsr31", "fsr31_12")
 FSR4_MIN_SDK_VERSION = (4, 0, 2, 0)
 FSR4_INT8_MIN_SDK_VERSION = (4, 1, 1, 0)
 
@@ -217,9 +241,9 @@ FSR4_BUNDLED_BUILD_ID = "bundled"
 #: The released SDK build, identified by hash like any other. Not downloadable:
 #: it is already in bin/ and is what "reinstall" and "restore" put back.
 FSR4_BUNDLED_FILE_SHA256 = (
-    "d0dcccc74a43c44ba435b7a369b456e0970d8a4464e4bd683119b374f2c9fb46"
+    "aad4fccccb29084a655f9a4f9f613bd22c8c03fb4a0f8840148cc6543b4ccace"
 )
-FSR4_BUNDLED_FILE_BYTES = 28761864
+FSR4_BUNDLED_FILE_BYTES = 57664272
 FSR4_BUILDS = [
     {
         "id": "4.1.1b",

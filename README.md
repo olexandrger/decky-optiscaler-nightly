@@ -18,6 +18,29 @@ OptiScaler v0.9.4 is bundled, so installing works offline and every game gets th
 > [here](https://github.com/danielcamilo1/decky-optiscaler/issues), not to the OptiScaler
 > maintainers.
 
+## Nightly fork
+
+This branch bundles an **OptiScaler nightly** from
+[optiscaler/OptiScaler-nightly](https://github.com/optiscaler/OptiScaler-nightly/releases)
+in place of the 0.9.4 release — currently **10.0.0-pre1 (2026-10-30)**. It
+installs over the regular plugin (same name, same settings and per-game records).
+
+- **No live in-game control.** The live-control ASI targets 0.9.4's memory
+  layout and is not shipped; change settings in the panel (they apply on the next
+  launch) or in OptiScaler's own overlay.
+- FSR presets write 10.0's keys (`ffx` backend, `Fsr4GpuSupport`); the Steam
+  Deck FSR 4.1.1b route is unchanged for you.
+- Nightlies are untested builds. If a game misbehaves, go back to the release
+  plugin; uninstall from either restores the game's files.
+
+To bundle a newer nightly yourself:
+
+```
+python3 scripts/bundle_nightly.py --latest      # or a downloaded .7z
+python3 scripts/generate_schema.py
+pnpm build && python3 scripts/package.py
+```
+
 ## What it does
 
 - **Finds your games and the folder to install into.** Steam libraries from

@@ -191,9 +191,9 @@ async def run():
         check("multiplier labelled 2X/3X/4X",
               multiplier.get("optionLabels") == {"1": "2X", "2": "3X", "3": "4X"})
         dx12 = by_id[("Upscalers", "Dx12Upscaler")]
-        check("fsr31 documented as also serving FSR4",
-              "FSR4" in (dx12.get("optionLabels") or {}).get("fsr31", ""),
-              (dx12.get("optionLabels") or {}).get("fsr31"))
+        check("ffx documented as also serving FSR 4",
+              "4.x" in (dx12.get("optionLabels") or {}).get("ffx", ""),
+              (dx12.get("optionLabels") or {}).get("ffx"))
 
         print("\nInstall / uninstall round trip")
         target = Path(detail["target"])
@@ -347,13 +347,14 @@ async def run():
 
         print("\nConfiguration")
         config = await service.read_config(str(target))
-        check("ini parsed", config["ok"] and len(config["values"]) == 34, len(config["values"]))
+        # 37 sections in OptiScaler 10's ini (34 in 0.9.4).
+        check("ini parsed", config["ok"] and len(config["values"]) == 37, len(config["values"]))
         before = (target / "OptiScaler.ini").read_text(encoding="utf-8")
 
         write = await service.write_config(str(target), [
             {"section": "FrameGen", "key": "Enabled", "value": "true"},
             {"section": "FrameGen", "key": "FGInput", "value": "fsrfg"},
-            {"section": "Upscalers", "key": "Dx12Upscaler", "value": "fsr31"},
+            {"section": "Upscalers", "key": "Dx12Upscaler", "value": "ffx"},
             {"section": "FrameGen", "key": "FGOutput", "value": "NOT_A_VALUE"},
             {"section": "Sharpness", "key": "Sharpness", "value": "9.9"},
         ])
@@ -367,7 +368,7 @@ async def run():
         values = after_ini.to_dict()
         check("values persisted",
               values["FrameGen"]["Enabled"] == "true"
-              and values["Upscalers"]["Dx12Upscaler"] == "fsr31")
+              and values["Upscalers"]["Dx12Upscaler"] == "ffx")
         after = (target / "OptiScaler.ini").read_text(encoding="utf-8")
         check("every comment preserved",
               before.count(";") == after.count(";"),
@@ -810,7 +811,7 @@ def check_live_diagnostics():
         check("the explicit switch sends just the backend command",
               sent["ok"] and body[1] == "backend fsr31", body)
         check("the explicit switch refuses an unknown id",
-              not live.switch_backend(str(target), "ffx")["ok"])
+              not live.switch_backend(str(target), "fsr99")["ok"])
     finally:
         shutil.rmtree(root, ignore_errors=True)
 
@@ -1617,8 +1618,10 @@ def check_version_pin():
               not absent, absent[:5])
 
     # 0.9.4-specific: the upscaler ids are strings, not the enum master uses.
-    check("the vendored build stores upscalers as strings",
-          "CustomOptional<std::string, SoftDefault> Dx12Upscaler" in config_h)
+    # Only the live-control ASI depends on that.
+    if LIVE_ASI_SHIPPED:
+        check("the vendored build stores upscalers as strings",
+              "CustomOptional<std::string, SoftDefault> Dx12Upscaler" in config_h)
 
 
 def check_optipatcher():
@@ -2643,24 +2646,26 @@ def check_option_validation():
     # Everything else keeps the closed-set treatment: these lists are the
     # backends OptiScaler has, not a snapshot of one runtime's answer.
     dx12 = SCHEMA[("Upscalers", "Dx12Upscaler")]
-    check("a real backend id is accepted", valid(dx12, "fsr31"))
-    check("an id OptiScaler does not have is not", not valid(dx12, "fsr31_12"))
+    check("a real backend id is accepted", valid(dx12, "ffx"))
+    check("an id OptiScaler does not have is not", not valid(dx12, "ffx_12"))
 
     # Basic mode's presets all have to survive the writer, or picking one would
     # half-apply: some keys written, others silently dropped.
     from optiscaler.schema import option as schema_option
     presets = {
-        "fsr4": [("Upscalers", "Dx12Upscaler", "fsr31"), ("Upscalers", "Dx11Upscaler", "fsr31_12"),
-                 ("Upscalers", "VulkanUpscaler", "fsr31_12"), ("FSR", "Fsr4Update", "true"),
-                 ("FSR", "UpscalerIndex", "0"), ("FSR", "Fsr4ForceEnableInt8", "false")],
-        "fsr4-int8": [("Upscalers", "Dx12Upscaler", "fsr31"),
-                      ("Upscalers", "Dx11Upscaler", "fsr31_12"),
-                      ("Upscalers", "VulkanUpscaler", "fsr31_12"),
-                      ("FSR", "Fsr4Update", "auto"), ("FSR", "Fsr4ForceEnableInt8", "true"),
-                      ("FSR", "UpscalerIndex", "0")],
-        "fsr31": [("Upscalers", "Dx12Upscaler", "fsr31"), ("Upscalers", "Dx11Upscaler", "fsr31"),
-                  ("Upscalers", "VulkanUpscaler", "fsr31"), ("FSR", "Fsr4Update", "false"),
-                  ("FSR", "UpscalerIndex", "1"), ("FSR", "Fsr4ForceEnableInt8", "false")],
+        # Mirrors src/config/basic.ts for OptiScaler 10: "ffx" backend ids and
+        # Fsr4GpuSupport in place of Fsr4Update / Fsr4ForceEnableInt8.
+        "fsr4": [("Upscalers", "Dx12Upscaler", "ffx"), ("Upscalers", "Dx11Upscaler", "ffx_12"),
+                 ("Upscalers", "VulkanUpscaler", "ffx_12"),
+                 ("FSR", "UpscalerIndex", "0"), ("FSR", "Fsr4GpuSupport", "auto")],
+        "fsr4-int8": [("Upscalers", "Dx12Upscaler", "ffx"),
+                      ("Upscalers", "Dx11Upscaler", "ffx_12"),
+                      ("Upscalers", "VulkanUpscaler", "ffx_12"),
+                      ("FSR", "Fsr4GpuSupport", "2"), ("FSR", "UpscalerIndex", "0"),
+                      ("FSR", "Fsr4Preset", "auto")],
+        "fsr31": [("Upscalers", "Dx12Upscaler", "ffx"), ("Upscalers", "Dx11Upscaler", "fsr31"),
+                  ("Upscalers", "VulkanUpscaler", "ffx"),
+                  ("FSR", "UpscalerIndex", "1"), ("FSR", "Fsr4GpuSupport", "auto")],
         "xess": [("Upscalers", "Dx12Upscaler", "xess"), ("Upscalers", "Dx11Upscaler", "xess_12"),
                  ("Upscalers", "VulkanUpscaler", "xess")],
     }
@@ -2670,10 +2675,26 @@ def check_option_validation():
         check(f"every key the {name} preset writes is accepted", not bad, bad)
 
 
+# The live-control ASI mirrors OptiScaler's Config and State in memory. It is
+# written against 0.9.4; OptiScaler 10 rewrote State (newBackend became an
+# Upscaler enum, the FG flag run and the FFX version lists moved), so a build
+# bundling 10.x ships without the ASI and live control reports itself
+# unavailable. The suites below test that mirror and its protocol, and only
+# mean something when the ASI is actually in bin/.
+LIVE_ASI_SHIPPED = (ROOT / "bin" / "decky_optiscaler_live.asi").is_file()
+
+
+def skipped(name):
+    print(f"\n{name}\n  skipped: no live-control ASI in bin/ (not ported to OptiScaler 10)")
+
+
 def main():
     logging.basicConfig(level=logging.ERROR)
     asyncio.run(run())
-    check_live_control()
+    if LIVE_ASI_SHIPPED:
+        check_live_control()
+    else:
+        skipped("Live in-game control")
     check_live_diagnostics()
     check_remembered_choices()
     check_launch_record()
@@ -2689,9 +2710,12 @@ def main():
     check_wiki_tls()
     check_version_pin()
     check_optipatcher()
-    check_asi_wide_formats()
-    check_asi_backend_layout()
-    check_asi_state_layout()
+    if LIVE_ASI_SHIPPED:
+        check_asi_wide_formats()
+        check_asi_backend_layout()
+        check_asi_state_layout()
+    else:
+        skipped("ASI wide format strings / backend map layout / State layout")
     check_auto_plan()
     check_reframework()
     check_prose_is_not_a_specification()

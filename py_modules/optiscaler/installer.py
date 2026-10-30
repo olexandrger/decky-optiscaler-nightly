@@ -19,6 +19,7 @@ from .constants import (
     OPTIPATCHER_NAME,
     BACKUP_DIR,
     FFX_UPSCALER_DLL,
+    FSR4_INT8_SUPPORT,
     FSR4_MIN_SDK_VERSION,
     DEFAULT_PROXY,
     FSR4_SOURCE_HINTS,
@@ -32,6 +33,8 @@ from .constants import (
     PAYLOAD_FILES,
     PROXY_FILENAMES,
     REFRAMEWORK_DLL,
+    RETIRED_PAYLOAD_DIRS,
+    RETIRED_PAYLOAD_FILES,
     RUNTIME_ARTIFACTS,
 )
 
@@ -347,9 +350,12 @@ def _replace_fsr4(target, source, recorded, enable_int8=False):
                     raise FileNotFoundError("OptiScaler.ini not found")
                 ini = IniFile(staging / INI_NAME)
                 changes = {
-                    "Upscalers": {"Dx12Upscaler": "fsr31", "Dx11Upscaler": "fsr31_12",
-                                  "VulkanUpscaler": "fsr31_12"},
-                    "FSR": {"Fsr4Update": "auto", "Fsr4ForceEnableInt8": "true",
+                    # OptiScaler 10 names the FidelityFX backend "ffx" and
+                    # replaced Fsr4ForceEnableInt8 with Fsr4GpuSupport, where
+                    # 2 = INT8 is what the old flag mapped to (IdentifyGpu.cpp).
+                    "Upscalers": {"Dx12Upscaler": "ffx", "Dx11Upscaler": "ffx_12",
+                                  "VulkanUpscaler": "ffx_12"},
+                    "FSR": {"Fsr4GpuSupport": FSR4_INT8_SUPPORT,
                             "UpscalerIndex": "0", "Fsr4Preset": "auto"},
                 }
                 for section, values in changes.items():
@@ -586,6 +592,31 @@ def install(target_dir, payload_root, filename=DEFAULT_PROXY, preserve_ini=True,
 
     place(source_dll, filename)
 
+    # Files and folders an earlier bundle installed that this one no longer
+    # ships (OptiScaler 10 folded fakenvapi in and replaced amd_fidelityfx_dx12/
+    # _vk with the loader DLLs). They are ours only if the previous manifest
+    # says so; anything they displaced from the game goes back.
+    for name in RETIRED_PAYLOAD_FILES:
+        if name not in old_files:
+            continue
+        (target / name).unlink(missing_ok=True)
+        if backups.pop(name, None):
+            stashed = backup_dir(target) / name
+            if stashed.is_file():
+                shutil.move(str(stashed), str(target / name))
+        if logger:
+            logger.info("removed retired payload file %s", name)
+    for name in RETIRED_PAYLOAD_DIRS:
+        if name not in old_dirs:
+            continue
+        shutil.rmtree(target / name, ignore_errors=True)
+        if backups.pop(name, None):
+            stashed = backup_dir(target) / name
+            if stashed.is_dir():
+                shutil.move(str(stashed), str(target / name))
+        if logger:
+            logger.info("removed retired payload dir %s/", name)
+
     ini_path = target / INI_NAME
     if not (preserve_ini and ini_path.is_file()):
         shutil.copy2(payload / INI_NAME, ini_path)
@@ -723,12 +754,12 @@ def uninstall(target_dir, remove_ini=True, logger=None):
             if path.is_file() and _looks_like_optiscaler(path):
                 path.unlink()
                 removed.append(name)
-        for name in PAYLOAD_FILES + FSR4_SUPPORT_FILES:
+        for name in PAYLOAD_FILES + RETIRED_PAYLOAD_FILES + FSR4_SUPPORT_FILES:
             path = target / name
             if path.is_file():
                 path.unlink()
                 removed.append(name)
-        for name in PAYLOAD_DIRS + ["DlssOverrides"]:
+        for name in PAYLOAD_DIRS + RETIRED_PAYLOAD_DIRS + ["DlssOverrides"]:
             path = target / name
             if path.is_dir():
                 shutil.rmtree(path, ignore_errors=True)

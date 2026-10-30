@@ -960,7 +960,7 @@ class OptiScalerService:
             # running game: the overlay's own switch writes State::newBackend
             # and leaves Config alone until OptiScaler has rebuilt the feature,
             # and writing Config first can make the switch a no-op.
-            key = {"fsr31_12": "Dx11Upscaler"}.get(code, "Dx12Upscaler")
+            key = {"fsr31_12": "Dx11Upscaler", "ffx_12": "Dx11Upscaler"}.get(code, "Dx12Upscaler")
             await self.write_config(target_dir, [
                 {"section": "Upscalers", "key": key, "value": code},
             ], push_live=False)

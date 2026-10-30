@@ -52,6 +52,11 @@ ENUM_UNDERLYING = {
     "FGNvngxReplacement": "uint32_t",
     "FpsOverlay": "uint32_t",
     "FpsOverlayPos": "uint32_t",
+    # Added in OptiScaler 10.0.0 (Config.h / OptiTypes.h).
+    "FpsOverlayFpsRow": "uint32_t",
+    "FpsOverlayShadow": "uint32_t",
+    "FSR4Model": "uint8_t",
+    "ReprojectionFill": "uint32_t",
 }
 
 # Non-CustomOptional members that still take up space in the object.
@@ -86,6 +91,7 @@ def class_body(text, name):
 def split_declarations(body):
     """Split a class body into statements, ignoring ; inside braces/parens/strings."""
     out, buf, depth, i = [], [], 0, 0
+    fn_body = False
     while i < len(body):
         ch = body[i]
         if ch in "\"'":
@@ -97,10 +103,27 @@ def split_declarations(body):
             i += 1
             continue
         if ch in "{([<":
+            if ch == "{" and depth == 0:
+                # Remember what precedes a top-level brace: a ")" (optionally
+                # followed by const/noexcept/override) means an inline function
+                # body, which has no terminating ";" of its own.
+                head = "".join(buf).rstrip()
+                head = re.sub(r"(\s+(const|noexcept|override|final))+$", "", head)
+                fn_body = head.endswith(")")
             if ch != "<":
                 depth += 1
         elif ch in "})]":
             depth -= 1
+            if ch == "}" and depth == 0 and fn_body:
+                # OptiScaler 10 defines small accessors inside class Config,
+                # e.g. FfxUpscalerIndexFor(). They hold no data; end the
+                # statement here so the next member is parsed on its own.
+                buf.append(ch)
+                out.append("".join(buf).strip())
+                buf = []
+                fn_body = False
+                i += 1
+                continue
         if ch == ";" and depth == 0:
             out.append("".join(buf).strip())
             buf = []
@@ -138,6 +161,11 @@ def parse_members(header_text):
         if paren != -1 and (equals == -1 or paren < equals) and not decl.startswith("CustomOptional"):
             skipped.append(decl)
             continue
+        # Inline member functions that return a CustomOptional, e.g.
+        #   CustomOptional<int>& FfxUpscalerIndexFor(const std::string& custom) { ... }
+        if re.match(r"^CustomOptional\s*<[^>]*>\s*[&*]?\s*[A-Za-z_]\w*\s*\(", decl):
+            skipped.append(decl)
+            continue
 
         match = OPTIONAL_RE.match(decl)
         if match:
@@ -151,6 +179,17 @@ def parse_members(header_text):
             members.append(
                 {"name": match.group("name"), "kind": kind, "mirror": mirror,
                  "optional": True, "inner": inner}
+            )
+            continue
+
+        # OptiScaler 10's per-game FFX upscaler index table and its lock, at
+        # the end of the class. Templates nest too deeply for the plain regex.
+        special = re.match(r"^std::(?P<kind>map|mutex)\b.*?\s(?P<name>[A-Za-z_]\w*)$", decl)
+        if special:
+            mirror = "msvc_map_raw" if special.group("kind") == "map" else "msvc_mutex_raw"
+            members.append(
+                {"name": special.group("name"), "kind": "std::" + special.group("kind"),
+                 "mirror": mirror, "optional": False, "inner": "std::" + special.group("kind")}
             )
             continue
 
