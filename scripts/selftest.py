@@ -299,19 +299,23 @@ async def run():
         print("\nFSR 4 upscaler builds")
         from optiscaler import fsr4build  # noqa: E402
 
+        # Registered and retired community builds share one table shape; the
+        # registry is empty while the bundled 4.1.2 carries the Deck's models.
+        table = [*fsr4build.FSR4_BUILDS, *fsr4build.RETIRED_FSR4_BUILDS]
         check("every build pins a 64-character hash for the file it installs",
-              all(len(b["file_sha256"]) == 64 for b in fsr4build.builds()))
+              all(len(b["file_sha256"]) == 64 for b in [*fsr4build.builds(), *table]))
         check("and one for the archive it arrives in",
               all(len(source["archive_sha256"]) == 64
-                  for b in fsr4build.FSR4_BUILDS for source in b["sources"]))
+                  for b in table for source in b["sources"]))
         check("every build names the one file these packages hold",
-              all(b["file"] == installer.FFX_UPSCALER_DLL for b in fsr4build.builds()))
+              all(b["file"] == installer.FFX_UPSCALER_DLL for b in [*fsr4build.builds(), *table]))
         check("every build names the release to fetch it from",
               all(source.get("repo") and source.get("tag") and source.get("asset")
-                  for b in fsr4build.FSR4_BUILDS for source in b["sources"]))
+                  for b in table for source in b["sources"]))
         check("and no two builds install the same file",
-              len({b["file_sha256"] for b in fsr4build.FSR4_BUILDS})
-              == len(fsr4build.FSR4_BUILDS))
+              len({b["file_sha256"] for b in table}) == len(table))
+        check("4.1.1b is retired: recognised, no longer offered",
+              fsr4build.retired("4.1.1b") and fsr4build.find("4.1.1b") is None)
         check("which setting reaches FSR 4 follows the version, not the GPU",
               fsr4build.reaches_fsr4_by([4, 1, 1, 2740]) == "int8"
               and fsr4build.reaches_fsr4_by([4, 0, 2, 0]) == "upgrade")
@@ -323,8 +327,8 @@ async def run():
 
         # Install one from a hand-made "download": the same call the service
         # makes once `fetch` has verified a real one.
-        fake_build = dict(fsr4build.FSR4_BUILDS[0], file_sha256="0" * 64)
-        fake = root / "fake-4.1.1b.dll"
+        fake_build = dict(fsr4build.RETIRED_FSR4_BUILDS[0], id="community", file_sha256="0" * 64)
+        fake = root / "fake-community.dll"
         fake.write_bytes(b"NOT A REAL FSR4 DLL" * 1024)
         fake_build["file_sha256"] = hashlib.sha256(fake.read_bytes()).hexdigest()
         installed = installer.install_fsr4_build(str(target), fake, fake_build, None)
@@ -2757,11 +2761,12 @@ def check_option_validation():
         "fsr4": [("Upscalers", "Dx12Upscaler", "ffx"), ("Upscalers", "Dx11Upscaler", "ffx_12"),
                  ("Upscalers", "VulkanUpscaler", "ffx_12"),
                  ("FSR", "UpscalerIndex", "0"), ("FSR", "Fsr4GpuSupport", "auto")],
-        "fsr4-int8": [("Upscalers", "Dx12Upscaler", "ffx"),
-                      ("Upscalers", "Dx11Upscaler", "ffx_12"),
-                      ("Upscalers", "VulkanUpscaler", "ffx_12"),
-                      ("FSR", "Fsr4GpuSupport", "2"), ("FSR", "UpscalerIndex", "0"),
-                      ("FSR", "Fsr4Preset", "auto")],
+        "fsr4-lite": [("Upscalers", "Dx12Upscaler", "ffx"), ("Upscalers", "Dx11Upscaler", "ffx_12"),
+                      ("Upscalers", "VulkanUpscaler", "ffx_12"), ("FSR", "Fsr4GpuSupport", "4"),
+                      ("FSR", "Fsr4Model", "3"), ("FSR", "UpscalerIndex", "0"), ("FSR", "Fsr4Preset", "auto")],
+        "fsr4-rdna2": [("Upscalers", "Dx12Upscaler", "ffx"), ("Upscalers", "Dx11Upscaler", "ffx_12"),
+                       ("Upscalers", "VulkanUpscaler", "ffx_12"), ("FSR", "Fsr4GpuSupport", "3"),
+                       ("FSR", "Fsr4Model", "2"), ("FSR", "UpscalerIndex", "0"), ("FSR", "Fsr4Preset", "auto")],
         "fsr31": [("Upscalers", "Dx12Upscaler", "ffx"), ("Upscalers", "Dx11Upscaler", "fsr31"),
                   ("Upscalers", "VulkanUpscaler", "ffx"),
                   ("FSR", "UpscalerIndex", "1"), ("FSR", "Fsr4GpuSupport", "auto")],

@@ -11,6 +11,7 @@ from . import payload, wiki
 from .constants import (
     FFX_UPSCALER_DLL,
     FSR4_BUILDS,
+    RETIRED_FSR4_BUILDS,
     FSR4_BUNDLED_BUILD_ID,
     FSR4_BUNDLED_FILE_SHA256,
     FSR4_BUNDLED_FILE_BYTES,
@@ -45,6 +46,11 @@ def find(build_id):
         if build["id"] == build_id:
             return build
     return None
+
+
+def retired(build_id):
+    """Whether `build_id` is a build this plugin used to install but no longer does."""
+    return any(build["id"] == build_id for build in RETIRED_FSR4_BUILDS)
 
 
 def cached_path(cache_dir, build):
@@ -89,7 +95,10 @@ def identify(path):
     except OSError:
         return None
 
-    candidates = [b for b in builds() if b["file_bytes"] == size]
+    # Retired builds are still recognised, so a folder holding one is reported
+    # by name ("4.1.1b, retired") rather than as an unknown DLL.
+    known = [*builds(), *({**b, "retired": True} for b in RETIRED_FSR4_BUILDS)]
+    candidates = [b for b in known if b["file_bytes"] == size]
     actual = digest(path) if candidates else None
     found = next((b for b in candidates if b["file_sha256"] == actual), None)
     if found is None:

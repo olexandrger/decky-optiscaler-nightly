@@ -76,7 +76,7 @@ export interface FfxUpscalerInfo {
  * `known` is false for a file that hashes to nothing this plugin pins: it is
  * still reported — with its hash — rather than being passed off as the one the
  * release carries. Which build it is cannot be read from a version number,
- * because the modelled 4.1.1b reports exactly what the released SDK reports. */
+ * because the retired community 4.1.1b reports exactly what the released SDK reports. */
 export interface Fsr4Build {
   known: boolean;
   id: string | null;

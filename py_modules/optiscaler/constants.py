@@ -211,11 +211,6 @@ FSR4_SUPPORT_FILES = ["amdxcffx64.dll", "amdxc64.dll"]
 # OptiScaler's own menu asks for before it will offer the FSR 3.X/4 entry off
 # the back of Fsr4ForceEnableInt8 (menu_common.cpp).
 FFX_UPSCALER_DLL = "amd_fidelityfx_upscaler_dx12.dll"
-# [FSR] Fsr4GpuSupport, OptiScaler 10+: 0 none, 1 FP8, 2 INT8, 3 INT8-2, 4 INT8 Lite.
-# INT8 is what 0.9.x's Fsr4ForceEnableInt8=true became; the plugin's Steam
-# Deck route (community 4.1.1b DLL through vkd3d-proton) is that model.
-FSR4_INT8_SUPPORT = "2"
-FSR4_INT8_SUPPORT_VALUES = ("2", "3", "4")
 # The FidelityFX backend ids. 10.0 renamed fsr31/fsr31_12 to ffx/ffx_12 and
 # still reads the old spellings, so both count when matching an ini.
 FFX_BACKEND_IDS = ("ffx", "ffx_12", "fsr31", "fsr31_12")
@@ -244,7 +239,16 @@ FSR4_BUNDLED_FILE_SHA256 = (
     "aad4fccccb29084a655f9a4f9f613bd22c8c03fb4a0f8840148cc6543b4ccace"
 )
 FSR4_BUNDLED_FILE_BYTES = 57664272
-FSR4_BUILDS = [
+# Community upscaler builds the plugin can download and verify. Empty since
+# the nightly fork: OptiScaler 10 bundles FidelityFX 4.1.2, which carries AMD's
+# own RDNA 2 INT8 and INT8 Lite models (see FSR4_DECK_MODELS), so the community
+# 4.1.1b RDNA 2 build is legacy. The download machinery stays for any future
+# entry.
+FSR4_BUILDS = []
+
+# Builds this plugin used to install. Still recognised by hash so a game folder
+# that has one is reported by name, and reinstalling puts the bundled DLL back.
+RETIRED_FSR4_BUILDS = [
     {
         "id": "4.1.1b",
         "label": "4.1.1b (INT8, RDNA 2 ghosting fix)",
@@ -270,6 +274,20 @@ FSR4_BUILDS = [
     },
 
 ]
+
+# The Steam Deck presets: models inside the bundled FidelityFX 4.1.2 upscaler,
+# selected through [FSR] Fsr4GpuSupport (0 none, 1 FP8, 2 INT8, 3 INT8-2,
+# 4 INT8 Lite) and Fsr4Model (0 FP8, 1 INT8, 2 INT8 RDNA2, 3 INT8 Lite).
+# OptiScaler 10 detects the Deck's Van Gogh APU as INT8 Lite, mirroring AMD's
+# driver (IdentifyGpu.cpp); Fsr4GpuSupport is still written explicitly so the
+# preset does not depend on asic detection working under Proton.
+FSR4_DECK_MODELS = {
+    "lite": {"label": "FSR 4 Lite", "Fsr4GpuSupport": "4", "Fsr4Model": "3"},
+    "rdna2": {"label": "FSR 4 RDNA2", "Fsr4GpuSupport": "3", "Fsr4Model": "2"},
+    # Applied with a downloaded community build (FSR4_BUILDS), not offered in
+    # the UI: the INT8 model those builds carry.
+    "int8": {"label": "FSR 4 INT8", "Fsr4GpuSupport": "2", "Fsr4Model": "1"},
+}
 
 
 WIKI_RAW_BASE = "https://raw.githubusercontent.com/wiki/optiscaler/OptiScaler"

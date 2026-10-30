@@ -105,6 +105,42 @@ function upscalerPreset(
   };
 }
 
+/** Steam Deck preset id -> the model name the backend's set_fsr4_build takes. */
+export const DECK_FSR4_PRESETS: Record<string, string> = {
+  "fsr4-lite": "lite",
+  "fsr4-rdna2": "rdna2",
+};
+
+export function isDeckFsr4Preset(id: string | null | undefined): boolean {
+  return Boolean(id) && String(id) in DECK_FSR4_PRESETS;
+}
+
+/**
+ * A Steam Deck FSR 4 preset: FidelityFX backend, FSR 4, and one model of the
+ * bundled upscaler. `model` is [FSR] Fsr4Model (2 INT8 RDNA2, 3 INT8 Lite) and
+ * `support` the Fsr4GpuSupport that allows it (3 INT8-2, 4 INT8 Lite).
+ */
+function deckPreset(id: string, label: string, description: string, model: string, support: string): Preset {
+  return {
+    id,
+    label,
+    description,
+    changes: [
+      change("Upscalers", "Dx12Upscaler", "ffx"),
+      change("Upscalers", "Dx11Upscaler", "ffx_12"),
+      change("Upscalers", "VulkanUpscaler", "ffx_12"),
+      change("FSR", "Fsr4GpuSupport", support),
+      change("FSR", "Fsr4Model", model),
+      change("FSR", "UpscalerIndex", "0"),
+      change("FSR", "Fsr4Preset", AUTO),
+    ],
+    matches: (values) =>
+      sameBackend(get(values, "Upscalers", "Dx12Upscaler"), "ffx") &&
+      get(values, "FSR", "Fsr4Model") === model &&
+      get(values, "FSR", "UpscalerIndex") === "0",
+  };
+}
+
 export const UPSCALER_PRESETS: Preset[] = [
   {
     id: "auto",
@@ -115,32 +151,28 @@ export const UPSCALER_PRESETS: Preset[] = [
       change("Upscalers", "Dx11Upscaler", AUTO),
       change("Upscalers", "VulkanUpscaler", AUTO),
       change("FSR", "Fsr4GpuSupport", AUTO),
+      change("FSR", "Fsr4Model", AUTO),
       change("FSR", "UpscalerIndex", AUTO),
     ],
     matches: (values) => isAuto(get(values, "Upscalers", "Dx12Upscaler")),
   },
-  {
-    // installer._replace_fsr4 owns the atomic DLL/settings write. This list
-    // documents the preset for matching/validation; onEnableFsr4 applies it.
-    id: "fsr4-int8",
-    label: "FSR 4.1.1b — Steam Deck",
-    description: "Downloads the community RDNA2 ghosting fix and enables INT8 upscaling. Close the game first.",
-    changes: [
-      change("Upscalers", "Dx12Upscaler", "ffx"),
-      change("Upscalers", "Dx11Upscaler", "ffx_12"),
-      change("Upscalers", "VulkanUpscaler", "ffx_12"),
-      // The INT8 override is the route that keeps FSR 4 on an RDNA 2 part, and
-      // it is what this preset is. 0.9.x spelled it Fsr4ForceEnableInt8=true;
-      // OptiScaler 10 reads that for compatibility and maps it to exactly this.
-      change("FSR", "Fsr4GpuSupport", FSR4_INT8_SUPPORT),
-      change("FSR", "UpscalerIndex", "0"),
-      change("FSR", "Fsr4Preset", AUTO),
-    ],
-    matches: (values) =>
-      sameBackend(get(values, "Upscalers", "Dx12Upscaler"), "ffx") &&
-      forcesInt8(values) &&
-      get(values, "FSR", "UpscalerIndex") === "0",
-  },
+  // The Steam Deck presets. Both run the FidelityFX 4.1.2 upscaler bundled with
+  // OptiScaler 10 and pick one of its models; installer.enable_fsr4_deck owns
+  // the atomic DLL/settings write (it also puts the bundled DLL back over a
+  // community build), and onEnableFsr4 applies it. These lists document the
+  // presets for matching and validation.
+  deckPreset(
+    "fsr4-lite",
+    "FSR 4 Lite — Steam Deck",
+    "AMD's INT8 Lite model, the one AMD assigns to the Deck's APU: lightest FSR 4. Close the game first.",
+    "3", "4"
+  ),
+  deckPreset(
+    "fsr4-rdna2",
+    "FSR 4 RDNA2 — Steam Deck",
+    "AMD's INT8 model for RDNA 2: better image than Lite, costs more GPU time on the Deck. Close the game first.",
+    "2", "3"
+  ),
   upscalerPreset(
     "fsr4",
     "FSR 3.X/4",

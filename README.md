@@ -42,8 +42,9 @@ installs over the regular plugin (same name, same settings and per-game records)
 - **No live in-game control.** The live-control ASI targets 0.9.4's memory
   layout and is not shipped; change settings in the panel (they apply on the next
   launch) or in OptiScaler's own overlay.
-- FSR presets write 10.0's keys (`ffx` backend, `Fsr4GpuSupport`); the Steam
-  Deck FSR 4.1.1b route is unchanged for you.
+- FSR presets write 10.0's keys (`ffx` backend, `Fsr4GpuSupport`, `Fsr4Model`).
+- On the Steam Deck, **FSR 4 Lite** and **FSR 4 RDNA2** replace the community
+  4.1.1b download: both are AMD models inside the bundled FidelityFX 4.1.2.
 - Nightlies are untested builds. If a game misbehaves, go back to the release
   plugin; uninstall from either restores the game's files.
 
@@ -87,10 +88,11 @@ pnpm build && python3 scripts/package.py
   you all 288 settings across 34 sections, generated from the comments in `OptiScaler.ini` so
   they match the shipped build. Edits keep every comment in the file, and names are the
   overlay's own.
-- **FSR 4.1.1b on Steam Deck.** Close the game, then choose **FSR 4.1.1b — Steam Deck**
-  in Basic settings. One selection downloads the community RDNA2 ghosting fix and enables
-  INT8 upscaling. Frame generation stays separate. See [Steam Deck FSR 4](docs/steam-deck-fsr4.md)
-  for verification, rollback, and limitations.
+- **FSR 4 on Steam Deck.** Close the game, then choose **FSR 4 Lite — Steam Deck** (AMD's
+  INT8 Lite model, the one it assigns to the Deck's APU) or **FSR 4 RDNA2 — Steam Deck**
+  (AMD's RDNA 2 INT8 model: better image, more GPU time) in Basic settings. Both run the
+  FidelityFX 4.1.2 upscaler bundled with OptiScaler; nothing is downloaded. Frame
+  generation stays separate. See [Steam Deck FSR 4](docs/steam-deck-fsr4.md).
 - **Changes settings while you play.** A bundled ASI plugin applies frame generation, the
   FidelityFX FG version, the upscaler and the FSR version immediately from the Quick Access
   panel — next to what the game actually ended up running and, with frame generation on, both

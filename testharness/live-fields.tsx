@@ -102,11 +102,14 @@ Object.assign(fixtures, {
   find_running_game: () => ({ found: true, appid: "1091500", detail }),
   get_auto_plan: { recommendation: { matched: false }, plan: { available: false } },
   get_pref: { key: "auto", value: null },
-  set_fsr4_build: () => {
+  // The Steam Deck presets: the bundled upscaler with one of its models
+  // (installer.enable_fsr4_deck). The DLL stays the bundled one.
+  set_fsr4_build: (_dir: string, model: string) => {
     if (fsr4SetupFails) return { ok: false, error: "Close the game before changing the FSR 4 build." };
-    installedFsr4Build = "4.1.1b";
-    setIni({ Upscalers: { Dx12Upscaler: "fsr31" },
-      FSR: { Fsr4ForceEnableInt8: "true", Fsr4Update: "auto", UpscalerIndex: "0" } });
+    const [index, support] = model === "rdna2" ? ["2", "3"] : ["3", "4"];
+    installedFsr4Build = "bundled";
+    setIni({ Upscalers: { Dx12Upscaler: "ffx", Dx11Upscaler: "ffx_12", VulkanUpscaler: "ffx_12" },
+      FSR: { Fsr4GpuSupport: support, Fsr4Model: index, UpscalerIndex: "0" } });
     return { ok: true };
   },
   read_config: () => ({
@@ -319,15 +322,15 @@ const tile = (host: Element, label: string) => {
     ini.FSR.Fsr4Update === "true", false);
   setGpu(DECK_GPU);
 
-  console.log("=== the INT8 preset on that same Deck ===");
-  // The other half of the device story: the preset the INT8 route needs,
-  // recognised from the ini like any other, and the one control it must not
-  // offer. The backend switch is live and the override is not — it is read while
-  // the upscaler is created — so a switch under this preset would move the game
-  // now and leave the thing that was asked for waiting for a restart.
+  console.log("=== the Steam Deck presets on that same Deck ===");
+  // The other half of the device story: the presets the INT8 route needs,
+  // recognised from the ini like any other, and the one control they must not
+  // offer. The backend switch is live and the model is not — it is read while
+  // the upscaler is created — so a switch under these presets would move the
+  // game now and leave the thing that was asked for waiting for a restart.
   setIni({
-    Upscalers: { Dx12Upscaler: "fsr31" },
-    FSR: { Fsr4ForceEnableInt8: "true", Fsr4Update: "auto", UpscalerIndex: "0" },
+    Upscalers: { Dx12Upscaler: "ffx" },
+    FSR: { Fsr4GpuSupport: "4", Fsr4Model: "3", UpscalerIndex: "0" },
   });
   // A backend the game is not on, so a switch would otherwise be on offer.
   liveBackend = "xess";
@@ -343,32 +346,36 @@ const tile = (host: Element, label: string) => {
     );
   });
   await settle();
-  check("the INT8 preset is the one recognised",
-    selected(host5, "Override upscaler with"), "manual-int8");
-  check("and the panel says the override waits for a launch",
-    host5.textContent!.includes("Manual INT8 settings"), true);
+  check("the Lite preset is the one recognised",
+    selected(host5, "Override upscaler with"), "fsr4-lite");
+  check("both Deck presets are offered",
+    all(control(host5, "Override upscaler with"), '[data-opt-value="fsr4-rdna2"]').length, 1);
+  check("and the panel says the model waits for a launch",
+    host5.textContent!.includes("FSR 4 Lite ready for the next launch"), true);
   await act(async () => {
     (all(control(host5, "Override upscaler with"),
-      '[data-opt-value="fsr4-int8"]')[0] as HTMLElement).click();
+      '[data-opt-value="fsr4-rdna2"]')[0] as HTMLElement).click();
   });
   await settle(200);
-  check("picking it offers no switch that cannot apply it",
+  check("picking one offers no switch that cannot apply it",
     host5.textContent!.includes("Switch now"), false);
   check("a rejected setup reports the reason", host5.textContent!.includes("Close the game"), true);
-  check("a rejected setup does not claim the patched build", selected(host5, "Override upscaler with"), "manual-int8");
+  check("a rejected setup does not claim the new model", selected(host5, "Override upscaler with"), "fsr4-lite");
   const fgBeforeSetup = JSON.stringify(ini.FrameGen);
   fsr4SetupFails = false;
   await act(async () => {
-    (all(control(host5, "Override upscaler with"), '[data-opt-value="fsr4-int8"]')[0] as HTMLElement).click();
+    (all(control(host5, "Override upscaler with"), '[data-opt-value="fsr4-rdna2"]')[0] as HTMLElement).click();
   });
   await settle(200);
-  check("successful setup selects the patched preset", selected(host5, "Override upscaler with"), "fsr4-int8");
+  check("successful setup selects the RDNA2 preset", selected(host5, "Override upscaler with"), "fsr4-rdna2");
+  check("and writes its model", ini.FSR.Fsr4Model, "2");
   check("setup leaves frame generation alone", JSON.stringify(ini.FrameGen), fgBeforeSetup);
-  check("setup says next launch", host5.textContent!.includes("ready for the next launch"), true);
+  check("setup says next launch", host5.textContent!.includes("FSR 4 RDNA2 ready for the next launch"), true);
+  check("no community DLL warning is left", host5.textContent!.includes("anti-cheat"), false);
 
   await act(async () => root5.unmount());
-  liveBackend = "fsr31";
-  setIni({ FSR: { Fsr4ForceEnableInt8: "false", Fsr4Update: "false" } });
+  liveBackend = "ffx";
+  setIni({ FSR: { Fsr4GpuSupport: "auto", Fsr4Model: "auto" } });
   await settle(200);
 
   console.log("=== a 4.0.2 upscaler in the folder ===");
@@ -380,8 +387,8 @@ const tile = (host: Element, label: string) => {
   installedFsr4Build = "bundled";
   detail.install.fsr4.ffx.version = "4.0.2.0";
   setIni({
-    Upscalers: { Dx12Upscaler: "fsr31" },
-    FSR: { Fsr4ForceEnableInt8: "false", Fsr4Update: "false", UpscalerIndex: "1" },
+    Upscalers: { Dx12Upscaler: "ffx" },
+    FSR: { Fsr4GpuSupport: "auto", Fsr4Model: "auto", UpscalerIndex: "1" },
   });
   const host6 = document.createElement("div");
   document.body.appendChild(host6);
@@ -396,7 +403,7 @@ const tile = (host: Element, label: string) => {
   });
   await settle();
   check("the Deck preset can replace an older DLL",
-    all(control(host6, "Override upscaler with"), '[data-opt-value="fsr4-int8"]').length, 1);
+    all(control(host6, "Override upscaler with"), '[data-opt-value="fsr4-lite"]').length, 1);
   await act(async () => {
     (all(control(host6, "FSR version"), '[data-opt-value="0"]')[0] as HTMLElement).click();
   });

@@ -22,8 +22,12 @@ Bundles the **OptiScaler 10.0.0-pre1 nightly** (`nightly-20261030`, master
   (`fakenvapi.dll/.ini` — now built into OptiScaler — `amd_fidelityfx_dx12.dll`,
   `amd_fidelityfx_vk.dll`, `D3D12_Optiscaler/`) and puts back anything of the
   game's those had displaced.
-- Bundled FidelityFX upscaler is FSR 4.1.2; the community 4.1.1b Steam Deck build
-  still installs over it.
+- Bundled FidelityFX upscaler is FSR 4.1.2, which carries AMD's INT8 RDNA 2 and
+  INT8 Lite models.
+- **Steam Deck presets: FSR 4 Lite and FSR 4 RDNA2** replace "FSR 4.1.1b — Steam
+  Deck". Both keep the bundled upscaler and select a model (`Fsr4Model` 3 / 2,
+  `Fsr4GpuSupport` 4 / 3); Lite is the one AMD assigns to the Deck's Van Gogh APU.
+  Picking either puts the bundled DLL back over a community build.
 - FSR presets write OptiScaler 10's keys: backend `ffx` / `ffx_12` (was `fsr31` /
   `fsr31_12`, still recognised when reading), `Fsr4GpuSupport=2` for the Steam
   Deck INT8 route (was `Fsr4ForceEnableInt8=true`). `Fsr4Update` no longer exists
@@ -37,6 +41,10 @@ Bundles the **OptiScaler 10.0.0-pre1 nightly** (`nightly-20261030`, master
 
 ### Removed
 
+- **The community FSR 4.1.1b download.** Legacy now that 4.1.2 ships AMD's own
+  RDNA 2 model. A folder that still has it is recognised as "4.1.1b (retired)",
+  and reinstalling OptiScaler there puts the bundled upscaler back. The verified
+  download machinery remains for any future registered build.
 - **Live in-game control is unavailable in this build.** The ASI mirrors
   OptiScaler's `State`, which 10.0 rewrote (the upscaler switch is now an enum,
   the FG flags and FSR version lists moved). The ASI is not shipped, so the panel

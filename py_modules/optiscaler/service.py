@@ -7,6 +7,7 @@ from pathlib import Path
 
 from . import autoplan, fsr4build, installer, live, monitor, reframework, steam
 from .constants import (
+    FSR4_DECK_MODELS,
     DEFAULT_PROXY,
     INI_NAME,
     OPTIPATCHER_NAME,
@@ -452,7 +453,23 @@ class OptiScalerService:
         return await self._run(work)
 
     async def set_fsr4_build(self, target_dir, build_id):
-        """Enable the pinned community upscaler and INT8 settings together."""
+        """Enable a Steam Deck FSR 4 preset.
+
+        ``build_id`` is a model of the bundled upscaler ("lite", "rdna2"), or a
+        registered community build, which is downloaded, verified and installed
+        with its INT8 settings.
+        """
+        if build_id in FSR4_DECK_MODELS and build_id != "int8":
+            try:
+                payload_root = await self.ensure_payload()
+                async with self._mutation_lock:
+                    result = await self._run(
+                        installer.enable_fsr4_deck, target_dir, payload_root, build_id, self.log
+                    )
+                return {"ok": True, **result}
+            except Exception as exc:
+                self.log.exception("FSR 4 setup failed for %s", target_dir)
+                return {"ok": False, "error": str(exc)}
         try:
             build = fsr4build.find(build_id)
             if build is None:

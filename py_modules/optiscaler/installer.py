@@ -19,7 +19,7 @@ from .constants import (
     OPTIPATCHER_NAME,
     BACKUP_DIR,
     FFX_UPSCALER_DLL,
-    FSR4_INT8_SUPPORT,
+    FSR4_DECK_MODELS,
     FSR4_MIN_SDK_VERSION,
     DEFAULT_PROXY,
     FSR4_SOURCE_HINTS,
@@ -330,7 +330,19 @@ def atomic_copy(source, destination):
         Path(name).unlink(missing_ok=True)
 
 
-def _replace_fsr4(target, source, recorded, enable_int8=False):
+def deck_preset_changes(model):
+    """The ini a Steam Deck FSR 4 preset writes: FidelityFX backend, FSR 4, a model."""
+    spec = FSR4_DECK_MODELS[model]
+    return {
+        # OptiScaler 10 names the FidelityFX backend "ffx" (fsr31 before).
+        "Upscalers": {"Dx12Upscaler": "ffx", "Dx11Upscaler": "ffx_12",
+                      "VulkanUpscaler": "ffx_12"},
+        "FSR": {"Fsr4GpuSupport": spec["Fsr4GpuSupport"], "Fsr4Model": spec["Fsr4Model"],
+                "UpscalerIndex": "0", "Fsr4Preset": "auto"},
+    }
+
+
+def _replace_fsr4(target, source, recorded, deck_model=None):
     manifest = require_stopped_install(target)
     target = Path(target)
     if FFX_UPSCALER_DLL not in manifest.get("files", []):
@@ -345,19 +357,11 @@ def _replace_fsr4(target, source, recorded, enable_int8=False):
                 shutil.copy2(target / name, staging / name)
         try:
             atomic_copy(source, target / FFX_UPSCALER_DLL)
-            if enable_int8:
+            if deck_model:
                 if not existed[INI_NAME]:
                     raise FileNotFoundError("OptiScaler.ini not found")
                 ini = IniFile(staging / INI_NAME)
-                changes = {
-                    # OptiScaler 10 names the FidelityFX backend "ffx" and
-                    # replaced Fsr4ForceEnableInt8 with Fsr4GpuSupport, where
-                    # 2 = INT8 is what the old flag mapped to (IdentifyGpu.cpp).
-                    "Upscalers": {"Dx12Upscaler": "ffx", "Dx11Upscaler": "ffx_12",
-                                  "VulkanUpscaler": "ffx_12"},
-                    "FSR": {"Fsr4GpuSupport": FSR4_INT8_SUPPORT,
-                            "UpscalerIndex": "0", "Fsr4Preset": "auto"},
-                }
+                changes = deck_preset_changes(deck_model)
                 for section, values in changes.items():
                     for key, value in values.items():
                         meta = schema.option(section, key)
@@ -382,14 +386,31 @@ def _replace_fsr4(target, source, recorded, enable_int8=False):
 
 
 def install_fsr4_build(target_dir, dll_path, build, logger=None, enable_int8=False):
-    """Install a verified community DLL, optionally enabling the Deck preset."""
+    """Install a verified community DLL, optionally with its INT8 settings."""
     if fsr4build.digest(dll_path) != build["file_sha256"]:
         raise ValueError("FSR 4 DLL checksum mismatch")
     recorded = {"id": build["id"], "label": build["label"],
                 "file": FFX_UPSCALER_DLL, "sha256": build["file_sha256"],
                 "reaches_fsr4_by": build["reaches_fsr4_by"]}
-    _replace_fsr4(target_dir, dll_path, recorded, enable_int8)
+    _replace_fsr4(target_dir, dll_path, recorded, "int8" if enable_int8 else None)
     return {"path": str(target_dir), "file": FFX_UPSCALER_DLL, "build": recorded}
+
+
+def enable_fsr4_deck(target_dir, payload_root, model, logger=None):
+    """A Steam Deck FSR 4 preset: the bundled upscaler plus one of its models.
+
+    Puts the bundled DLL back first (replacing a community build if one is in
+    the folder), then writes the preset's settings, as one rollback-safe step.
+    """
+    if model not in FSR4_DECK_MODELS:
+        raise ValueError(f"Unknown Steam Deck FSR 4 model: {model}")
+    source = Path(payload_root) / FFX_UPSCALER_DLL
+    if fsr4build.digest(source) != fsr4build.BUNDLED_BUILD["file_sha256"]:
+        raise ValueError("Bundled FSR 4 DLL checksum mismatch")
+    _replace_fsr4(target_dir, source, {}, model)
+    return {"path": str(target_dir), "model": model,
+            "label": FSR4_DECK_MODELS[model]["label"],
+            "build": fsr4build.identify(Path(target_dir) / FFX_UPSCALER_DLL)}
 
 
 def restore_fsr4_build(target_dir, payload_root, logger=None):
@@ -549,6 +570,12 @@ def install(target_dir, payload_root, filename=DEFAULT_PROXY, preserve_ini=True,
     previous = detect(target)
     old_manifest = read_manifest(target) or {}
     selected_build = old_manifest.get("fsr4_build") or {}
+    if selected_build and fsr4build.retired(selected_build.get("id")):
+        # A build this plugin no longer installs (4.1.1b): reinstalling is the
+        # way back to the bundled upscaler, so let it through and forget it.
+        if logger:
+            logger.info("dropping retired FSR 4 build %s", selected_build.get("id"))
+        selected_build = {}
     if selected_build:
         build = fsr4build.find(selected_build.get("id"))
         if not build or not (target / FFX_UPSCALER_DLL).is_file() or fsr4build.digest(

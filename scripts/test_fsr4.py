@@ -1,5 +1,11 @@
 #!/usr/bin/env python3
-"""Offline integration tests for the Deck preset's DLL/settings lifecycle."""
+"""Offline integration tests for the Steam Deck FSR 4 presets' DLL/settings lifecycle.
+
+The presets select a model inside the bundled FidelityFX upscaler (INT8 Lite or
+INT8 RDNA2). Downloading a community build is still supported for registered
+builds, so that path is tested against a fixture build: the one community build
+the plugin used to ship, 4.1.1b, is retired.
+"""
 import asyncio
 import hashlib
 import logging
@@ -11,11 +17,16 @@ from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'py_modules'))
 from optiscaler import installer, fsr4build
-from optiscaler.constants import FFX_UPSCALER_DLL, INI_NAME, MANIFEST_NAME
+from optiscaler.constants import (FFX_UPSCALER_DLL, FSR4_DECK_MODELS, INI_NAME,
+                                  MANIFEST_NAME, RETIRED_FSR4_BUILDS)
 from optiscaler.inifile import IniFile
 from optiscaler.service import OptiScalerService
 
 ROOT = Path(__file__).resolve().parents[1]
+
+# A registered community build for the download/verify tests, shaped like the
+# 4.1.1b entry that used to ship (its sources and hashes are replaced per test).
+COMMUNITY = dict(RETIRED_FSR4_BUILDS[0], id='community', label='Community test build')
 
 
 class BuildFetchTests(unittest.TestCase):
@@ -25,7 +36,7 @@ class BuildFetchTests(unittest.TestCase):
         self.root = Path(self.temp.name)
         fsr4build._digests.clear()
         self.dll_bytes = b'verified community DLL'
-        self.build = dict(fsr4build.find('4.1.1b'),
+        self.build = dict(COMMUNITY,
                           file_bytes=len(self.dll_bytes),
                           file_sha256=hashlib.sha256(self.dll_bytes).hexdigest())
         self.build['sources'] = [dict(source, archive_sha256=hashlib.sha256(
@@ -136,7 +147,7 @@ class DeckFsr4Tests(unittest.TestCase):
         ini.save()
         self.dll = self.root/'community.dll'
         self.dll.write_bytes(b'test community DLL')
-        self.build = dict(fsr4build.find('4.1.1b'),
+        self.build = dict(COMMUNITY,
                           file_sha256=hashlib.sha256(self.dll.read_bytes()).hexdigest(),
                           file_bytes=self.dll.stat().st_size)
         mock = patch.object(fsr4build, 'FSR4_BUILDS', [self.build])
@@ -145,7 +156,7 @@ class DeckFsr4Tests(unittest.TestCase):
 
     def enable(self):
         with patch.object(fsr4build, 'fetch', return_value=self.dll):
-            return asyncio.run(self.service.set_fsr4_build(str(self.target), '4.1.1b'))
+            return asyncio.run(self.service.set_fsr4_build(str(self.target), 'community'))
 
     def snapshot(self):
         return {name: (self.target/name).read_bytes()
@@ -154,10 +165,11 @@ class DeckFsr4Tests(unittest.TestCase):
     def test_enable_verify_reinstall_restore_uninstall(self):
         self.assertTrue(self.enable()['ok'])
         config = asyncio.run(self.service.read_config(str(self.target)))
-        self.assertEqual(config['fsr4_build'], '4.1.1b')
+        self.assertEqual(config['fsr4_build'], 'community')
         # OptiScaler 10: Fsr4GpuSupport=2 (INT8) replaced Fsr4ForceEnableInt8,
         # and the ffx backend ids replaced fsr31/fsr31_12.
         self.assertEqual(config['values']['FSR']['Fsr4GpuSupport'], '2')
+        self.assertEqual(config['values']['FSR']['Fsr4Model'], '1')
         self.assertNotIn('Fsr4ForceEnableInt8', config['values']['FSR'])
         self.assertEqual(config['values']['Upscalers']['Dx12Upscaler'], 'ffx')
         self.assertEqual(config['values']['Upscalers']['Dx11Upscaler'], 'ffx_12')
@@ -166,7 +178,7 @@ class DeckFsr4Tests(unittest.TestCase):
         self.assertTrue(installer.verify_install(self.target, self.payload)['complete'])
         installer.install(self.target, self.payload)
         self.assertEqual((self.target/FFX_UPSCALER_DLL).read_bytes(), self.dll.read_bytes())
-        self.assertEqual(installer.read_manifest(self.target)['fsr4_build']['id'], '4.1.1b')
+        self.assertEqual(installer.read_manifest(self.target)['fsr4_build']['id'], 'community')
         installer.restore_fsr4_build(self.target, self.payload)
         self.assertEqual(fsr4build.identify(self.target/FFX_UPSCALER_DLL)['id'], 'bundled')
         self.assertTrue(installer.verify_install(self.target, self.payload)['complete'])
@@ -193,7 +205,7 @@ class DeckFsr4Tests(unittest.TestCase):
     def test_download_failure_preserves_settings_and_dll(self):
         before = self.snapshot()
         with patch.object(fsr4build, 'fetch', side_effect=ValueError('checksum mismatch')):
-            result = asyncio.run(self.service.set_fsr4_build(str(self.target), '4.1.1b'))
+            result = asyncio.run(self.service.set_fsr4_build(str(self.target), 'community'))
         self.assertFalse(result['ok'])
         self.assertEqual(before, self.snapshot())
 
@@ -212,7 +224,7 @@ class DeckFsr4Tests(unittest.TestCase):
         before = self.snapshot()
         with patch.object(installer.live, 'status', return_value={'attached': True}), \
                 patch.object(fsr4build, 'fetch') as fetch:
-            result = asyncio.run(self.service.set_fsr4_build(str(self.target), '4.1.1b'))
+            result = asyncio.run(self.service.set_fsr4_build(str(self.target), 'community'))
             self.assertFalse(result['ok'])
             fetch.assert_not_called()
         with patch.object(installer.live, 'status', side_effect=[{}, {'attached': True}]):
@@ -235,6 +247,109 @@ class DeckFsr4Tests(unittest.TestCase):
         with patch.object(installer, 'atomic_copy', side_effect=fail_once):
             self.assertFalse(self.enable()['ok'])
         self.assertEqual(before, self.snapshot())
+
+
+
+class DeckModelTests(unittest.TestCase):
+    """The Steam Deck presets: the bundled 4.1.2 upscaler and one of its models."""
+
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
+        self.root = Path(self.temp.name)
+        self.service = OptiScalerService(ROOT, self.root/'settings', self.root/'runtime',
+                                        self.root/'home', logging.getLogger('test'))
+        self.payload = asyncio.run(self.service.ensure_payload())
+        self.target = self.root/'game'
+        self.target.mkdir()
+        (self.target/FFX_UPSCALER_DLL).write_bytes(b'original game DLL')
+        installer.install(self.target, self.payload)
+        ini = IniFile(self.target/INI_NAME)
+        ini.set('FrameGen', 'FGOutput', 'fsr3')
+        ini.save()
+
+    def enable(self, model):
+        return asyncio.run(self.service.set_fsr4_build(str(self.target), model))
+
+    def values(self):
+        return asyncio.run(self.service.read_config(str(self.target)))['values']
+
+    def snapshot(self):
+        return {name: (self.target/name).read_bytes()
+                for name in [FFX_UPSCALER_DLL, INI_NAME, MANIFEST_NAME]}
+
+    def test_the_bundled_upscaler_carries_both_models(self):
+        # Provider classes FidelityFX registers per model (FSR4Models.cpp).
+        data = (Path(self.payload)/FFX_UPSCALER_DLL).read_bytes()
+        self.assertIn(b'ffxProvider_FSR4Lite_Int8', data)
+        self.assertIn(b'ffxProvider_FSR4_Int8_Navi2', data)
+
+    def test_lite_and_rdna2_write_their_model_and_keep_the_bundled_dll(self):
+        for model, support, index in (('lite', '4', '3'), ('rdna2', '3', '2')):
+            with self.subTest(model=model):
+                result = self.enable(model)
+                self.assertTrue(result['ok'], result)
+                values = self.values()
+                self.assertEqual(values['Upscalers']['Dx12Upscaler'], 'ffx')
+                self.assertEqual(values['Upscalers']['Dx11Upscaler'], 'ffx_12')
+                self.assertEqual(values['Upscalers']['VulkanUpscaler'], 'ffx_12')
+                self.assertEqual(values['FSR']['Fsr4GpuSupport'], support)
+                self.assertEqual(values['FSR']['Fsr4Model'], index)
+                self.assertEqual(values['FSR']['UpscalerIndex'], '0')
+                self.assertEqual(values['FrameGen']['FGOutput'], 'fsr3')
+                self.assertEqual(fsr4build.identify(self.target/FFX_UPSCALER_DLL)['id'], 'bundled')
+                self.assertFalse(installer.read_manifest(self.target)['fsr4_build'])
+                self.assertTrue(installer.verify_install(self.target, self.payload)['complete'])
+        installer.uninstall(self.target)
+        self.assertEqual((self.target/FFX_UPSCALER_DLL).read_bytes(), b'original game DLL')
+
+    def test_a_deck_preset_replaces_a_community_build(self):
+        dll = self.root/'community.dll'
+        dll.write_bytes(b'test community DLL')
+        build = dict(COMMUNITY, file_sha256=hashlib.sha256(dll.read_bytes()).hexdigest(),
+                     file_bytes=dll.stat().st_size)
+        with patch.object(fsr4build, 'FSR4_BUILDS', [build]):
+            installer.install_fsr4_build(self.target, dll, build, enable_int8=True)
+            self.assertEqual(installer.read_manifest(self.target)['fsr4_build']['id'], 'community')
+            self.assertTrue(self.enable('lite')['ok'])
+        self.assertEqual(fsr4build.identify(self.target/FFX_UPSCALER_DLL)['id'], 'bundled')
+        self.assertFalse(installer.read_manifest(self.target)['fsr4_build'])
+        self.assertEqual(self.values()['FSR']['Fsr4Model'], '3')
+
+    def test_retired_4_1_1b_is_recognised_and_reinstall_brings_back_the_bundled_dll(self):
+        retired = RETIRED_FSR4_BUILDS[0]
+        self.assertIsNone(fsr4build.find(retired['id']))
+        self.assertFalse(self.enable(retired['id'])['ok'])
+        # A folder the 0.0.7 plugin set up with 4.1.1b, as far as the manifest says.
+        manifest = installer.read_manifest(self.target)
+        manifest['fsr4_build'] = {'id': retired['id'], 'label': retired['label'],
+                                  'file': FFX_UPSCALER_DLL, 'sha256': retired['file_sha256']}
+        (self.target/MANIFEST_NAME).write_text(__import__('json').dumps(manifest))
+        (self.target/FFX_UPSCALER_DLL).write_bytes(b'stand-in for the 4.1.1b DLL')
+        installer.install(self.target, self.payload)
+        self.assertEqual(fsr4build.identify(self.target/FFX_UPSCALER_DLL)['id'], 'bundled')
+        self.assertFalse(installer.read_manifest(self.target)['fsr4_build'])
+        self.assertTrue(installer.verify_install(self.target, self.payload)['complete'])
+
+    def test_unknown_model_is_rejected_without_touching_the_folder(self):
+        before = self.snapshot()
+        self.assertFalse(self.enable('fp8')['ok'])
+        self.assertEqual(before, self.snapshot())
+
+    def test_running_game_is_rejected(self):
+        before = self.snapshot()
+        with patch.object(installer.live, 'status', return_value={'attached': True}):
+            self.assertFalse(self.enable('lite')['ok'])
+        self.assertEqual(before, self.snapshot())
+
+    def test_invalid_setting_rolls_back(self):
+        before = self.snapshot()
+        with patch.object(installer.schema, 'valid', return_value=False):
+            self.assertFalse(self.enable('rdna2')['ok'])
+        self.assertEqual(before, self.snapshot())
+
+    def test_every_offered_model_is_a_real_one(self):
+        self.assertEqual({k for k in FSR4_DECK_MODELS if k != 'int8'}, {'lite', 'rdna2'})
 
 
 if __name__ == '__main__':

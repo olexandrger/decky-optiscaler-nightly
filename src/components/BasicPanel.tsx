@@ -18,6 +18,8 @@ import {
   frameGenEnabled,
   isFfxBackend,
   needsForcedInt8,
+  DECK_FSR4_PRESETS,
+  isDeckFsr4Preset,
   runningBackend,
   supportsInt8Override,
   supportsMultiplier,
@@ -68,8 +70,10 @@ interface Props {
   auto?: boolean;
   onAutoChange?: (enabled: boolean) => void;
   onLiveChanged?: () => void;
+  /** Which upscaler build the folder holds; kept for callers, not read since 4.1.1b retired. */
   fsr4Build?: string | null;
-  onEnableFsr4?: () => Promise<void>;
+  /** Apply a Steam Deck FSR 4 preset; takes its model ("lite", "rdna2"). */
+  onEnableFsr4?: (model: string) => Promise<void>;
   onApply: (changes: OptionChange[]) => void;
 }
 
@@ -218,7 +222,6 @@ export function BasicPanel({
   onAutoChange,
   onLiveChanged,
   onApply,
-  fsr4Build,
   onEnableFsr4,
 }: Readonly<Props>) {
   // Which upscaler the user just picked, if it is not the one the game is
@@ -264,8 +267,9 @@ export function BasicPanel({
   // in it is the other way round: the upgrade path is what reaches FSR 4, and
   // the INT8 preset is the one that does nothing.
   const fsr4Selected = upscalerPreset?.id === "fsr4";
-  const int8Selected = upscalerPreset?.id === "fsr4-int8";
-  const int8Route = needsForcedInt8(gpu) && (fsr4Build === "4.1.1b" || supportsInt8Override(ffx));
+  // A Steam Deck preset (FSR 4 Lite / RDNA2) is what the ini holds.
+  const deckSelected = isDeckFsr4Preset(upscalerPreset?.id);
+  const int8Route = needsForcedInt8(gpu) && supportsInt8Override(ffx);
 
   // DLSS needs a real Nvidia GPU; offering it on a Deck is offering a setting
   // that can only fail. Kept visible when the ini already selects it, so the
@@ -282,14 +286,14 @@ export function BasicPanel({
         upscalerPreset?.id === "dlss" ||
         !gpu?.vendor ||
         gpu.vendor === "nvidia") &&
-      (preset.id !== "fsr4-int8" || needsForcedInt8(gpu) || int8Selected)
+      (!isDeckFsr4Preset(preset.id) || needsForcedInt8(gpu) || upscalerPreset?.id === preset.id)
   );
 
   const needsInt8 = fsr4Selected && int8Route;
   // An FSR 4 version picked while the FidelityFX backend is on something else.
   // The version is recorded, but nothing here makes it reachable, and the one
   // setting that would is the setting this device must not have written.
-  const ffxUpsNeedsInt8 = ffxUpscalerChanged && int8Route && !int8Selected;
+  const ffxUpsNeedsInt8 = ffxUpscalerChanged && int8Route && !deckSelected;
 
   // The FFX frame generator, which only the FSR FG output runs. When the game
   // is attached its own reported list wins; otherwise the shipped INI's.
@@ -336,7 +340,7 @@ export function BasicPanel({
   // the upscaler is created. Offering the switch under that preset would move
   // the backend now and leave the thing the user actually asked for waiting for
   // a restart, so that preset says so and this stays out of it.
-  const int8RestartOnly = int8Selected;
+  const int8RestartOnly = deckSelected;
   // Nothing to apply once the game is already on it, or if the choice cannot be
   // pushed at all — the plugin has to be attached with an upscaler registered.
   const canSwitchNow =
@@ -637,16 +641,16 @@ export function BasicPanel({
             // The Advanced page can set a backend no preset covers — fsr21, or
             // one of the dx11on12 variants. Showing "Auto" for those said the
             // opposite of what the file holds.
-            selected={int8Selected && fsr4Build !== "4.1.1b" ? "manual-int8" : upscalerPreset?.id ?? rawUpscaler}
-            describe={(code) => code === "manual-int8" ? "FSR 4 INT8 (manual)" : curatedLabel("Upscalers.Dx12Upscaler", code) ?? code}
+            selected={upscalerPreset?.id ?? rawUpscaler}
+            describe={(code) => curatedLabel("Upscalers.Dx12Upscaler", code) ?? code}
             onPick={(id) => {
               const preset = UPSCALER_PRESETS.find((p) => p.id === id);
               if (!preset) return;
               setFsr4Error(null);
-              if (preset.id === "fsr4-int8") {
+              if (isDeckFsr4Preset(preset.id)) {
                 if (!onEnableFsr4) return;
                 setInstallingFsr4(true);
-                void onEnableFsr4().then(() => setPicked(preset.id))
+                void onEnableFsr4(DECK_FSR4_PRESETS[preset.id]).then(() => setPicked(preset.id))
                   .catch((error) => setFsr4Error(String(error)))
                   .finally(() => setInstallingFsr4(false));
                 return;
@@ -657,15 +661,6 @@ export function BasicPanel({
             }}
           />
         </PanelSectionRow>
-
-        {upscalerChoices.some((preset) => preset.id === "fsr4-int8") ? (
-          <PanelSectionRow>
-            <div style={{ fontSize: "12px", color: "#b8bcbf", padding: "4px 0" }}>
-              The Steam Deck preset downloads a modified game DLL redistributed
-              by the community. Avoid using it in games with anti-cheat.
-            </div>
-          </PanelSectionRow>
-        ) : null}
 
         {/* The second half of the same question. "fsr31" is every FSR from
             2.3.4 to 4.1.1 and OptiScaler names it "FSR 3.X/4" for exactly that
@@ -752,23 +747,26 @@ export function BasicPanel({
 
         {installingFsr4 || fsr4Error ? (
           <PanelSectionRow>
-            <Notice tone={fsr4Error ? "error" : "info"} title={fsr4Error ? "FSR 4 setup failed" : "Setting up FSR 4.1.1b…"}>
-              {fsr4Error ?? "Downloading and enabling the Steam Deck upscaler."}
+            <Notice tone={fsr4Error ? "error" : "info"} title={fsr4Error ? "FSR 4 setup failed" : "Setting up FSR 4…"}>
+              {fsr4Error ?? "Putting the bundled upscaler in place and selecting the model."}
             </Notice>
           </PanelSectionRow>
         ) : null}
-        {int8Selected ? (
+        {deckSelected ? (
           <PanelSectionRow>
-            <Notice tone="info" title={fsr4Build === "4.1.1b" ? "FSR 4.1.1b ready for the next launch" : "Manual INT8 settings"}>
-              {fsr4Build === "4.1.1b"
-                ? "Experimental RDNA2 upscaling. Check for FSR4-I8 in the game's watermark. Frame generation is configured separately."
-                : "Select FSR 4.1.1b — Steam Deck to install the RDNA2 ghosting fix."}
+            <Notice tone="info" title={`${upscalerPreset?.label.replace(" — Steam Deck", "")} ready for the next launch`}>
+              {upscalerPreset?.id === "fsr4-lite"
+                ? "AMD's INT8 Lite model on the bundled FidelityFX 4.1.2 upscaler. "
+                : "AMD's INT8 RDNA 2 model on the bundled FidelityFX 4.1.2 upscaler. "}
+              The model can also be switched in OptiScaler's overlay while playing; its log
+              names the one in use. Frame generation is configured separately.
             </Notice>
           </PanelSectionRow>
         ) : needsInt8 || ffxUpsNeedsInt8 ? (
           <PanelSectionRow>
             <Notice tone="info" title="FSR 4 on Steam Deck">
-              Select FSR 4.1.1b — Steam Deck to install the RDNA2 build and enable INT8.
+              Select FSR 4 Lite — Steam Deck (lightest) or FSR 4 RDNA2 — Steam Deck (better
+              image) to run FSR 4 on this device.
             </Notice>
           </PanelSectionRow>
         ) : fsr4Selected && !compact ? (

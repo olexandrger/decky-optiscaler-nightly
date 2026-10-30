@@ -192,7 +192,9 @@ export function useConfig(targetDir: string | null, enabled: boolean, reloadKey?
     [queue]
   );
 
-  const enableFsr4 = useCallback(async () => {
+  // `model` is a Steam Deck preset's model of the bundled upscaler ("lite",
+  // "rdna2"); see DECK_FSR4_PRESETS.
+  const enableFsr4 = useCallback(async (model: string) => {
     if (!targetDir) throw new Error("Install OptiScaler first.");
     setSaving(true);
     try {
@@ -200,8 +202,8 @@ export function useConfig(targetDir: string | null, enabled: boolean, reloadKey?
       if (timer.current !== null) window.clearTimeout(timer.current);
       await flush();
       setSaving(true);
-      const result = await setFsr4Build(targetDir, "4.1.1b");
-      if (!result.ok) throw new Error(result.error ?? "Could not enable FSR 4.1.1b");
+      const result = await setFsr4Build(targetDir, model);
+      if (!result.ok) throw new Error(result.error ?? "Could not set up FSR 4");
       forgetWrites(targetDir);
       await load();
       setDirty(true);
