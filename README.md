@@ -39,9 +39,12 @@ This branch bundles an **OptiScaler nightly** from
 in place of the 0.9.4 release — currently **10.0.0-pre1 (2026-10-30)**. It
 installs over the regular plugin (same name, same settings and per-game records).
 
-- **No live in-game control.** The live-control ASI targets 0.9.4's memory
-  layout and is not shipped; change settings in the panel (they apply on the next
-  launch) or in OptiScaler's own overlay.
+- **No live in-game control from the panel.** The live-control ASI targets
+  0.9.4's memory layout and is not shipped. Panel edits apply when the game
+  restarts (the panel offers **Restart game to apply**). For live changes, the
+  Quick Access panel's **OptiScaler menu** button opens OptiScaler's own overlay:
+  it closes the Quick Access menu and presses the game's menu shortcut
+  (`[Menu] ShortcutKey`, Insert by default) on a virtual keyboard.
 - FSR presets write 10.0's keys (`ffx` backend, `Fsr4GpuSupport`, `Fsr4Model`).
 - On the Steam Deck, **FSR 4 Lite** and **FSR 4 RDNA2** replace the community
   4.1.1b download: both are AMD models inside the bundled FidelityFX 4.1.2.

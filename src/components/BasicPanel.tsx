@@ -394,6 +394,10 @@ export function BasicPanel({
    * are the ones worth reaching first, and a control that cannot act yet is not
    * one of them.
    */
+  // The compact panel sets restart-only controls apart from live ones; that
+  // split only means something when the game has the live-control plugin.
+  const splitRestart = Boolean(compact && live?.asi_installed);
+
   const methodControls = (
     <>
       {/* The method is offered in automatic mode too. The wiki's pair is the
@@ -540,7 +544,7 @@ export function BasicPanel({
           </PanelSectionRow>
         ) : null}
 
-        {compact ? null : methodControls}
+        {splitRestart ? null : methodControls}
 
         {/* Which FidelityFX frame generator the FSR FG output runs — the
             overlay's "FFX FG" combo and its "Change FG" button. Unlike the
@@ -780,9 +784,10 @@ export function BasicPanel({
         ) : null}
       </PanelSection>
 
-      {/* Last, and only in the Quick Access panel: everything above it takes
-          effect in the running game, and this does not. */}
-      {compact ? (
+      {/* Last, and only in the Quick Access panel with live control: everything
+          above it takes effect in the running game, and this does not. Without
+          live control nothing does, so there is nothing to set apart. */}
+      {splitRestart ? (
         <PanelSection title="Needs a restart">{methodControls}</PanelSection>
       ) : null}
     </>

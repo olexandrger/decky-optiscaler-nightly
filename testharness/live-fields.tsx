@@ -14,6 +14,7 @@ import React from "react";
 import { createRoot } from "react-dom/client";
 import { act } from "react";
 import { fixtures } from "@decky/api";
+import { Navigation } from "@decky/ui";
 import { GENERATED_OPTIONS } from "../src/config/generatedSchema";
 import { QuickPanel } from "../src/components/QuickPanel";
 import { forgetWrites } from "../src/config/writeRecord";
@@ -689,6 +690,48 @@ const tile = (host: Element, label: string) => {
   check("and the game's own name replaces it once it does",
         control(panel.node, "FSR version")?.getAttribute("data-shown"), "FSR 4.1.1 *");
   fixtures.get_live_status = promptly;
+  await act(async () => panel.root.unmount());
+
+  console.log("=== no live-control plugin: restart to apply, and the OptiScaler menu ===");
+  // The nightly build ships without the live-control ASI, so the panel's edits
+  // wait for a restart and OptiScaler's own menu is the live route.
+  const withAsi = fixtures.get_live_status;
+  fixtures.get_live_status = () => ({
+    asi_installed: false, asi_available: false, asi_current: null,
+    attached: false, ready: false, state: "not_installed",
+    load_enabled: false, loaded_by_optiscaler: false, error: null, seq: null,
+    can_switch_upscaler: false, can_change_fg: false, can_change_ffx_upscaler: false,
+    age: null, live_keys: [], fps: null, base_fps: null, total_fps: null,
+    fg_enabled: null, frames: null, backend_entries: null,
+    upscaler: { dx12: null, dx11: null, vulkan: null }, pending_backend: null,
+  });
+  const menuCalls: string[] = [];
+  fixtures.toggle_menu = (dir: string) => {
+    menuCalls.push(dir);
+    return { ok: true, vk: 45 };
+  };
+  let closedSideMenus = 0;
+  const realClose = Navigation.CloseSideMenus;
+  Navigation.CloseSideMenus = () => { closedSideMenus += 1; };
+  panel = await open();
+  const text = panel.node.textContent ?? "";
+  check("the panel says edits apply on restart",
+    text.includes("Changes made here apply when the game restarts."), true);
+  check("the status pill says restart, not that something is off",
+    text.includes("restart to apply") && !text.includes("live control off"), true);
+  check("nothing is set apart as restart-only, since everything is",
+    text.includes("Needs a restart"), false);
+  const menuButton = all(panel.node, '[data-mock="ButtonItem"]')
+    .find((b) => (b.textContent ?? "").includes("OptiScaler menu")) as HTMLElement | undefined;
+  check("there is an OptiScaler menu button", Boolean(menuButton), true);
+  await act(async () => { menuButton?.click(); });
+  check("pressing it closes the Quick Access menu first", closedSideMenus, 1);
+  check("and does not press the key while the menu is still open", menuCalls.length, 0);
+  await settle(600);
+  check("then presses the game's menu key", menuCalls.length, 1);
+  check("for this game's folder", menuCalls[0], detail.install.path);
+  Navigation.CloseSideMenus = realClose;
+  fixtures.get_live_status = withAsi;
   await act(async () => panel.root.unmount());
 
   const real = errors.filter((e) => !e.includes("not wrapped in act"));

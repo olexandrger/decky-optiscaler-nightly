@@ -19,6 +19,7 @@ from .constants import (
 )
 from .inifile import IniFile
 from .payload import Payload
+from . import keys
 from .schema import SCHEMA, valid as _valid
 from .settings import Settings
 from .sysinfo import gpu_info
@@ -815,6 +816,31 @@ class OptiScalerService:
 
             result["live"] = await self._run(push)
         return result
+
+    async def toggle_menu(self, target_dir):
+        """Open or close OptiScaler's own overlay in the running game.
+
+        Presses the game's [Menu] ShortcutKey (Insert unless changed) on a
+        virtual keyboard. The frontend closes the Quick Access menu first so
+        the key reaches the game rather than Steam's overlay.
+        """
+        try:
+            def shortcut():
+                ini_path = Path(target_dir) / INI_NAME
+                if not ini_path.is_file():
+                    return None
+                return IniFile(ini_path).get("Menu", "ShortcutKey")
+
+            vk = keys.parse_shortcut(await self._run(shortcut))
+            result = await self._run(keys.press, vk)
+            return {"ok": True, **result}
+        except Exception as exc:
+            self.log.warning("could not press the OptiScaler menu key: %s", exc)
+            return {"ok": False, "error": str(exc)}
+
+    def close(self):
+        """Release what the service holds open (the virtual keyboard)."""
+        keys.close()
 
     async def reset_config(self, target_dir):
         """Restore the stock OptiScaler.ini shipped with the bundled release."""

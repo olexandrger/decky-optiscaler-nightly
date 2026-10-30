@@ -1,4 +1,4 @@
-import { ButtonItem, PanelSection, PanelSectionRow } from "@decky/ui";
+import { ButtonItem, Navigation, PanelSection, PanelSectionRow } from "@decky/ui";
 import { toaster } from "@decky/api";
 import { useCallback, useEffect, useState } from "react";
 import { resolveGame } from "../shortcuts";
@@ -6,6 +6,7 @@ import { useAutoPlan } from "../hooks/useAutoPlan";
 import { useConfig } from "../hooks/useConfig";
 import { useLiveStatus } from "../hooks/useLiveStatus";
 import { restartGame } from "../hooks/useRunningGame";
+import { toggleMenu } from "../api";
 import type { Game, GameDetail, LiveStatus, RunningGame } from "../types";
 import { BasicPanel } from "./BasicPanel";
 import { GamesList } from "./GamesList";
@@ -195,6 +196,44 @@ function NowPlayingTab({
 
       {installed && detail ? (
         <>
+          {/* OptiScaler's own overlay is the one place settings change while the
+              game runs (the panel's live control is not available with the
+              bundled OptiScaler). It opens on a keyboard shortcut, so this
+              closes the Quick Access menu — otherwise the key would go to
+              Steam's overlay — and presses it on a virtual keyboard. */}
+          <PanelSection>
+            <PanelSectionRow>
+              <ButtonItem
+                layout="below"
+                description="Opens or closes OptiScaler's in-game menu, where changes apply immediately."
+                onClick={() => {
+                  const target = detail.install.path;
+                  Navigation.CloseSideMenus();
+                  // Give the menu time to close and the game time to take focus.
+                  window.setTimeout(() => {
+                    void toggleMenu(target).then((result) => {
+                      if (!result.ok) {
+                        toaster.toast({
+                          title: "Could not open the OptiScaler menu",
+                          body: result.error ?? "Press its shortcut key (Insert) instead.",
+                        });
+                      }
+                    });
+                  }, 450);
+                }}
+              >
+                OptiScaler menu
+              </ButtonItem>
+            </PanelSectionRow>
+            {live && !live.asi_installed ? (
+              <PanelSectionRow>
+                <Notice tone="info">
+                  Changes made here apply when the game restarts.
+                </Notice>
+              </PanelSectionRow>
+            ) : null}
+          </PanelSection>
+
           {/* A write the backend would not take reaches neither the file nor
               the running game, and this is the surface those changes are made
               from, so it has to say so rather than leave the control looking
@@ -286,6 +325,8 @@ function LivePill({ live }: Readonly<{ live: LiveStatus | null }>) {
     if (live.asi_current === false) return <Pill color="#5a4a20">live · outdated</Pill>;
     return <Pill color="#2f6b3f">live{live.can_switch_upscaler ? "" : " · fg only"}</Pill>;
   }
-  if (!live.asi_installed) return <Pill color="#5a4a20">live control off</Pill>;
+  // No live-control plugin in this game: panel edits wait for a restart, which
+  // is how this build is meant to work rather than a fault.
+  if (!live.asi_installed) return <Pill>restart to apply</Pill>;
   return <Pill color="#5a4a20">not connected</Pill>;
 }

@@ -39,6 +39,16 @@ Bundles the **OptiScaler 10.0.0-pre1 nightly** (`nightly-20261030`, master
   newest) and rewrites every pinned value; `.github/workflows/nightly.yml`
   runs it daily.
 
+### Added
+
+- **OptiScaler menu** button in the Quick Access panel while a game runs. It
+  closes the Quick Access menu and presses the game's `[Menu] ShortcutKey`
+  (Insert by default) on a uinput virtual keyboard, opening or closing
+  OptiScaler's own overlay, where changes apply immediately.
+- With no live-control plugin, the panel says edits apply when the game restarts
+  ("restart to apply") instead of "live control off", and no longer sets some
+  controls apart under "Needs a restart" when all of them are.
+
 ### Removed
 
 - **The community FSR 4.1.1b download.** Legacy now that 4.1.2 ships AMD's own

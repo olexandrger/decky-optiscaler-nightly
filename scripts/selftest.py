@@ -1727,6 +1727,72 @@ def check_bundled_payload_upgrade():
         shutil.rmtree(work, ignore_errors=True)
 
 
+def check_menu_key():
+    """The OptiScaler menu button: the right key, on a uinput keyboard, set up properly.
+
+    No /dev/uinput in CI, so the device is a recorder: every ioctl and every
+    event written is captured and compared with what the kernel expects.
+    """
+    import struct
+    from unittest import mock
+    from optiscaler import keys
+
+    print("\nOptiScaler menu key")
+    check("auto means Insert", keys.parse_shortcut("auto") == 0x2D)
+    check("hex and decimal shortcuts parse",
+          keys.parse_shortcut("0x24") == 0x24 and keys.parse_shortcut("45") == 0x2D)
+    check("junk falls back to Insert", keys.parse_shortcut("insert!") == 0x2D)
+    check("ioctl numbers match linux/uinput.h",
+          (keys.UI_DEV_CREATE, keys.UI_DEV_DESTROY, keys.UI_DEV_SETUP, keys.UI_SET_EVBIT,
+           keys.UI_SET_KEYBIT) == (0x5501, 0x5502, 0x405C5503, 0x40045564, 0x40045565))
+    check("input_event is 24 bytes", struct.calcsize(keys.INPUT_EVENT_FORMAT) == 24)
+
+    ioctls, writes = [], []
+    keys._fd = None
+    with mock.patch.object(keys.os, "open", return_value=99), \
+            mock.patch.object(keys.os, "write", side_effect=lambda fd, data: writes.append(data)), \
+            mock.patch.object(keys.os, "close"), \
+            mock.patch.object(keys.fcntl, "ioctl", side_effect=lambda fd, req, arg=0: ioctls.append((req, arg))), \
+            mock.patch.object(keys.time, "sleep"):
+        first = keys.press(0x2D)
+        keys.press(0x2D)
+        keys.close()
+    requests = [req for req, _ in ioctls]
+    check("the device is created once and destroyed on close",
+          requests.count(keys.UI_DEV_CREATE) == 1 and requests[-1] == keys.UI_DEV_DESTROY)
+    check("it is a keyboard that can press Insert",
+          (keys.UI_SET_EVBIT, keys.EV_KEY) in ioctls and (keys.UI_SET_KEYBIT, 110) in ioctls)
+    events = [struct.unpack(keys.INPUT_EVENT_FORMAT, w)[2:] for w in writes]
+    check("a press is down, sync, up, sync",
+          events[:4] == [(keys.EV_KEY, 110, 1), (0, 0, 0), (keys.EV_KEY, 110, 0), (0, 0, 0)], events[:4])
+    check("and the press reports the key", first == {"vk": 0x2D, "evdev": 110})
+
+    keys._fd = None
+    with mock.patch.object(keys.os, "open", side_effect=PermissionError(13, "denied")):
+        try:
+            keys.press(0x2D)
+            denied = None
+        except PermissionError as exc:
+            denied = str(exc)
+    check("no access to /dev/uinput is reported plainly", denied and "/dev/uinput" in denied, denied)
+
+    # The service reads the game's shortcut and passes it on.
+    root = Path(tempfile.mkdtemp(prefix="optiscaler-menukey-"))
+    try:
+        (root / INI_NAME).write_text("[Menu]\nShortcutKey=0x24\n", encoding="utf-8")
+        service = OptiScalerService(ROOT, root / "s", root / "r", root / "h", logging.getLogger("t"))
+        with mock.patch.object(keys, "press", return_value={"vk": 0x24, "evdev": 102}) as press:
+            result = asyncio.run(service.toggle_menu(str(root)))
+        check("the game's own shortcut is the one pressed",
+              result.get("ok") and press.call_args[0][0] == 0x24, result)
+        with mock.patch.object(keys, "press", side_effect=FileNotFoundError("no uinput")):
+            result = asyncio.run(service.toggle_menu(str(root)))
+        check("a failure comes back as an error, not an exception",
+              result == {"ok": False, "error": "no uinput"}, result)
+    finally:
+        shutil.rmtree(root, ignore_errors=True)
+
+
 def check_optipatcher():
     """OptiPatcher ships alongside and installs into the same plugin folder."""
     import tempfile
@@ -2814,6 +2880,7 @@ def main():
     check_wiki_tls()
     check_version_pin()
     check_bundled_payload_upgrade()
+    check_menu_key()
     check_optipatcher()
     if LIVE_ASI_SHIPPED:
         check_asi_wide_formats()

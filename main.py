@@ -30,9 +30,15 @@ class Plugin:
 
     async def _unload(self):
         decky.logger.info("Decky OptiScaler unloading")
+        if getattr(self, "service", None):
+            self.service.close()
 
     async def _uninstall(self):
         decky.logger.info("Decky OptiScaler uninstalled")
+
+    # -- OptiScaler's own overlay -----------------------------------------
+    async def toggle_menu(self, target_dir: str) -> dict:
+        return await self.service.toggle_menu(target_dir)
 
     # -- status ----------------------------------------------------------
     async def get_status(self) -> dict:

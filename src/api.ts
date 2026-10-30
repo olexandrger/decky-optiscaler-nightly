@@ -184,3 +184,8 @@ export const clearLog = callable<[targetDir: string], ActionResult>("clear_log")
 export const setLogging = callable<[targetDir: string, enabled: boolean], ActionResult>(
   "set_logging"
 );
+
+/** Press OptiScaler's menu key ([Menu] ShortcutKey) in the running game. */
+export const toggleMenu = callable<[targetDir: string], { ok: boolean; error?: string; vk?: number }>(
+  "toggle_menu"
+);
