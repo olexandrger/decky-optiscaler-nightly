@@ -158,9 +158,14 @@ def main():
     parser.add_argument("--latest", action="store_true", help=f"download the newest {NIGHTLY_REPO} build")
     parser.add_argument("--if-newer", action="store_true",
                         help="with --latest: exit 3 without changing anything if that build is already bundled")
+    parser.add_argument("--skip-released", action="store_true",
+                        help="with --if-newer: also exit 3 if a v*-nightly.<date>* tag already released "
+                             "that build (for runs that only release a new nightly)")
     args = parser.parse_args()
     if bool(args.archive) == args.latest:
         parser.error("give an archive path or --latest, not both")
+    if args.skip_released and not args.if_newer:
+        parser.error("--skip-released needs --if-newer")
 
     seven = archiver()
     with tempfile.TemporaryDirectory() as scratch:
@@ -176,11 +181,14 @@ def main():
                 sys.exit(3)
             # CI never commits the archive back, so main keeps an older one; a
             # release tag for this nightly's date means it was already built.
+            # Only a run with nothing else to release may stop here: a release
+            # of fork changes must still bundle this nightly, or it would ship
+            # main's older archive and downgrade OptiScaler.
             date = tag.rsplit("-", 1)[-1]
             # Tags carry a run number after the date (v0.0.7-nightly.<date>.<run>).
             released = subprocess.run(["git", "tag", "--list", f"v*-nightly.{date}*"], cwd=ROOT,
                                       capture_output=True, text=True).stdout.strip()
-            if released:
+            if released and args.skip_released:
                 print(f"{tag} is already released as {released.splitlines()[0]}")
                 sys.exit(3)
         archive = download_latest(scratch) if args.latest else Path(args.archive).resolve()

@@ -66,8 +66,23 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
+          # Fork changes count as much as a new nightly: release when main has
+          # commits the last release does not.
+          last=$(git tag --list 'v*-nightly.*' --sort=-creatordate | head -1)
+          changed=false
+          if [ -z "$last" ] || [ "$(git rev-list -n1 "$last")" != "$(git rev-parse HEAD)" ]; then
+            changed=true
+          fi
+          echo "last release: ${last:-none}, fork changed since: $changed"
+          # main keeps an older archive (nothing is committed back), so a
+          # release always bundles the newest nightly. Only a run with no fork
+          # changes and no force stops early on a nightly already released.
+          skip=--skip-released
+          if [ "$changed" = "true" ] || [ "${{ inputs.force }}" = "true" ]; then
+            skip=
+          fi
           set +e
-          python3 scripts/bundle_nightly.py --latest --if-newer
+          python3 scripts/bundle_nightly.py --latest --if-newer $skip
           code=$?
           set -e
           if [ "$code" = 3 ]; then
@@ -77,14 +92,7 @@ jobs:
             echo "fresh=true" >> "$GITHUB_OUTPUT"
             python3 scripts/generate_schema.py
           fi
-          # Fork changes count as much as a new nightly: release when main has
-          # commits the last release does not.
-          last=$(git tag --list 'v*-nightly.*' --sort=-creatordate | head -1)
-          changed=false
-          if [ -z "$last" ] || [ "$(git rev-list -n1 "$last")" != "$(git rev-parse HEAD)" ]; then
-            changed=true
-          fi
-          echo "last release: ${last:-none}, fork changed since: $changed"
+          echo "bundled: $(grep -oP '^PAYLOAD_ARCHIVE = "\K[^"]+' py_modules/optiscaler/constants.py)"
           if [ "$code" = 0 ] || [ "$changed" = "true" ] || [ "${{ inputs.force }}" = "true" ]; then
             echo "release=true" >> "$GITHUB_OUTPUT"
           else
