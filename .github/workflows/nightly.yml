@@ -34,7 +34,11 @@ jobs:
   bundle:
     runs-on: ubuntu-latest
     steps:
+      # Full history and tags: the release notes list this fork's commits since
+      # its previous nightly release.
       - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
 
       - uses: pnpm/action-setup@v6
         with:
@@ -82,9 +86,10 @@ jobs:
         run: |
           npx tsc --noEmit
           pnpm build
-          python3 scripts/test_fsr4.py
-          python3 scripts/selftest.py
           set -o pipefail
+          # Logs feed the "checks this release passed" part of the notes.
+          python3 scripts/test_fsr4.py 2>&1 | tee fsr4.log
+          python3 scripts/selftest.py 2>&1 | tee selftest.log
           HARNESS=run.tsx node testharness/build-and-run.mjs 2>&1 | tee harness.log
           grep -q "React errors/warnings: 0" harness.log
           HARNESS=all-options.tsx node testharness/build-and-run.mjs 2>&1 | tee all-options.log
@@ -105,10 +110,17 @@ jobs:
           # pile up in git history daily. The release zip carries it; main keeps
           # the last hand-bundled build, and the next run bundles from there.
           cp "out/Decky OptiScaler.zip" decky-optiscaler-nightly.zip
+          # What is inside, OptiScaler's own changes in this nightly, this
+          # fork's commits since its last release, and the test counts.
+          python3 scripts/release_notes.py --zip decky-optiscaler-nightly.zip \
+            --selftest-log selftest.log --fsr4-log fsr4.log > release-notes.md
+          cat release-notes.md
           if gh release view "v$VERSION" >/dev/null 2>&1; then
+            # Re-run for the same nightly: replace the zip and refresh the notes.
             gh release upload "v$VERSION" decky-optiscaler-nightly.zip --clobber
+            gh release edit "v$VERSION" --notes-file release-notes.md --latest
             exit 0
           fi
           gh release create "v$VERSION" decky-optiscaler-nightly.zip \
             --target "$(git rev-parse HEAD)" --latest --title "Decky OptiScaler $VERSION" \
-            --notes "EXPERIMENTAL fork build for tinkering, not intended for real use; use danielcamilo1/decky-optiscaler instead. Bundles the OptiScaler nightly of the same date from optiscaler/OptiScaler-nightly. Live in-game control is unavailable."
+            --notes-file release-notes.md
