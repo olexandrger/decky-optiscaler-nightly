@@ -177,7 +177,8 @@ def main():
             # CI never commits the archive back, so main keeps an older one; a
             # release tag for this nightly's date means it was already built.
             date = tag.rsplit("-", 1)[-1]
-            released = subprocess.run(["git", "tag", "--list", f"v*-nightly.{date}"], cwd=ROOT,
+            # Tags carry a run number after the date (v0.0.7-nightly.<date>.<run>).
+            released = subprocess.run(["git", "tag", "--list", f"v*-nightly.{date}*"], cwd=ROOT,
                                       capture_output=True, text=True).stdout.strip()
             if released:
                 print(f"{tag} is already released as {released.splitlines()[0]}")

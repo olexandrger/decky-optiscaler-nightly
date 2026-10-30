@@ -161,8 +161,12 @@ checked on a Deck: `OptiScaler.log` in the game folder is the source of truth.
 
 ## Releases
 
-`nightly.yml` publishes a full release (not a prerelease) tagged
-`v<plugin version>-nightly.<date>` with the asset `decky-optiscaler-nightly.zip`,
+`nightly.yml` publishes when there is a new nightly, when `main` has commits
+since the last release, or when run by hand with "Release the current build".
+Each published build is its own full release (not a prerelease) tagged
+`v<base>-nightly.<date>.<run number>` (the run number makes fork-only changes on
+the same nightly a new version, which the updater needs), with the asset
+`decky-optiscaler-nightly.zip`,
 so the Deck installs from a stable URL:
 
 ```

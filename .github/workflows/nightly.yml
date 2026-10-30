@@ -1,7 +1,10 @@
 name: Bundle OptiScaler nightly
 
 # optiscaler/OptiScaler-nightly publishes at 04:00 UTC; run after it. Each run
-# bundles the newest nightly if it is not the one already in bin/, runs the
+# bundles the newest nightly if it is not the one already in bin/, and
+# publishes when there is a new nightly, when main has commits since the last
+# release, or when forced. Versions are <base>-nightly.<date>.<run number>, so
+# every published build is its own release. It runs the
 # same checks as build.yml and publishes a release with the plugin zip (nothing
 # is committed back to the branch). A nightly that breaks the checks is not
 # released -- the run fails and the previous build stays current.
@@ -74,12 +77,25 @@ jobs:
             echo "fresh=true" >> "$GITHUB_OUTPUT"
             python3 scripts/generate_schema.py
           fi
-          if [ "$code" = 0 ] || [ "${{ inputs.force }}" = "true" ]; then
+          # Fork changes count as much as a new nightly: release when main has
+          # commits the last release does not.
+          last=$(git tag --list 'v*-nightly.*' --sort=-creatordate | head -1)
+          changed=false
+          if [ -z "$last" ] || [ "$(git rev-list -n1 "$last")" != "$(git rev-parse HEAD)" ]; then
+            changed=true
+          fi
+          echo "last release: ${last:-none}, fork changed since: $changed"
+          if [ "$code" = 0 ] || [ "$changed" = "true" ] || [ "${{ inputs.force }}" = "true" ]; then
             echo "release=true" >> "$GITHUB_OUTPUT"
           else
             echo "release=false" >> "$GITHUB_OUTPUT"
           fi
-          echo "version=$(node -p 'require("./package.json").version')" >> "$GITHUB_OUTPUT"
+          # Every published build gets its own version: <base>-nightly.<date>.<run>.
+          # The in-plugin updater compares versions, so a fork-only change on the
+          # same nightly has to read as new.
+          version="$(node -p 'require("./package.json").version').${{ github.run_number }}"
+          npm pkg set version="$version"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
 
       - name: Typecheck, build and test
         if: steps.bundle.outputs.release == 'true'

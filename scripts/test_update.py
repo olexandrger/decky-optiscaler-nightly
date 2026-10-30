@@ -110,6 +110,17 @@ class CheckerTests(unittest.TestCase):
         self.assertEqual(update.installed_version(self.plugin), "")
 
 
+class ReleaseTagTests(unittest.TestCase):
+    """Release tags carry a run number; the notes still find the nightly in them."""
+
+    def test_the_nightly_is_read_from_tags_with_and_without_a_run_number(self):
+        sys.path.insert(0, str(Path(__file__).resolve().parent))
+        import release_notes
+        self.assertEqual(release_notes.previous_nightly("v0.0.7-nightly.20261030"), "nightly-20261030")
+        self.assertEqual(release_notes.previous_nightly("v0.0.7-nightly.20261031.14"), "nightly-20261031")
+        self.assertIsNone(release_notes.previous_nightly("v0.0.7"))
+
+
 class IdentityTests(unittest.TestCase):
     def test_the_plugin_name_matches_what_the_updater_asks_decky_for(self):
         root = Path(__file__).resolve().parents[1]

@@ -139,8 +139,11 @@ def previous_release_tag(current):
 
 
 def previous_nightly(release_tag):
-    """The OptiScaler nightly a fork release bundled: v0.0.7-nightly.20261029 -> nightly-20261029."""
-    match = re.search(r"-nightly\.(\d{8})$", release_tag or "")
+    """The OptiScaler nightly a fork release bundled.
+
+    v0.0.7-nightly.20261029 and v0.0.7-nightly.20261029.14 -> nightly-20261029.
+    """
+    match = re.search(r"-nightly\.(\d{8})(?:\.\d+)?$", release_tag or "")
     return f"nightly-{match.group(1)}" if match else None
 
 
