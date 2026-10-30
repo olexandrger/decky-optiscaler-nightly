@@ -5,7 +5,7 @@
   "api_version": 1,
   "publish": {
     "tags": ["optiscaler", "framegen", "upscaling", "fsr", "dlss", "xess"],
-    "description": "Install, configure and monitor OptiScaler per game from the Steam Deck UI, without using the in-game overlay.",
+    "description": "EXPERIMENTAL fork for tinkering, not for real use: Decky OptiScaler rebuilt against untested OptiScaler nightlies. Use danielcamilo1/decky-optiscaler instead.",
     "image": "https://opengraph.githubassets.com/1/optiscaler/OptiScaler"
   }
 }

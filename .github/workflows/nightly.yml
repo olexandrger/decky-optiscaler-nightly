@@ -87,4 +87,4 @@ jobs:
           git push
           gh release create "v$VERSION" "out/Decky OptiScaler.zip" \
             --prerelease --title "Decky OptiScaler $VERSION" \
-            --notes "Bundles the OptiScaler nightly of the same date from optiscaler/OptiScaler-nightly. Live in-game control is unavailable in nightly builds."
+            --notes "EXPERIMENTAL fork build for tinkering, not intended for real use; use danielcamilo1/decky-optiscaler instead. Bundles the OptiScaler nightly of the same date from optiscaler/OptiScaler-nightly. Live in-game control is unavailable."

@@ -1,8 +1,22 @@
-# Decky OptiScaler
+# Decky OptiScaler — nightly (experimental fork)
 
-[![Build](https://github.com/danielcamilo1/decky-optiscaler/actions/workflows/build.yml/badge.svg)](https://github.com/danielcamilo1/decky-optiscaler/actions/workflows/build.yml)
-[![Latest release](https://img.shields.io/github/v/release/danielcamilo1/decky-optiscaler)](https://github.com/danielcamilo1/decky-optiscaler/releases/latest)
-[![Support me on Ko-fi](https://ko-fi.com/img/githubbutton_sm.svg)](https://ko-fi.com/danielcamilo)
+> [!WARNING]
+> **Experimental personal fork, for tinkering only. Not intended for real use.**
+>
+> This is [olexandrger](https://github.com/olexandrger)'s playground copy of
+> [danielcamilo1/decky-optiscaler](https://github.com/danielcamilo1/decky-optiscaler),
+> rebuilt against untested **OptiScaler nightly** builds. Things may break, settings
+> may be written wrongly, and live in-game control is disabled. No support, no
+> stability promises, no releases you should rely on.
+>
+> **Want the plugin? Use the [original](https://github.com/danielcamilo1/decky-optiscaler/releases/latest).**
+> Please report nothing from this fork to the plugin author or to the OptiScaler project.
+
+[![Build](https://github.com/olexandrger/decky-optiscaler-nightly/actions/workflows/build.yml/badge.svg)](https://github.com/olexandrger/decky-optiscaler-nightly/actions/workflows/build.yml)
+[![Nightly bundle](https://github.com/olexandrger/decky-optiscaler-nightly/actions/workflows/nightly.yml/badge.svg)](https://github.com/olexandrger/decky-optiscaler-nightly/actions/workflows/nightly.yml)
+
+The rest of this README is the original project's, with a "Nightly fork" section
+describing what this fork changes.
 
 A [Decky Loader](https://github.com/SteamDeckHomebrew/decky-loader) plugin that installs and
 configures [OptiScaler](https://github.com/optiscaler/OptiScaler) per game from Game Mode

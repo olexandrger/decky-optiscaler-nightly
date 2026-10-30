@@ -1,7 +1,7 @@
 {
   "name": "decky-optiscaler",
   "version": "0.0.7-nightly.20261030",
-  "description": "Manage OptiScaler per game from the Steam Deck UI, without the in-game overlay",
+  "description": "EXPERIMENTAL fork for tinkering, not for real use: OptiScaler nightlies in Decky OptiScaler",
   "type": "module",
   "scripts": {
     "build": "rollup -c",
