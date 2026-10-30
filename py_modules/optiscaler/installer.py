@@ -28,6 +28,9 @@ from .constants import (
     LAUNCH_RECORD_NAME,
     LOG_NAME,
     MANIFEST_NAME,
+    FOREIGN_MANIFESTS,
+    PLUGIN_ID,
+    PLUGIN_NAME,
     OPTISCALER_VERSION,
     PAYLOAD_DIRS,
     PAYLOAD_FILES,
@@ -130,6 +133,10 @@ def detect(target_dir):
         "installed": False,
         "filename": None,
         "managed": False,
+        # OptiScaler that this plugin did not install: another plugin's (named
+        # in "owner") or put there by hand / another tool (owner None).
+        "foreign": False,
+        "owner": None,
         "version": None,
         "installed_at": None,
         "ini_present": False,
@@ -194,15 +201,43 @@ def detect(target_dir):
                                        and _looks_like_optiscaler(target / p)]
             return result
 
-    # Installed by hand or by another tool: identify by content.
+    # Installed by another plugin, by hand or by another tool.
+    owner = next((who for name, who in FOREIGN_MANIFESTS.items()
+                  if (target / name).is_file()), None)
     for name in present:
         if _looks_like_optiscaler(target / name):
-            result.update(installed=True, filename=name, managed=False)
+            result.update(installed=True, filename=name, managed=False,
+                          foreign=True, owner=owner)
             result["extra_proxies"] = [
                 p for p in present if p != name and _looks_like_optiscaler(target / p)
             ]
             break
+    else:
+        if owner:
+            # The other plugin's record without its proxy: still its folder.
+            result.update(foreign=True, owner=owner)
     return result
+
+
+class ForeignInstallError(RuntimeError):
+    """OptiScaler in this folder belongs to something other than this plugin."""
+
+
+def foreign_install_message(info):
+    owner = info.get("owner")
+    if owner:
+        return (f"OptiScaler in this folder was installed by {owner}. {PLUGIN_NAME} does not "
+                f"share games with it: remove OptiScaler with {owner} first.")
+    return ("OptiScaler is already in this folder, installed by another tool or by hand. "
+            f"{PLUGIN_NAME} only manages its own installs: remove that one first.")
+
+
+def require_not_foreign(target_dir):
+    """Refuse to touch a folder whose OptiScaler is not this plugin's."""
+    info = detect(target_dir)
+    if info.get("foreign"):
+        raise ForeignInstallError(foreign_install_message(info))
+    return info
 
 
 def ffx_upscaler_info(target_dir):
@@ -301,7 +336,7 @@ def require_stopped_install(target_dir):
     """Require a managed install and reject DLL replacement while it is in use."""
     target = Path(target_dir).resolve()
     manifest = read_manifest(target)
-    if not manifest or manifest.get("plugin") != "decky-optiscaler":
+    if not manifest or manifest.get("plugin") != PLUGIN_ID:
         raise ValueError("Install OptiScaler with this plugin first.")
     if live.status(target).get("attached"):
         raise RuntimeError("Close the game before changing the FSR 4 build.")
@@ -345,7 +380,7 @@ def deck_preset_changes(model):
 def require_managed_install(target_dir):
     """The manifest of an install this plugin made, or an error."""
     manifest = read_manifest(Path(target_dir).resolve())
-    if not manifest or manifest.get("plugin") != "decky-optiscaler":
+    if not manifest or manifest.get("plugin") != PLUGIN_ID:
         raise ValueError("Install OptiScaler with this plugin first.")
     return manifest
 
@@ -554,7 +589,7 @@ def _stash(target, path, logger=None):
 
 #: Where an install keeps what it replaced until it has finished. Inside the
 #: game folder so every move is a rename on the same filesystem.
-INSTALL_STAGING = ".decky-optiscaler-install"
+INSTALL_STAGING = ".decky-optiscaler-nightly-install"
 _JOURNAL = "journal.json"
 
 
@@ -750,6 +785,7 @@ def install(target_dir, payload_root, filename=DEFAULT_PROXY, preserve_ini=True,
         raise FileNotFoundError(f"payload incomplete, missing {source_dll}")
 
     recover_interrupted(target, logger)
+    require_not_foreign(target)
     journal = _Journal(target)
     try:
         result = _install(target, payload, filename, preserve_ini, logger, live_asi,
@@ -907,7 +943,7 @@ def _install(target, payload, filename, preserve_ini, logger, live_asi, optipatc
                 logger.warning("optipatcher unavailable: %s", outcome.get("error"))
 
     manifest = {
-        "plugin": "decky-optiscaler",
+        "plugin": PLUGIN_ID,
         "live_asi": live_result["installed"],
         "optipatcher": patcher_result["installed"],
         "reframework": ref_result["installed"],
@@ -947,33 +983,12 @@ def launch_option(filename):
     return f'WINEDLLOVERRIDES="{stem}=n,b" %command%'
 
 
-def _same_bytes(path, reference):
-    """Whether `path` is byte-identical to `reference` (size first, then hash)."""
-    try:
-        if not reference.is_file() or path.stat().st_size != reference.stat().st_size:
-            return False
-    except OSError:
-        return False
-    return fsr4build.digest(path) == fsr4build.digest(reference)
+def uninstall(target_dir, remove_ini=True, logger=None):
+    """Remove this plugin's OptiScaler, restoring everything it displaced.
 
-
-def _same_tree(path, reference):
-    """Whether directory `path` holds exactly `reference`'s files, byte for byte."""
-    if not reference.is_dir():
-        return False
-    ours = sorted(p.relative_to(path) for p in path.rglob("*") if p.is_file())
-    theirs = sorted(p.relative_to(reference) for p in reference.rglob("*") if p.is_file())
-    return ours == theirs and all(_same_bytes(path / rel, reference / rel) for rel in ours)
-
-
-def uninstall(target_dir, remove_ini=True, logger=None, payload_root=None):
-    """Remove OptiScaler, restoring everything it displaced.
-
-    Without a manifest (OptiScaler put there by hand, or by an old plugin) the
-    plugin cannot know which files are its own. A file named like one of
-    OptiScaler's is then removed only if it is byte-identical to the bundled
-    copy in `payload_root`; anything else is left in place and reported in
-    "left", because the game may ship a file of the same name.
+    Only installs this plugin made (its manifest says which files are its own).
+    OptiScaler put there by another plugin, another tool or by hand is refused:
+    it is removed with whatever put it there.
     """
     target = Path(target_dir)
     if not target.is_dir():
@@ -981,10 +996,10 @@ def uninstall(target_dir, remove_ini=True, logger=None, payload_root=None):
 
     recover_interrupted(target, logger)
     manifest = read_manifest(target)
+    if not manifest:
+        require_not_foreign(target)
     removed = []
     restored = []
-    left = []
-    payload = Path(payload_root) if payload_root else None
 
     if manifest:
         for name in manifest.get("files", []):
@@ -999,34 +1014,6 @@ def uninstall(target_dir, remove_ini=True, logger=None, payload_root=None):
             if path.is_dir():
                 shutil.rmtree(path, ignore_errors=True)
                 removed.append(name + "/")
-    else:
-        # Unmanaged install: fall back to the file set setup_linux.sh creates.
-        for name in PROXY_FILENAMES:
-            path = target / name
-            if path.is_file() and _looks_like_optiscaler(path):
-                path.unlink()
-                removed.append(name)
-        for name in PAYLOAD_FILES + RETIRED_PAYLOAD_FILES + FSR4_SUPPORT_FILES:
-            path = target / name
-            if not path.is_file():
-                continue
-            if payload and _same_bytes(path, payload / name):
-                path.unlink()
-                removed.append(name)
-            else:
-                left.append(name)
-        for name in PAYLOAD_DIRS + RETIRED_PAYLOAD_DIRS + ["DlssOverrides"]:
-            path = target / name
-            if not path.is_dir():
-                continue
-            if payload and _same_tree(path, payload / name):
-                shutil.rmtree(path, ignore_errors=True)
-                removed.append(name + "/")
-            else:
-                left.append(name + "/")
-        if remove_ini and (target / INI_NAME).is_file():
-            (target / INI_NAME).unlink()
-            removed.append(INI_NAME)
 
     for name in RUNTIME_ARTIFACTS + ["remove_optiscaler.sh"]:
         path = target / name
@@ -1060,8 +1047,6 @@ def uninstall(target_dir, remove_ini=True, logger=None, payload_root=None):
         "path": str(target),
         "removed": removed,
         "restored": restored,
-        # Files named like OptiScaler's that could not be shown to be ours.
-        "left": left,
         "backup_dir": str(backup_dir(target)),
     }
 

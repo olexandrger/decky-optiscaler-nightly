@@ -29,9 +29,10 @@ import {
 import type { Patch } from "@decky/ui";
 import { openManager } from "./navigation";
 
-const MENU_LABEL = "OptiScaler Settings";
+const MENU_LABEL = "OptiScaler Nightly Settings";
 /** Marks our injected node so repeated renders do not stack duplicates. */
-const MARKER = "decky-optiscaler-menu-item";
+// Its own key: upstream's plugin adds an entry to the same menu.
+const MARKER = "decky-optiscaler-nightly-menu-item";
 const LOG = "[decky-optiscaler]";
 
 /** What the finder settled on, so the UI can say whether the entry exists. */

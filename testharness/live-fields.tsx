@@ -745,6 +745,26 @@ const tile = (host: Element, label: string) => {
   fixtures.get_live_status = withAsi;
   await act(async () => panel.root.unmount());
 
+  console.log("=== a game set up by upstream's Decky OptiScaler ===");
+  // The two plugins never share a game: this one shows who owns it and offers
+  // no controls for it.
+  const ownGame = fixtures.find_running_game;
+  fixtures.find_running_game = () => {
+    const mine = (ownGame as any)();
+    return { ...mine, detail: { ...mine.detail, install: {
+      ...mine.detail.install, installed: true, managed: false,
+      foreign: true, owner: "Decky OptiScaler" } } };
+  };
+  panel = await open();
+  const foreignText = panel.node.textContent ?? "";
+  check("it names the plugin that owns the game", foreignText.includes("Installed by Decky OptiScaler"), true);
+  check("and says to remove it there first", foreignText.includes("remove OptiScaler from it there first"), true);
+  check("no settings are offered for it",
+    Boolean(control(panel.node, "Override upscaler with")), false);
+  check("nor a set-up button", foreignText.includes("Set up OptiScaler"), false);
+  fixtures.find_running_game = ownGame;
+  await act(async () => panel.root.unmount());
+
   console.log("=== updating the plugin through Decky's installer ===");
   // No update: nothing is shown.
   fixtures.check_update = { ok: true, current: "0.0.7-nightly.20261031",

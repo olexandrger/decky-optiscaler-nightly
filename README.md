@@ -58,10 +58,11 @@ https://github.com/olexandrger/decky-optiscaler-nightly/releases/latest/download
 ```
 
 It installs as **Decky OptiScaler Nightly**, a separate plugin from the original
-**Decky OptiScaler**; uninstall the original (Decky settings → Plugins) so the two
-do not manage the same games. Remembered choices and libraries are copied over
-on first start. Then run **Install** again on each game so its folder gets this
-build.
+**Decky OptiScaler**. Both can be installed, but **never for the same game**: a
+game set up by the original shows "Installed by Decky OptiScaler" here and
+nothing can be changed from this plugin. To move a game to the nightly, remove
+OptiScaler from it in the original plugin first, then set it up here. The
+nightly starts with its own settings; nothing is copied from the original.
 
 After that, updates come to you: when a newer release exists, the Quick Access
 panel shows **Update to …**. It hands the release to Decky's own installer,

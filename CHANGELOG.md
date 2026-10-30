@@ -55,8 +55,11 @@ Bundles the **OptiScaler 10.0.0-pre1 nightly** (`nightly-20261030`, master
 ### Changed
 
 - The plugin is named **Decky OptiScaler Nightly** in Decky, a separate plugin
-  from the original. Its settings are copied from "Decky OptiScaler" on first
-  start; uninstall the original.
+  from the original that can be installed beside it but never manages the same
+  game: everything it writes has its own name (manifest, backups, launch-options
+  record, route, storage, context-menu entry), and a game set up by the original,
+  another tool or by hand is shown with its owner and left alone. Remove
+  OptiScaler with the original before setting a game up here.
 
 ### Added
 

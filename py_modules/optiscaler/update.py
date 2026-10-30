@@ -14,7 +14,6 @@ the official store's updates.
 """
 
 import json
-import shutil
 import time
 from pathlib import Path
 
@@ -66,31 +65,6 @@ def latest_release(fetch_json=wiki.download_json, fetch_text=None):
         "page": release.get("html_url"),
         "published": release.get("published_at"),
     }
-
-
-#: Names this plugin was installed under before; Decky keys a plugin's
-#: settings folder on its name, so renaming it starts from an empty one.
-PREVIOUS_NAMES = ("Decky OptiScaler",)
-SETTINGS_FILE = "settings.json"
-
-
-def migrate_settings(settings_dir, previous_names=PREVIOUS_NAMES):
-    """Copy settings from a previous install of this plugin under another name.
-
-    Only when this install has none of its own yet, and only the settings file:
-    remembered choices, custom libraries and saved install folders. Returns the
-    name copied from, or None.
-    """
-    settings_dir = Path(settings_dir)
-    if (settings_dir / SETTINGS_FILE).exists():
-        return None
-    for name in previous_names:
-        source = settings_dir.parent / name / SETTINGS_FILE
-        if source.is_file() and source.parent != settings_dir:
-            settings_dir.mkdir(parents=True, exist_ok=True)
-            shutil.copy2(source, settings_dir / SETTINGS_FILE)
-            return name
-    return None
 
 
 class UpdateChecker:

@@ -25,7 +25,7 @@ import { LiveStats } from "./LiveStats";
 import { MonitorTab } from "./MonitorTab";
 import { SetupChecklist } from "./SetupChecklist";
 
-const ADVANCED_KEY = "decky-optiscaler:advanced";
+const ADVANCED_KEY = "decky-optiscaler-nightly:advanced";
 
 function loadAdvanced(): boolean {
   try {

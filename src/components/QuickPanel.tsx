@@ -118,7 +118,9 @@ function NowPlayingTab({
     void resolve();
   }, [resolve]);
 
-  const installed = Boolean(detail?.install.installed);
+  // Another plugin's (or tool's) OptiScaler is not ours to configure.
+  const foreign = Boolean(detail?.install.foreign);
+  const installed = Boolean(detail?.install.installed) && !foreign;
   const targetDir = installed && detail ? detail.install.path : null;
   // Re-read after the game exits so overlay-side Save is not overwritten.
   const config = useConfig(targetDir, installed, runningGame?.appid ?? null);
@@ -181,7 +183,20 @@ function NowPlayingTab({
         </PanelSection>
       ) : null}
 
-      {!resolving && !notFound && !installed ? (
+      {!resolving && !notFound && foreign ? (
+        <PanelSection>
+          <PanelSectionRow>
+            <Notice tone="warn"
+              title={detail?.install.owner ? `Installed by ${detail.install.owner}` : "Installed by another tool"}>
+              {detail?.install.owner
+                ? `Manage this game in ${detail.install.owner}. To use the nightly here, remove OptiScaler from it there first.`
+                : "Remove the OptiScaler already in this game's folder before setting it up here."}
+            </Notice>
+          </PanelSectionRow>
+        </PanelSection>
+      ) : null}
+
+      {!resolving && !notFound && !foreign && !installed ? (
         <PanelSection>
           <PanelSectionRow>
             <ButtonItem

@@ -211,7 +211,8 @@ async def run():
               result.get("launch_option") == 'WINEDLLOVERRIDES="dxgi=n,b" %command%',
               result.get("launch_option"))
         check("original dll backed up", "dxgi.dll" in (result.get("backups") or {}))
-        stash = target / "decky_optiscaler_backup_files"
+        from optiscaler.constants import BACKUP_DIR
+        stash = target / BACKUP_DIR
         check("backup folder created", stash.is_dir(), stash.name)
         check("game's own FidelityFX dll set aside",
               (stash / "amd_fidelityfx_upscaler_dx12.dll").is_file())
@@ -1076,7 +1077,7 @@ def check_launch_record():
         check("a real value round trips verbatim",
               installer.read_launch_record(root)["value"] == 'PROTON_LOG=1 %command% -dx12')
         check("the file is plain text next to the install",
-              (root / "decky_optiscaler_previous_launch_options.txt").is_file())
+              (root / installer.LAUNCH_RECORD_NAME).is_file())
 
         check("forgetting reports whether there was anything to forget",
               installer.forget_launch_options(root) is True
@@ -1697,7 +1698,7 @@ def check_bundled_payload_upgrade():
             (game / constants.BACKUP_DIR / displaced).write_bytes(b"the game's own")
             backups[displaced] = True
         (game / constants.MANIFEST_NAME).write_text(json.dumps({
-            "plugin": "decky-optiscaler", "optiscaler_version": "0.9.4", "filename": "dxgi.dll",
+            "plugin": constants.PLUGIN_ID, "optiscaler_version": "0.9.4", "filename": "dxgi.dll",
             "files": old_files, "dirs": list(constants.RETIRED_PAYLOAD_DIRS) + ["Licenses"],
             "backups": backups, "fsr4_build": {},
         }), encoding="utf-8")

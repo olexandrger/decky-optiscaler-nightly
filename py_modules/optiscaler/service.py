@@ -54,6 +54,19 @@ class OptiScalerService:
 
     # -- helpers ---------------------------------------------------------
     @staticmethod
+    def _foreign(target_dir):
+        """An error result if this folder's OptiScaler is not this plugin's, else None.
+
+        This plugin and upstream's Decky OptiScaler never share a game: what the
+        other one (or another tool) installed is changed only by that tool.
+        """
+        info = installer.detect(target_dir)
+        if info.get("foreign"):
+            return {"ok": False, "foreign": True, "owner": info.get("owner"),
+                    "error": installer.foreign_install_message(info)}
+        return None
+
+    @staticmethod
     async def _run(func, *args, **kwargs):
         return await asyncio.to_thread(func, *args, **kwargs)
 
@@ -500,6 +513,9 @@ class OptiScalerService:
             return {"ok": False, "error": str(exc)}
 
     async def import_fsr4_files(self, target_dir, source_dir):
+        refused = self._foreign(target_dir)
+        if refused:
+            return refused
         try:
             result = await self._run(
                 installer.import_fsr4_files, target_dir, source_dir, self.log
@@ -657,6 +673,9 @@ class OptiScalerService:
         Used when automatic mode is switched on for a game set up by hand, and
         after a wiki refresh, so the ini says what the entry currently says.
         """
+        refused = self._foreign(target_dir)
+        if refused:
+            return refused
         planned = await self.get_auto_plan(name or Path(target_dir).name, extra_names,
                                            False, game_path)
         plan = planned["plan"]
@@ -739,17 +758,8 @@ class OptiScalerService:
 
     async def uninstall(self, target_dir, remove_ini=True):
         try:
-            # Without a manifest, only files identical to the bundled ones are
-            # removed, so uninstall needs the payload to compare against.
-            try:
-                payload_root = await self.ensure_payload()
-            except Exception as exc:
-                self.log.warning("uninstall without the payload to compare: %s", exc)
-                payload_root = None
             async with self._mutation_lock:
-                result = await self._run(
-                    installer.uninstall, target_dir, remove_ini, self.log, payload_root
-                )
+                result = await self._run(installer.uninstall, target_dir, remove_ini, self.log)
             return {"ok": True, **result}
         except Exception as exc:
             self.log.exception("uninstall failed for %s", target_dir)
@@ -778,6 +788,9 @@ class OptiScalerService:
         has already been told directly; pushing them again would re-send the
         same change through a path that does not mean the same thing.
         """
+        refused = self._foreign(target_dir)
+        if refused:
+            return refused
         def work():
             path = Path(target_dir) / INI_NAME
             if not path.is_file():
@@ -864,6 +877,9 @@ class OptiScalerService:
 
     async def reset_config(self, target_dir):
         """Restore the stock OptiScaler.ini shipped with the bundled release."""
+        refused = self._foreign(target_dir)
+        if refused:
+            return refused
         try:
             payload_root = Path(await self.ensure_payload())
 
@@ -919,6 +935,9 @@ class OptiScalerService:
         reinstall OptiScaler to retry it would be a poor answer to a flaky
         network.
         """
+        refused = self._foreign(target_dir)
+        if refused:
+            return refused
         try:
             planned = await self.get_auto_plan(name or Path(target_dir).name, extra_names,
                                                False, game_path)
@@ -951,6 +970,9 @@ class OptiScalerService:
         that folder and either could be the one at fault; being able to remove
         one of them is the difference between a bug report and an answer.
         """
+        refused = self._foreign(target_dir)
+        if refused:
+            return refused
         try:
             result = await self._run(installer.remove_files, target_dir,
                                      [REFRAMEWORK_DLL], self.log)
@@ -975,6 +997,9 @@ class OptiScalerService:
 
     async def install_optipatcher(self, target_dir, enabled=True):
         """Add or remove OptiPatcher for one game without reinstalling."""
+        refused = self._foreign(target_dir)
+        if refused:
+            return refused
         try:
             path = Path(target_dir) / live.PLUGIN_SUBDIR / OPTIPATCHER_NAME
             if not enabled:

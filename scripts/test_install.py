@@ -140,7 +140,7 @@ class InstallSafetyTests(unittest.TestCase):
         before = snapshot(self.game)
         with FailingCopies(5), self.assertRaises(OSError):
             installer.install(self.game, self.payload, "dxgi.dll", logger=LOG)
-        installer.uninstall(self.game, logger=LOG, payload_root=self.payload)
+        installer.uninstall(self.game, logger=LOG)
         self.assertEqual(snapshot(self.game), before)
 
     def test_failure_then_retry_then_uninstall_restores_the_game(self):
@@ -152,7 +152,7 @@ class InstallSafetyTests(unittest.TestCase):
         # it against the real bundled hash, which a synthetic payload lacks.
         problems = installer.verify_install(self.game, self.payload)["problems"]
         self.assertEqual(set(problems) - {FFX_UPSCALER_DLL}, set())
-        installer.uninstall(self.game, logger=LOG, payload_root=self.payload)
+        installer.uninstall(self.game, logger=LOG)
         self.assertEqual(snapshot(self.game), before)
 
     def test_an_install_killed_half_way_is_rolled_back_next_time(self):
@@ -174,7 +174,7 @@ class InstallSafetyTests(unittest.TestCase):
                     installer.install(self.game, self.payload, "dxgi.dll", logger=LOG)
                 if action == "install":
                     installer.install(self.game, self.payload, "dxgi.dll", logger=LOG)
-                installer.uninstall(self.game, logger=LOG, payload_root=self.payload)
+                installer.uninstall(self.game, logger=LOG)
                 self.assertEqual(snapshot(self.game), before)
 
     def test_a_crash_while_committing_does_not_undo_the_install(self):
@@ -217,29 +217,88 @@ class InstallSafetyTests(unittest.TestCase):
             installer.install(self.game, self.payload, "dxgi.dll", logger=LOG)
         self.assertEqual(snapshot(self.game), before)
 
-    def test_without_a_manifest_only_files_identical_to_ours_are_removed(self):
-        # OptiScaler placed by hand: proxy, two payload files, a payload dir;
-        # the game's own libxess.dll and Licenses/ sit beside them.
-        shutil.copy2(self.payload / "OptiScaler.dll", self.game / "winmm.dll")
-        for name in ("libxell.dll", "libxess_fg.dll"):
-            shutil.copy2(self.payload / name, self.game / name)
-        shutil.copytree(self.payload / "D3D12_OptiScaler", self.game / "D3D12_OptiScaler")
-        result = installer.uninstall(self.game, logger=LOG, payload_root=self.payload)
-        self.assertIn("winmm.dll", result["removed"])
-        self.assertIn("libxell.dll", result["removed"])
-        self.assertIn("D3D12_OptiScaler/", result["removed"])
-        self.assertEqual((self.game / "libxess.dll").read_bytes(), b"the game's own XeSS")
-        self.assertEqual((self.game / "Licenses" / "game.txt").read_bytes(), b"the game's licence")
-        self.assertIn("libxess.dll", result["left"])
-        self.assertIn("Licenses/", result["left"])
 
-    def test_without_the_payload_nothing_unprovable_is_removed(self):
-        shutil.copy2(self.payload / "libxell.dll", self.game / "libxell.dll")
+
+class ExclusiveWithOtherInstallsTests(unittest.TestCase):
+    """Decky OptiScaler Nightly and upstream's Decky OptiScaler never share a game.
+
+    OptiScaler that this plugin did not install (upstream's plugin, another
+    tool, by hand) is refused by every operation that would write to the
+    folder, so the other tool's record of what it changed stays true.
+    """
+
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
+        self.root = Path(self.temp.name)
+        self.payload = make_payload(self.root)
+        self.game = self.root / "game"
+        self.game.mkdir()
+        (self.game / "Game.exe").write_bytes(b"MZ game")
+        (self.game / "libxess.dll").write_bytes(b"the game's own XeSS")
+
+    def install_by_upstream(self):
+        """What upstream's plugin leaves: its proxy, its ini, its manifest."""
+        shutil.copy2(self.payload / "OptiScaler.dll", self.game / "dxgi.dll")
+        (self.game / INI_NAME).write_text("[Menu]\nShortcutKey=auto\n")
+        (self.game / ".decky-optiscaler.json").write_text(json.dumps(
+            {"plugin": "decky-optiscaler", "filename": "dxgi.dll",
+             "files": ["dxgi.dll", INI_NAME], "backups": {}}))
+
+    def assert_refused_untouched(self, owner):
+        before = snapshot(self.game)
+        info = installer.detect(self.game)
+        self.assertTrue(info["foreign"])
+        self.assertEqual(info["owner"], owner)
+        self.assertFalse(info["managed"])
+        for action in (lambda: installer.install(self.game, self.payload, "dxgi.dll", logger=LOG),
+                       lambda: installer.install(self.game, self.payload, "winmm.dll", logger=LOG),
+                       lambda: installer.uninstall(self.game, logger=LOG)):
+            with self.assertRaises(installer.ForeignInstallError) as raised:
+                action()
+            self.assertIn(owner or "another tool", str(raised.exception))
+            self.assertEqual(snapshot(self.game), before)
+
+    def test_upstreams_install_is_left_to_upstream(self):
+        self.install_by_upstream()
+        self.assert_refused_untouched("Decky OptiScaler")
+
+    def test_an_install_by_another_tool_or_by_hand_is_left_alone(self):
         shutil.copy2(self.payload / "OptiScaler.dll", self.game / "winmm.dll")
-        result = installer.uninstall(self.game, logger=LOG)
-        self.assertIn("winmm.dll", result["removed"])  # the proxy is recognisable on its own
-        self.assertTrue((self.game / "libxell.dll").exists())
-        self.assertTrue((self.game / "libxess.dll").exists())
+        self.assert_refused_untouched(None)
+
+    def test_upstreams_record_alone_still_marks_the_folder_as_its(self):
+        (self.game / ".decky-optiscaler.json").write_text('{"plugin": "decky-optiscaler"}')
+        self.assert_refused_untouched("Decky OptiScaler")
+
+    def test_settings_writes_are_refused_too(self):
+        import asyncio
+        from optiscaler.service import OptiScalerService
+        self.install_by_upstream()
+        before = snapshot(self.game)
+        service = OptiScalerService(ROOT, self.root / "s", self.root / "r", self.root / "h", LOG)
+        result = asyncio.run(service.write_config(
+            str(self.game), [{"section": "Menu", "key": "ShortcutKey", "value": "0x24"}]))
+        self.assertFalse(result["ok"])
+        self.assertEqual(result["owner"], "Decky OptiScaler")
+        self.assertEqual(snapshot(self.game), before)
+
+    def test_once_upstream_removed_it_this_plugin_installs(self):
+        self.install_by_upstream()
+        for name in ("dxgi.dll", INI_NAME, ".decky-optiscaler.json"):
+            (self.game / name).unlink()
+        installer.install(self.game, self.payload, "dxgi.dll", logger=LOG)
+        manifest = json.loads((self.game / MANIFEST_NAME).read_text())
+        self.assertEqual(manifest["plugin"], "decky-optiscaler-nightly")
+        self.assertEqual(MANIFEST_NAME, ".decky-optiscaler-nightly.json")
+        self.assertFalse(installer.detect(self.game)["foreign"])
+
+    def test_the_two_plugins_keep_separate_records(self):
+        installer.install(self.game, self.payload, "dxgi.dll", logger=LOG)
+        names = {p.name for p in self.game.iterdir()}
+        self.assertNotIn(".decky-optiscaler.json", names)
+        self.assertNotIn("decky_optiscaler_backup_files", names)
+        self.assertIn("decky_optiscaler_nightly_backup_files", names)
 
 
 class ProxyNameTests(unittest.TestCase):
@@ -264,7 +323,7 @@ class ProxyNameTests(unittest.TestCase):
                 self.assertEqual(installer.detect(game)["filename"], name)
                 self.assertEqual((game / name).read_bytes(),
                                  (payload / "OptiScaler.dll").read_bytes())
-                installer.uninstall(game, logger=LOG, payload_root=payload)
+                installer.uninstall(game, logger=LOG)
                 self.assertEqual(snapshot(game), before)
 
     def test_an_unknown_name_is_refused_untouched(self):

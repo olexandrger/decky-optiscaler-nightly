@@ -58,6 +58,25 @@ is maintained by OptiScaler itself and always matches the build.
 If a change would make the panel claim an edit took effect in a running game,
 it is wrong for this fork.
 
+## Exclusive with upstream's plugin (do not "fix" this either)
+
+Decky OptiScaler Nightly and upstream's Decky OptiScaler can both be installed,
+but **never manage the same game**, like Decky Framegen and Decky OptiScaler.
+Moving a game from one to the other means removing OptiScaler with the first.
+
+- Everything this fork writes has its own name: plugin name, manifest
+  `.decky-optiscaler-nightly.json` with id `decky-optiscaler-nightly`, backup
+  folder, launch-options record, install staging folder, frontend route,
+  storage keys and library context-menu entry (`constants.py`, `navigation.ts`,
+  `GameDetail.tsx`, `libraryContextMenu.tsx`).
+- `installer.detect` marks OptiScaler it did not install as `foreign` (upstream's
+  manifest names the owner; a proxy with no manifest of ours is "another tool or
+  by hand"). Install, uninstall and every service call that writes to a game
+  folder refuse such folders (`require_not_foreign`, `OptiScalerService._foreign`),
+  and the UI shows the owner instead of controls.
+- No adoption, no migration of upstream's settings or installs. Do not add any.
+  `scripts/test_install.py` (ExclusiveWithOtherInstallsTests) holds this.
+
 ## Rebasing on upstream
 
 The fork is kept as **a stack of commits on top of upstream `main`**. Sync by
@@ -77,6 +96,7 @@ Resolving conflicts, by file kind:
 | `bin/OptiScaler-*.7z`, `defaults/OptiScaler.reference.ini`, and the pinned values in `py_modules/optiscaler/constants.py` (`OPTISCALER_VERSION`, `PAYLOAD_*`, `FSR4_BUNDLED_*`, payload/retired lists) | Keep the fork's side, then re-run `scripts/bundle_nightly.py` (on the bundled `.7z` or `--latest`) so they are consistent. Upstream will keep pinning 0.9.x; that is expected. |
 | `asi/` (live-control ASI) | Accept upstream's source changes, but keep the ASI out of `bin/` (see above). |
 | Steam Deck FSR 4 (`basic.ts` presets, `installer.py`, `fsr4build.py`, `test_fsr4.py`) | Keep the fork's Lite/RDNA2 presets. Do not bring back the 4.1.1b preset or download. |
+| Identity names (`MANIFEST_NAME`, `BACKUP_DIR`, `LAUNCH_RECORD_NAME`, `PLUGIN_ID`, `ROUTE`, storage keys, context-menu marker) | Keep the fork's `-nightly` names. A new file, folder, route or key upstream adds gets its own `-nightly` name too. |
 | Upstream features unrelated to the above | Take them. If they write INI keys, check the keys exist in OptiScaler 10 (the schema generated from the nightly's INI is the reference) and use `ffx`/`ffx_12` backend ids. |
 
 After the rebase, run the full checks (below), then push with
@@ -155,8 +175,8 @@ workflow uploads) to Decky's own installer (`utilities/install_plugin`), which
 asks, verifies and replaces the plugin. Keep the asset name, the plugin name
 in `plugin.json` ("Decky OptiScaler Nightly", which is also `PLUGIN_NAME` in
 `UpdateBanner.tsx`; a test holds them together) and `UPDATE_REPO` in step. The
-name differs from upstream's on purpose so the fork is a separate Decky plugin;
-`update.migrate_settings` copies the original plugin's settings once. Do not switch to a custom Decky
+name differs from upstream's on purpose so the fork is a separate Decky plugin
+(see "Exclusive with upstream's plugin"). Do not switch to a custom Decky
 store: Decky has one store at a time, and that would cut every other plugin
 off from official updates.
 

@@ -114,6 +114,13 @@ export interface InstallInfo {
   installed: boolean;
   filename: string | null;
   managed: boolean;
+  /**
+   * OptiScaler here was not installed by this plugin: by upstream's Decky
+   * OptiScaler (named in `owner`), another tool or by hand (`owner` null). This
+   * plugin does not share games with them and leaves such folders alone.
+   */
+  foreign?: boolean;
+  owner?: string | null;
   version: string | null;
   installed_at: number | null;
   ini_present: boolean;

@@ -16,7 +16,8 @@
  */
 import { Navigation } from "@decky/ui";
 
-export const ROUTE = "/decky-optiscaler";
+// Its own route: this and upstream's Decky OptiScaler may both be installed.
+export const ROUTE = "/decky-optiscaler-nightly";
 
 /** Which game the page should open at. Empty means the library list. */
 export interface ManagerTarget {

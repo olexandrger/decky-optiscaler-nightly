@@ -4,18 +4,26 @@ OPTISCALER_VERSION = "10.0.0-pre1-20261030"
 PAYLOAD_ARCHIVE = "OptiScaler-10.0.0-pre1-20261030.7z"
 PAYLOAD_SHA256 = "840b93fe0bcbfad2ee1fd9dc9568d56d4d50bd73f555f60cd48784cae9a2ad9a"
 
+# This fork is a separate plugin from upstream's "Decky OptiScaler" and the two
+# never share a game: each keeps its own manifest, backups and launch-options
+# record, and each leaves the other's installs alone (see FOREIGN_MANIFESTS).
+PLUGIN_ID = "decky-optiscaler-nightly"
+PLUGIN_NAME = "Decky OptiScaler Nightly"
+
 INI_NAME = "OptiScaler.ini"
 LOG_NAME = "OptiScaler.log"
 # Written by this plugin so an install can be recognised later with certainty.
-MANIFEST_NAME = ".decky-optiscaler.json"
+MANIFEST_NAME = ".decky-optiscaler-nightly.json"
+# Manifests other plugins write next to an OptiScaler they installed, by owner.
+FOREIGN_MANIFESTS = {".decky-optiscaler.json": "Decky OptiScaler"}
 # Anything OptiScaler would overwrite is moved here instead, and moved back on
 # uninstall. Kept as a visible folder so it is obvious what happened.
-BACKUP_DIR = "decky_optiscaler_backup_files"
+BACKUP_DIR = "decky_optiscaler_nightly_backup_files"
 # The same idea for the one thing that is not a file in this folder: the Steam
 # launch options the game had before OptiScaler went in. Only the frontend can
 # read them out of Steam, so they are handed here and written verbatim, and
 # removing OptiScaler can then offer to put them back.
-LAUNCH_RECORD_NAME = "decky_optiscaler_previous_launch_options.txt"
+LAUNCH_RECORD_NAME = "decky_optiscaler_nightly_previous_launch_options.txt"
 
 # OptiPatcher (https://github.com/optiscaler/OptiPatcher) is a separate ASI from
 # the OptiScaler project. It patches supported games so their DLSS/DLSS-FG

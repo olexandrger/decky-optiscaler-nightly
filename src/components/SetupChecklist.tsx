@@ -734,6 +734,29 @@ export function SetupChecklist({
     </PanelSection>
   );
 
+  // -- someone else's OptiScaler ----------------------------------------------
+  // This plugin and upstream's Decky OptiScaler never share a game; neither do
+  // installs by another tool or by hand. Nothing here is offered for such a
+  // folder (the backend refuses it too): it is removed with what put it there.
+  if (detail.install.foreign) {
+    const owner = detail.install.owner;
+    return (
+      <PanelSection title={detail.name}>
+        <PanelSectionRow>
+          <Notice tone="warn" title={owner ? `Installed by ${owner}` : "Installed by another tool"}>
+            {owner
+              ? `This game's OptiScaler belongs to ${owner}. Decky OptiScaler Nightly does not
+                 share games with it: remove OptiScaler from this game in ${owner} first, then
+                 set it up here.`
+              : `OptiScaler is already in this game's folder, put there by another tool or by
+                 hand. Decky OptiScaler Nightly only manages its own installs: remove that one
+                 first, then set it up here.`}
+          </Notice>
+        </PanelSectionRow>
+      </PanelSection>
+    );
+  }
+
   // -- not set up yet -------------------------------------------------------
   if (!installed) {
     // REFramework, when this game needs it, goes first: it is what OptiScaler

@@ -537,7 +537,7 @@ async function render(name: string, element: React.ReactElement) {
   console.log(`  no false 'FSR4 missing file' claim: ${!gd.host.textContent!.includes("does not ship")}`);
 
   // Flip to advanced mode and re-render.
-  (globalThis as any).window.localStorage.setItem("decky-optiscaler:advanced", "1");
+  (globalThis as any).window.localStorage.setItem("decky-optiscaler-nightly:advanced", "1");
   const gdAdv = await render("GameDetailAdvanced",
     <GameDetail gamePath="/games/Cyberpunk 2077" gameName="Cyberpunk 2077" appid="1091500"
       status={fixtures.get_status}
@@ -549,7 +549,7 @@ async function render(name: string, element: React.ReactElement) {
   console.log(`  advanced shows real upscaler names: ${advText.includes("FSR 3.X/4")}`);
   console.log(`  advanced shows OptiScaler's own FG input names: ${advText.includes("FSR 3.1 FG") && advText.includes("DLSSG via Streamline")}`);
   console.log(`  raw internal ids no longer bare: ${!/\bfsr31\b(?! —)/.test(advText.split("Filename override")[0])}`);
-  (globalThis as any).window.localStorage.setItem("decky-optiscaler:advanced", "0");
+  (globalThis as any).window.localStorage.setItem("decky-optiscaler-nightly:advanced", "0");
   console.log(`  toggles: ${findAll(gd.host, '[data-mock="ToggleField"]').length}`);
   console.log(`  dropdowns: ${findAll(gd.host, '[data-mock="DropdownItem"]').length}`);
   console.log(`  sliders: ${findAll(gd.host, '[data-mock="SliderField"]').length}`);
@@ -708,6 +708,23 @@ async function render(name: string, element: React.ReactElement) {
   fixtures.install = realInstall;
   fixtures.record_launch_options = realRecord;
   (globalThis as any).SteamClient = undefined;
+  fixtures.get_game = detail;
+
+  // -- a game set up by upstream's Decky OptiScaler ----------------------------
+  fixtures.get_game = { ...detail, install: { ...detail.install, installed: true, managed: false,
+    foreign: true, owner: "Decky OptiScaler" } };
+  const gdForeign = await render("GameDetail (owned by upstream)",
+    <GameDetail gamePath="/games/Cyberpunk 2077" gameName="Cyberpunk 2077" appid="1091500"
+      status={fixtures.get_status}
+      runningGame={null}
+      onBack={() => {}} />);
+  const foreignSetup = findAll(gdForeign.host, '[data-tab="install"]')[0] as HTMLElement | undefined;
+  if (foreignSetup) await act(async () => { foreignSetup.click(); });
+  await settle();
+  const foreignPage = gdForeign.host.textContent!;
+  console.log(`  a game owned by Decky OptiScaler says so: ${foreignPage.includes("Installed by Decky OptiScaler")}`);
+  console.log(`  and offers no install or removal for it: ${
+    !foreignPage.includes("Do all three") && !foreignPage.includes("Do both") && !foreignPage.includes("Remove")}`);
   fixtures.get_game = detail;
 
   // -- a game that needs REFramework ----------------------------------------
@@ -1000,7 +1017,7 @@ async function render(name: string, element: React.ReactElement) {
   // of Steam's own buttons, and it names both modes so the other one is on
   // offer rather than a secret.
   {
-    (globalThis as any).window.localStorage.setItem("decky-optiscaler:advanced", "0");
+    (globalThis as any).window.localStorage.setItem("decky-optiscaler-nightly:advanced", "0");
     const gdMode = await render("GameDetailModeSwitch",
       <GameDetail gamePath="/games/Cyberpunk 2077" gameName="Cyberpunk 2077" appid="1091500"
         status={fixtures.get_status} runningGame={null} onBack={() => {}} />);
@@ -1018,7 +1035,7 @@ async function render(name: string, element: React.ReactElement) {
     console.log(`  pressing it opens every option: ${
       findAll(gdMode.host, "[data-tab]").map((n) => n.getAttribute("data-tab"))
         .includes("framegen")}`);
-    (globalThis as any).window.localStorage.setItem("decky-optiscaler:advanced", "0");
+    (globalThis as any).window.localStorage.setItem("decky-optiscaler-nightly:advanced", "0");
   }
 
   // -- the launch options, and taking them back out -------------------------
