@@ -22,11 +22,9 @@ from . import wiki
 UPDATE_REPO = "olexandrger/decky-optiscaler-nightly"
 UPDATE_ASSET = "decky-optiscaler-nightly.zip"
 LATEST_URL = f"https://api.github.com/repos/{UPDATE_REPO}/releases/latest"
-#: How long one answer is reused. Short: this fork has one user, who wants a new
-#: build offered as soon as it is released; the minute only stops tab switches
-#: re-asking GitHub (60 unauthenticated requests an hour per address). The
-#: Settings tab's "Check for updates" skips it entirely.
-CHECK_TTL = 60
+#: How long one answer is reused when the panel opens. Settings → "Check for
+#: updates" skips it and asks GitHub straight away.
+CHECK_TTL = 6 * 60 * 60
 
 
 def installed_version(plugin_dir):
