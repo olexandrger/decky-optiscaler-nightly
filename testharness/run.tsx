@@ -1530,8 +1530,24 @@ async function render(name: string, element: React.ReactElement) {
       ...fixtures.wiki_status, source: "bundled", age: 60 * 60 * 24 * 30,
       error: "URLError: <urlopen error [Errno 101] Network is unreachable>",
     };
+    // Plugin updates: shown in Settings, and the button skips the cached answer.
+    const updateChecks: any[] = [];
+    fixtures.check_update = (force?: boolean) => {
+      updateChecks.push(Boolean(force));
+      return { ok: true, current: "0.0.7-nightly.20261030", latest: "0.0.7-nightly.20261030.9",
+        available: true, url: "https://x/decky-optiscaler-nightly.zip", sha256: "a".repeat(64) };
+    };
     const offlineSettings = await render("ManagerPage (offline wiki)", <ManagerPage />);
     const offlineText = findAll(offlineSettings.host, '[data-tab="settings"]')[0].textContent!;
+    console.log(`  settings shows the installed version and the newer release: ${
+      offlineText.includes("Plugin updates") && offlineText.includes("0.0.7-nightly.20261030.9 available")}`);
+    const checkNow = findAll(offlineSettings.host, '[data-mock="ButtonItem"]')
+      .find((b) => (b.textContent ?? "").includes("Check for updates")) as HTMLElement | undefined;
+    await act(async () => { checkNow?.click(); });
+    await settle(20);
+    console.log(`  "Check for updates" skips the cached answer: ${
+      updateChecks.length >= 2 && updateChecks[updateChecks.length - 1] === true}`);
+    delete fixtures.check_update;
     console.log(`  a Deck that never downloaded one uses the bundled copy: ${
       offlineText.includes("bundled with the plugin")}`);
     console.log(`  and says the refresh behind it failed, without calling it broken: ${

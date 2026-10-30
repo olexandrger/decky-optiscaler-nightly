@@ -174,7 +174,8 @@ https://github.com/olexandrger/decky-optiscaler-nightly/releases/latest/download
 ```
 
 Installed plugins update themselves: `py_modules/optiscaler/update.py` reads
-the latest release, and the Quick Access panel's **Update to …** button hands
+the latest release (cached one minute; Settings → **Check for updates** skips
+the cache), and the **Update to …** button (Quick Access panel and Settings) hands
 the zip and its SHA-256 (GitHub's asset digest, or the `.sha256` sidecar the
 workflow uploads) to Decky's own installer (`utilities/install_plugin`), which
 asks, verifies and replaces the plugin. Keep the asset name, the plugin name

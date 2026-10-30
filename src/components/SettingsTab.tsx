@@ -16,6 +16,7 @@ import {
 } from "../prefs";
 import type { PayloadStatus, WikiStatus } from "../types";
 import { Centered, KeyValue, Mono, Notice, Pill } from "./Common";
+import { UpdateSection } from "./UpdateBanner";
 
 /** How old the list is, in the terms someone would actually ask it in. */
 function describeAge(age: number | null): string {
@@ -117,6 +118,7 @@ export function SettingsTab({ status }: Readonly<{ status: PayloadStatus | null 
 
   return (
     <>
+      <UpdateSection />
       <PanelSection title="Remembered answers">
         <PanelSectionRow>
           <ToggleField
