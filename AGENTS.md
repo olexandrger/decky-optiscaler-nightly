@@ -22,7 +22,7 @@ What the fork adds on top of upstream:
 - Steam Deck FSR 4 presets use models inside the bundled upscaler (**FSR 4
   Lite**, **FSR 4 RDNA2**); the community 4.1.1b download is retired;
 - a Quick Access **OptiScaler menu** button opens OptiScaler's own overlay;
-- `.github/workflows/nightly.yml` builds, tests and releases daily.
+- `.github/workflows/nightly.yml` builds, tests and releases weekly (Fridays).
 
 ## How settings change in this fork (do not "fix" this)
 
@@ -176,7 +176,7 @@ checked on a Deck: `OptiScaler.log` in the game folder is the source of truth.
 `v*-nightly.<its date>*` tag), when `main` has commits since the last release, or
 when run by hand with "Release the current build". It then downloads and bundles
 the newest nightly; a run with nothing to release downloads nothing. A failed run
-creates no tag, so the next day retries.
+creates no tag, so the next run retries (next Friday, or run it by hand).
 Each published build is its own full release (not a prerelease) tagged
 `v<base>-nightly.<date>.<run number>` (the run number makes fork-only changes on
 the same nightly a new version, which the updater needs), with the asset

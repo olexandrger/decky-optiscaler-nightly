@@ -37,7 +37,7 @@ Bundles the **OptiScaler 10.0.0-pre1 nightly** (`nightly-20261030`, master
   after the "Default (auto)" line, and upscalers that may also name a custom folder.
 - `scripts/bundle_nightly.py` bundles any nightly (`--latest` downloads the
   newest) and rewrites every pinned value; `.github/workflows/nightly.yml`
-  runs it daily.
+  runs it weekly.
 
 ### Fixed
 

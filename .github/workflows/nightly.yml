@@ -1,6 +1,7 @@
 name: Bundle OptiScaler nightly
 
-# optiscaler/OptiScaler-nightly publishes at 04:00 UTC; run after it. Each run
+# optiscaler/OptiScaler-nightly publishes daily at 04:00 UTC; this runs weekly,
+# after Friday's. Each run
 # publishes when there is a nightly no release carries yet, when main has
 # commits since the last release, or when forced; it then downloads and bundles
 # the newest nightly (no OptiScaler archive is committed to the repo). Versions are <base>-nightly.<date>.<run number>, so
@@ -18,7 +19,9 @@ name: Bundle OptiScaler nightly
 # main with the newest nightly without waiting for anything new.
 on:
   schedule:
-    - cron: "37 5 * * *"
+    # Weekly, Friday 05:37 UTC (07:37/08:37 Vilnius): the week's newest nightly,
+    # in place before the weekend. Run it by hand for anything sooner.
+    - cron: "37 5 * * 5"
   workflow_dispatch:
     inputs:
       force:
@@ -124,7 +127,7 @@ jobs:
           VERSION: ${{ steps.bundle.outputs.version }}
         run: |
           # Nothing is committed back: each nightly archive is ~70 MB and would
-          # pile up in git history daily. The release zip carries it.
+          # pile up in git history. The release zip carries it.
           # package.py names the zip after plugin.json's name.
           cp out/*.zip decky-optiscaler-nightly.zip
           # The in-plugin updater passes this to Decky's installer, which
