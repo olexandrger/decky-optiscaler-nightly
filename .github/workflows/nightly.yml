@@ -1,7 +1,7 @@
 name: Bundle OptiScaler nightly
 
-# optiscaler/OptiScaler-nightly publishes daily at 04:00 UTC; this runs weekly,
-# after Friday's. Each run
+# optiscaler/OptiScaler-nightly publishes daily at 04:00 UTC. This runs by hand
+# (the usual way) and monthly on the 1st, after that day's nightly. Each run
 # publishes when there is a nightly no release carries yet, when main has
 # commits since the last release, or when forced; it then downloads and bundles
 # the newest nightly (no OptiScaler archive is committed to the repo). Versions are <base>-nightly.<date>.<run number>, so
@@ -19,9 +19,10 @@ name: Bundle OptiScaler nightly
 # main with the newest nightly without waiting for anything new.
 on:
   schedule:
-    # Weekly, Friday 05:37 UTC (07:37/08:37 Vilnius): the week's newest nightly,
-    # in place before the weekend. Run it by hand for anything sooner.
-    - cron: "37 5 * * 5"
+    # Monthly, the 1st at 05:37 UTC, as a fallback. Releases are mostly made
+    # by hand (Actions -> Run workflow); this only keeps a forgotten fork from
+    # drifting months behind OptiScaler.
+    - cron: "37 5 1 * *"
   workflow_dispatch:
     inputs:
       force:
