@@ -1624,6 +1624,105 @@ def check_version_pin():
               "CustomOptional<std::string, SoftDefault> Dx12Upscaler" in config_h)
 
 
+def check_bundled_payload_upgrade():
+    """The archive actually in bin/ installs, upgrades a 0.9.x folder and uninstalls.
+
+    Everything else here runs against a synthetic payload. This one unpacks the
+    real bundled OptiScaler through the same Payload code the Deck runs, so a
+    nightly that changes its layout (10.0 moved every dependency into an
+    OptiScaler/ subfolder) or adds a DLL fails here rather than on the Deck.
+    """
+    from optiscaler import constants
+    from optiscaler.payload import Payload
+
+    print("\nBundled payload: install, upgrade from 0.9.x, uninstall")
+    archive = ROOT / "bin" / constants.PAYLOAD_ARCHIVE
+    if not archive.is_file():
+        check("the bundled archive is present", False, str(archive))
+        return
+
+    work = Path(tempfile.mkdtemp(prefix="optiscaler-payload-"))
+    try:
+        payload = Payload(archive, work / "payload")
+        root = payload.ensure()
+        check("the bundled archive extracts through Payload", payload.ready, str(root))
+
+        # The name the plugin shows must be the build inside: 10.0.0-pre1 is
+        # file version 10.0.0.1.
+        dll_version = installer.pe_file_version(root / "OptiScaler.dll")
+        major, minor, hotfix, build = (dll_version[0], dll_version[1], dll_version[2], dll_version[3]) \
+            if dll_version else (None,) * 4
+        expected = re.match(r"(\d+)\.(\d+)\.(\d+)(?:-pre(\d+))?", constants.OPTISCALER_VERSION)
+        check("OptiScaler.dll is the version the plugin names",
+              expected and (major, minor, hotfix) == tuple(int(g) for g in expected.groups()[:3])
+              and (expected.group(4) is None or build == int(expected.group(4))),
+              f"{dll_version} vs {constants.OPTISCALER_VERSION}")
+
+        # Flat layout: no OptiScaler/ subfolder, so OptiScaler 10 resolves its
+        # dependencies and plugins/ from the game folder (dllmain.cpp falls back
+        # to the exe folder when .\OptiScaler is missing).
+        check("the payload is flattened (no OptiScaler/ subfolder)",
+              not (root / "OptiScaler").exists())
+        top_dlls = {p.name for p in root.iterdir() if p.is_file() and p.suffix.lower() == ".dll"}
+        missing = sorted(set(constants.PAYLOAD_FILES) - {p.name for p in root.iterdir()})
+        unlisted = sorted(top_dlls - set(constants.PAYLOAD_FILES) - {"OptiScaler.dll"})
+        check("every payload file is in the archive", not missing, missing)
+        check("every DLL in the archive is installed", not unlisted, unlisted)
+        check("every payload dir is in the archive",
+              all((root / d).is_dir() for d in constants.PAYLOAD_DIRS), constants.PAYLOAD_DIRS)
+        check("the bundled FSR upscaler is the one restore puts back",
+              hashlib.sha256((root / constants.FFX_UPSCALER_DLL).read_bytes()).hexdigest()
+              == constants.FSR4_BUNDLED_FILE_SHA256)
+
+        # A game folder as the 0.9.x plugin left it, one of whose files had
+        # displaced something of the game's.
+        game = work / "game"
+        game.mkdir()
+        (game / "Game.exe").write_bytes(b"MZ")
+        old_files = ["dxgi.dll", INI_NAME, "libxess.dll"] + list(constants.RETIRED_PAYLOAD_FILES)
+        for name in old_files:
+            (game / name).write_bytes(b"0.9.x")
+        shutil.copy2(root / "OptiScaler.dll", game / "dxgi.dll")
+        for name in constants.RETIRED_PAYLOAD_DIRS:
+            (game / name).mkdir()
+            (game / name / "D3D12Core.dll").write_bytes(b"0.9.x")
+        displaced = constants.RETIRED_PAYLOAD_FILES[0] if constants.RETIRED_PAYLOAD_FILES else None
+        backups = {}
+        if displaced:
+            (game / constants.BACKUP_DIR).mkdir()
+            (game / constants.BACKUP_DIR / displaced).write_bytes(b"the game's own")
+            backups[displaced] = True
+        (game / constants.MANIFEST_NAME).write_text(json.dumps({
+            "plugin": "decky-optiscaler", "optiscaler_version": "0.9.4", "filename": "dxgi.dll",
+            "files": old_files, "dirs": list(constants.RETIRED_PAYLOAD_DIRS) + ["Licenses"],
+            "backups": backups, "fsr4_build": {},
+        }), encoding="utf-8")
+
+        installer.install(game, root, "dxgi.dll", preserve_ini=True)
+        leftovers = [n for n in list(constants.RETIRED_PAYLOAD_FILES) + list(constants.RETIRED_PAYLOAD_DIRS)
+                     if (game / n).exists() and n != displaced]
+        check("upgrading removes what this build no longer ships", not leftovers, leftovers)
+        if displaced:
+            check("and puts back the game file one of those had displaced",
+                  (game / displaced).read_bytes() == b"the game's own")
+        check("the proxy is this build's OptiScaler",
+              (game / "dxgi.dll").read_bytes() == (root / "OptiScaler.dll").read_bytes())
+        check("the 0.9.x ini is kept", (game / INI_NAME).read_bytes() == b"0.9.x")
+        verify = installer.verify_install(game, root)
+        check("verify calls the upgraded folder complete", verify["complete"], verify["problems"])
+        check("and finds an FSR 4 capable upscaler", verify["ffx_upscaler"]["fsr4_capable"],
+              verify["ffx_upscaler"])
+        check("the manifest records this build",
+              installer.read_manifest(game)["optiscaler_version"] == constants.OPTISCALER_VERSION)
+
+        installer.uninstall(game, remove_ini=True)
+        remaining = sorted(p.name for p in game.iterdir())
+        check("uninstall leaves only the game's files",
+              remaining == sorted(["Game.exe"] + ([displaced] if displaced else [])), remaining)
+    finally:
+        shutil.rmtree(work, ignore_errors=True)
+
+
 def check_optipatcher():
     """OptiPatcher ships alongside and installs into the same plugin folder."""
     import tempfile
@@ -2709,6 +2808,7 @@ def main():
     check_wiki_transport()
     check_wiki_tls()
     check_version_pin()
+    check_bundled_payload_upgrade()
     check_optipatcher()
     if LIVE_ASI_SHIPPED:
         check_asi_wide_formats()

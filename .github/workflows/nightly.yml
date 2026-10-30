@@ -2,13 +2,26 @@ name: Bundle OptiScaler nightly
 
 # optiscaler/OptiScaler-nightly publishes at 04:00 UTC; run after it. Each run
 # bundles the newest nightly if it is not the one already in bin/, runs the
-# same checks as build.yml, commits the result to this branch and publishes a
-# prerelease with the plugin zip. A nightly that breaks the checks is not
+# same checks as build.yml and publishes a release with the plugin zip (nothing
+# is committed back to the branch). A nightly that breaks the checks is not
 # released -- the run fails and the previous build stays current.
+#
+# Releases are full releases (not prereleases) under a fixed asset name, so the
+# newest one is always at
+#   https://github.com/<owner>/<repo>/releases/latest/download/decky-optiscaler-nightly.zip
+# which is what Decky's "Install Plugin from URL" wants.
+#
+# Run it by hand with "release current build" ticked to publish what is in bin/
+# without waiting for a newer nightly.
 on:
   schedule:
     - cron: "37 5 * * *"
   workflow_dispatch:
+    inputs:
+      force:
+        description: "Release the current build even if no newer nightly exists"
+        type: boolean
+        default: false
 
 permissions:
   contents: write
@@ -50,14 +63,22 @@ jobs:
           python3 scripts/bundle_nightly.py --latest --if-newer
           code=$?
           set -e
-          if [ "$code" = 3 ]; then echo "fresh=false" >> "$GITHUB_OUTPUT"; exit 0; fi
-          [ "$code" = 0 ] || exit "$code"
-          echo "fresh=true" >> "$GITHUB_OUTPUT"
-          python3 scripts/generate_schema.py
+          if [ "$code" = 3 ]; then
+            echo "fresh=false" >> "$GITHUB_OUTPUT"
+          else
+            [ "$code" = 0 ] || exit "$code"
+            echo "fresh=true" >> "$GITHUB_OUTPUT"
+            python3 scripts/generate_schema.py
+          fi
+          if [ "$code" = 0 ] || [ "${{ inputs.force }}" = "true" ]; then
+            echo "release=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "release=false" >> "$GITHUB_OUTPUT"
+          fi
           echo "version=$(node -p 'require("./package.json").version')" >> "$GITHUB_OUTPUT"
 
       - name: Typecheck, build and test
-        if: steps.bundle.outputs.fresh == 'true'
+        if: steps.bundle.outputs.release == 'true'
         run: |
           npx tsc --noEmit
           pnpm build
@@ -71,20 +92,23 @@ jobs:
           HARNESS=live-fields.tsx node testharness/build-and-run.mjs
 
       - name: Package
-        if: steps.bundle.outputs.fresh == 'true'
+        if: steps.bundle.outputs.release == 'true'
         run: python3 scripts/package.py
 
-      - name: Commit and release
-        if: steps.bundle.outputs.fresh == 'true'
+      - name: Release
+        if: steps.bundle.outputs.release == 'true'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           VERSION: ${{ steps.bundle.outputs.version }}
         run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add -A bin defaults py_modules src package.json
-          git commit -m "Bundle OptiScaler nightly ($VERSION)"
-          git push
-          gh release create "v$VERSION" "out/Decky OptiScaler.zip" \
-            --prerelease --title "Decky OptiScaler $VERSION" \
+          # Nothing is committed back: each nightly archive is ~70 MB and would
+          # pile up in git history daily. The release zip carries it; main keeps
+          # the last hand-bundled build, and the next run bundles from there.
+          cp "out/Decky OptiScaler.zip" decky-optiscaler-nightly.zip
+          if gh release view "v$VERSION" >/dev/null 2>&1; then
+            gh release upload "v$VERSION" decky-optiscaler-nightly.zip --clobber
+            exit 0
+          fi
+          gh release create "v$VERSION" decky-optiscaler-nightly.zip \
+            --target "$(git rev-parse HEAD)" --latest --title "Decky OptiScaler $VERSION" \
             --notes "EXPERIMENTAL fork build for tinkering, not intended for real use; use danielcamilo1/decky-optiscaler instead. Bundles the OptiScaler nightly of the same date from optiscaler/OptiScaler-nightly. Live in-game control is unavailable."
