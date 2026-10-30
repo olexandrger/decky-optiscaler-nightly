@@ -112,12 +112,13 @@ so it is tracked here with `git add -f`; leave upstream's `.gitignore` alone.
 ## Installing is transactional
 
 `installer.install` routes every write through `_Journal`: whatever a path held
-is moved into `.decky-optiscaler-install/` with an undo record first, a failure
-rolls everything back, and an install killed half way is rolled back by the next
-install or uninstall (`recover_interrupted`). Any new write in `_install` must go
-through the journal too; `scripts/test_install.py` fails every write in turn and
-will catch one that does not. Uninstall without a manifest only removes files
-byte-identical to the bundled payload.
+is moved into `.decky-optiscaler-nightly-install/` with an undo record first, a
+failure rolls everything back, and an install killed half way is rolled back by
+the next install or uninstall (`recover_interrupted`). Any new write in
+`_install` must go through the journal too; `scripts/test_install.py` fails
+every write in turn and will catch one that does not. Uninstall only removes
+this plugin's own installs (its manifest lists them); anything else is foreign
+and refused (see "Exclusive with upstream's plugin").
 
 ## Bundling a newer nightly
 
