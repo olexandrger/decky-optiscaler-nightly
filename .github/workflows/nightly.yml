@@ -1,14 +1,16 @@
 name: Bundle OptiScaler nightly
 
-# optiscaler/OptiScaler-nightly publishes daily at 04:00 UTC. This runs by hand
-# (the usual way) and monthly on the 1st, after that day's nightly. Each run
+# optiscaler/OptiScaler-nightly publishes daily at 04:00 UTC; this runs daily
+# after it, and by hand. Each run
 # publishes when there is a nightly no release carries yet, when main has
 # commits since the last release, or when forced; it then downloads and bundles
 # the newest nightly (no OptiScaler archive is committed to the repo). Versions are <base>-nightly.<date>.<run number>, so
 # every published build is its own release. It runs the
 # same checks as build.yml and publishes a release with the plugin zip (nothing
 # is committed back to the branch). A nightly that breaks the checks is not
-# released -- the run fails and the previous build stays current.
+# released -- the run fails and the previous build stays current. Only the
+# newest KEEP_RELEASES nightly releases are kept; older ones and their tags are
+# deleted after each publish.
 #
 # Releases are full releases (not prereleases) under a fixed asset name, so the
 # newest one is always at
@@ -19,10 +21,9 @@ name: Bundle OptiScaler nightly
 # main with the newest nightly without waiting for anything new.
 on:
   schedule:
-    # Monthly, the 1st at 05:37 UTC, as a fallback. Releases are mostly made
-    # by hand (Actions -> Run workflow); this only keeps a forgotten fork from
-    # drifting months behind OptiScaler.
-    - cron: "37 5 1 * *"
+    # Daily, 05:37 UTC, after upstream's 04:00 nightly. A day with no new
+    # nightly and no fork changes publishes nothing.
+    - cron: "37 5 * * *"
   workflow_dispatch:
     inputs:
       force:
@@ -149,3 +150,22 @@ jobs:
           gh release create "v$VERSION" decky-optiscaler-nightly.zip decky-optiscaler-nightly.zip.sha256 \
             --target "$(git rev-parse HEAD)" --latest --title "Decky OptiScaler $VERSION" \
             --notes-file release-notes.md
+
+      # Daily builds would pile up: keep the newest KEEP_RELEASES nightly
+      # releases and delete older ones with their tags. The updater only reads
+      # the latest, and the release notes and the release decision only look at
+      # the newest tags, so nothing depends on the old ones. Upstream's own tags
+      # (v0.0.7 and earlier) do not match the pattern and are left alone.
+      - name: Prune old releases
+        if: steps.bundle.outputs.release == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          KEEP_RELEASES: 10
+        run: |
+          gh release list --limit 1000 --json tagName,publishedAt,isDraft --jq \
+            "[.[] | select(.isDraft | not) | select(.tagName | test(\"^v.+-nightly\\\\.\"))]
+             | sort_by(.publishedAt) | reverse | .[$KEEP_RELEASES:] | .[].tagName" |
+          while read -r tag; do
+            echo "deleting $tag"
+            gh release delete "$tag" --cleanup-tag --yes
+          done
