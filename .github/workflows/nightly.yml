@@ -33,6 +33,8 @@ on:
 
 permissions:
   contents: write
+  # Only to start a fresh run when main moves on mid-run (see "Check main").
+  actions: write
 
 concurrency:
   group: nightly
@@ -122,8 +124,32 @@ jobs:
         if: steps.bundle.outputs.release == 'true'
         run: python3 scripts/package.py
 
-      - name: Release
+      # A tag on a commit that is no longer main's head is refused (403
+      # "Resource not accessible by integration") when main has changed a
+      # workflow file since: that needs the `workflows` permission, which
+      # GITHUB_TOKEN can never have. A push during a run is enough to hit it,
+      # and releasing an outdated commit is wrong anyway, so hand over to a
+      # fresh run on the new main instead. GITHUB_TOKEN may start
+      # workflow_dispatch runs (the one event it is allowed to trigger).
+      - name: Check main has not moved
+        id: current
         if: steps.bundle.outputs.release == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          git fetch -q origin main
+          built=$(git rev-parse HEAD)
+          head=$(git rev-parse origin/main)
+          if [ "$built" = "$head" ]; then
+            echo "moved=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          echo "moved=true" >> "$GITHUB_OUTPUT"
+          echo "::warning::main moved during this run (${built:0:7} -> ${head:0:7}); not releasing the outdated commit, starting a new run on main"
+          gh workflow run nightly.yml --ref main -f force=${{ inputs.force == true }}
+
+      - name: Release
+        if: steps.bundle.outputs.release == 'true' && steps.current.outputs.moved == 'false'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           VERSION: ${{ steps.bundle.outputs.version }}
@@ -157,7 +183,7 @@ jobs:
       # the newest tags, so nothing depends on the old ones. Upstream's own tags
       # (v0.0.7 and earlier) do not match the pattern and are left alone.
       - name: Prune old releases
-        if: steps.bundle.outputs.release == 'true'
+        if: steps.bundle.outputs.release == 'true' && steps.current.outputs.moved == 'false'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           KEEP_RELEASES: 10

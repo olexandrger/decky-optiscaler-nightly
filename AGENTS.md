@@ -177,6 +177,10 @@ checked on a Deck: `OptiScaler.log` in the game folder is the source of truth.
 when run by hand with "Release the current build". It then downloads and bundles
 the newest nightly; a run with nothing to release downloads nothing. A failed run
 creates no tag, so the next day retries.
+A run that finds `main` moved on before it releases (a push mid-run) does not
+release the outdated commit: it starts a fresh run on `main` and stops. GitHub
+would refuse the tag anyway when the push changed a workflow file, since that
+needs the `workflows` permission `GITHUB_TOKEN` cannot have.
 After each publish, releases beyond the newest 10 (`KEEP_RELEASES`) are deleted
 with their tags; upstream's own `v0.0.x` tags are not touched.
 Each published build is its own full release (not a prerelease) tagged
