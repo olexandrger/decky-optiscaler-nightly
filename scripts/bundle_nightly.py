@@ -29,6 +29,7 @@ What it does, in order:
 import argparse
 import ast
 import hashlib
+import http.client
 import json
 import os
 import re
@@ -37,6 +38,8 @@ import struct
 import subprocess
 import sys
 import tempfile
+import time
+import urllib.error
 import urllib.request
 from pathlib import Path
 
@@ -92,23 +95,60 @@ def archiver():
     sys.exit("need 7z, 7zz or 7za on PATH (p7zip / 7-Zip)")
 
 
-def download_latest(dest_dir):
+#: Waits between attempts. GitHub's release downloads sometimes answer 5xx
+#: (a 504 after two minutes failed a scheduled run); a retry usually works.
+RETRY_DELAYS = (15, 60, 180)
+
+
+def _transient(error):
+    """True for failures worth another attempt: 5xx, 429, timeouts, cut transfers."""
+    if isinstance(error, urllib.error.HTTPError):
+        return error.code >= 500 or error.code == 429
+    return isinstance(error, (urllib.error.URLError, TimeoutError, ConnectionError,
+                              http.client.IncompleteRead, http.client.RemoteDisconnected))
+
+
+def with_retries(action, what, delays=RETRY_DELAYS, sleep=time.sleep):
+    """Run action(); retry transient network failures after each delay in turn."""
+    for attempt, delay in enumerate((*delays, None), start=1):
+        try:
+            return action()
+        except Exception as error:  # noqa: BLE001 -- filtered by _transient
+            if delay is None or not _transient(error):
+                raise
+            print(f"{what}: attempt {attempt} failed ({error}); retrying in {delay}s", flush=True)
+            sleep(delay)
+
+
+def download_latest(dest_dir, opener=urllib.request.urlopen, sleep=time.sleep):
     api = f"https://api.github.com/repos/{NIGHTLY_REPO}/releases?per_page=1"
     request = urllib.request.Request(api, headers={"Accept": "application/vnd.github+json"})
     # CI downloads on every push; anonymous API calls share a 60/hour limit per runner IP.
     token = os.environ.get("GITHUB_TOKEN") or os.environ.get("GH_TOKEN")
     if token:
         request.add_header("Authorization", f"Bearer {token}")
-    with urllib.request.urlopen(request, timeout=60) as response:
-        release = json.load(response)[0]
+
+    def read_release():
+        with opener(request, timeout=60) as response:
+            return json.load(response)[0]
+
+    release = with_retries(read_release, "reading the newest nightly", sleep=sleep)
     asset = next((a for a in release["assets"] if a["name"].endswith(".7z")), None)
     if not asset:
         sys.exit(f"{release['tag_name']} has no .7z asset")
     target = Path(dest_dir) / asset["name"]
-    print(f"downloading {release['tag_name']}: {asset['name']}")
-    with urllib.request.urlopen(asset["browser_download_url"], timeout=600) as response, \
-            open(target, "wb") as handle:
-        shutil.copyfileobj(response, handle)
+    print(f"downloading {release['tag_name']}: {asset['name']}", flush=True)
+
+    def fetch():
+        # Each attempt starts the file over; a short body counts as a cut transfer.
+        with opener(asset["browser_download_url"], timeout=600) as response, \
+                open(target, "wb") as handle:
+            shutil.copyfileobj(response, handle)
+        size = target.stat().st_size
+        if asset.get("size") and size != asset["size"]:
+            raise http.client.IncompleteRead(b"", asset["size"] - size)
+
+    with_retries(fetch, f"downloading {asset['name']}", sleep=sleep)
     return target
 
 

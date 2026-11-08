@@ -113,6 +113,7 @@ jobs:
           python3 scripts/selftest.py 2>&1 | tee selftest.log
           python3 scripts/test_install.py 2>&1 | tee install.log
           python3 scripts/test_update.py
+          python3 scripts/test_bundle.py
           HARNESS=run.tsx node testharness/build-and-run.mjs 2>&1 | tee harness.log
           grep -q "React errors/warnings: 0" harness.log
           if grep -E ": false$" harness.log; then exit 1; fi

@@ -80,6 +80,9 @@ jobs:
       - name: In-plugin updater
         run: python3 scripts/test_update.py
 
+      - name: Nightly download retries
+        run: python3 scripts/test_bundle.py
+
       # Includes check_version_pin() (the archive in bin/ is the one
       # constants.py pins) and the real-payload install/upgrade/uninstall.
       - name: Backend selftest

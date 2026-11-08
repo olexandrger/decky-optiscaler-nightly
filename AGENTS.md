@@ -159,6 +159,7 @@ pnpm build
 python3 scripts/test_fsr4.py
 python3 scripts/test_install.py   # a failed or interrupted install leaves the folder as it was
 python3 scripts/test_update.py    # the in-plugin updater
+python3 scripts/test_bundle.py    # the nightly download retries GitHub's transient failures
 python3 scripts/selftest.py
 HARNESS=run.tsx node testharness/build-and-run.mjs          # "React errors/warnings: 0", no line ending ": false"
 HARNESS=all-options.tsx node testharness/build-and-run.mjs  # "real React errors: 0"
