@@ -21,9 +21,12 @@ name: Bundle OptiScaler nightly
 # main with the newest nightly without waiting for anything new.
 on:
   schedule:
-    # Daily, 05:37 UTC, after upstream's 04:00 nightly. A day with no new
-    # nightly and no fork changes publishes nothing.
-    - cron: "37 5 * * *"
+    # Daily, 06:19 UTC, after upstream's 04:00 nightly. An odd hour and
+    # minute on purpose: GitHub queues scheduled runs and the round slots
+    # (:00, :30, and popular hours) are the busiest, so runs there start late
+    # or are dropped. A day with no new nightly and no fork changes publishes
+    # nothing.
+    - cron: "19 6 * * *"
   workflow_dispatch:
     inputs:
       force:
