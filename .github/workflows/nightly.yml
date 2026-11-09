@@ -21,11 +21,13 @@ name: Bundle OptiScaler nightly
 # main with the newest nightly without waiting for anything new.
 on:
   schedule:
-    # Daily, 06:19 UTC, after upstream's 04:00 nightly. An odd hour and
-    # minute on purpose: GitHub queues scheduled runs and the round slots
-    # (:00, :30, and popular hours) are the busiest, so runs there start late
-    # or are dropped. A day with no new nightly and no fork changes publishes
-    # nothing.
+    # Daily, 06:19 UTC, after upstream's 04:00 nightly. GitHub starts
+    # scheduled runs late (5-6.5 h here since Nov 2026, community reports
+    # since Oct 2026) and sometimes not at all; that is harmless: a later run
+    # releases any nightly that has no tag yet. For on-time builds, call
+    # workflow_dispatch from an outside cron; this schedule stays a fallback
+    # and finds nothing to do. A day with no new nightly and no fork changes
+    # publishes nothing.
     - cron: "19 6 * * *"
   workflow_dispatch:
     inputs:
