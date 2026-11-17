@@ -54,9 +54,32 @@ export function launchOptionFor(filename: string): string {
   return `WINEDLLOVERRIDES="${overrideStem(filename)}=n,b" %command%`;
 }
 
+/** `WINEDLLOVERRIDES=...` assignments, unquoted or in either quote. */
+const OVERRIDES_RE = /WINEDLLOVERRIDES=(?:"([^"]*)"|'([^']*)'|(\S+))/gi;
+
+/**
+ * Wine's override list: `;`-separated clauses, each `dll[,dll...]=mode`. The
+ * mode can itself hold commas (`n,b`), so a clause splits at its first `=`.
+ */
+function clauses(value: string): { dlls: string[]; mode: string }[] {
+  return value.split(";").filter((clause) => clause.trim() !== "").map((clause) => {
+    const at = clause.indexOf("=");
+    const names = at < 0 ? clause : clause.slice(0, at);
+    return { dlls: names.split(",").map((dll) => dll.trim()).filter(Boolean), mode: at < 0 ? "" : clause.slice(at + 1) };
+  });
+}
+
 export function hasOverride(options: string | null, filename: string): boolean {
   if (!options) return false;
-  return options.toLowerCase().includes(`${overrideStem(filename).toLowerCase()}=n,b`);
+  const stem = overrideStem(filename).toLowerCase();
+  for (const match of options.matchAll(OVERRIDES_RE)) {
+    const value = match[1] ?? match[2] ?? match[3] ?? "";
+    if (clauses(value).some((clause) =>
+      clause.mode.trim().toLowerCase() === "n,b" && clause.dlls.some((dll) => dll.toLowerCase() === stem))) {
+      return true;
+    }
+  }
+  return false;
 }
 
 /**
@@ -64,16 +87,26 @@ export function hasOverride(options: string | null, filename: string): boolean {
  *
  * Conservative on purpose: a user may have added `-dx12` or a gamescope
  * wrapper of their own alongside the override, and those are not this plugin's
- * to delete. Only a `WINEDLLOVERRIDES=` assignment naming the proxy we
- * installed is dropped. A leftover bare `%command%` is Steam's own default
- * written out longhand, so that collapses to an empty field.
+ * to delete. Inside `WINEDLLOVERRIDES` only our proxy's name goes: another
+ * DLL in the same clause (`dxgi,d3d11=n,b`) or another clause
+ * (`dxgi=n,b;winmm=n,b`) stays, and the assignment goes only when nothing is
+ * left in it (ported from upstream's audit, PD-07: the whole assignment used
+ * to go). A leftover bare `%command%` is Steam's own default written out
+ * longhand, so that collapses to an empty field.
  */
 export function stripOverride(options: string, filename: string): string {
   const stem = overrideStem(filename).toLowerCase();
-  const withoutOurs = options.replace(
-    /WINEDLLOVERRIDES=(?:"[^"]*"|'[^']*'|\S+)/gi,
-    (match) => (match.toLowerCase().includes(`${stem}=`) ? "" : match),
-  );
+  const withoutOurs = options.replace(OVERRIDES_RE, (match, double, single, bare) => {
+    const value: string = double ?? single ?? bare ?? "";
+    const kept = clauses(value)
+      .map((clause) => ({ ...clause, dlls: clause.dlls.filter((dll) => dll.toLowerCase() !== stem) }))
+      .filter((clause) => clause.dlls.length > 0);
+    if (kept.length === 0) return "";
+    const rebuilt = kept.map((clause) => `${clause.dlls.join(",")}=${clause.mode}`).join(";");
+    if (rebuilt === value) return match;
+    const quote = double !== undefined ? '"' : single !== undefined ? "'" : "";
+    return `WINEDLLOVERRIDES=${quote}${rebuilt}${quote}`;
+  });
   const collapsed = withoutOurs.replace(/\s+/g, " ").trim();
   return collapsed === "%command%" ? "" : collapsed;
 }

@@ -1021,6 +1021,26 @@ async function render(name: string, element: React.ReactElement) {
       lo.stripOverride(ours, "dxgi.dll") === ""}`);
     console.log(`  another mod's override is left alone: ${
       lo.stripOverride('WINEDLLOVERRIDES="dxgi=n,b" %command%', "winmm.dll") !== ""}`);
+    // Only our DLL leaves the variable (upstream's audit, PD-07).
+    console.log(`  another DLL in our clause stays: ${
+      lo.stripOverride('WINEDLLOVERRIDES="dxgi,d3d11=n,b" %command%', "dxgi.dll")
+        === 'WINEDLLOVERRIDES="d3d11=n,b" %command%'}`);
+    console.log(`  another clause in the same variable stays: ${
+      lo.stripOverride('WINEDLLOVERRIDES="winmm=n,b;dxgi=n,b" mangohud %command%', "dxgi.dll")
+        === 'WINEDLLOVERRIDES="winmm=n,b" mangohud %command%'}`);
+    console.log(`  an unquoted variable keeps its other clause, unquoted: ${
+      lo.stripOverride("WINEDLLOVERRIDES=dxgi=n,b;version=n,b %command%", "dxgi.dll")
+        === "WINEDLLOVERRIDES=version=n,b %command%"}`);
+    console.log(`  a name that only contains ours is not ours: ${
+      !lo.hasOverride('WINEDLLOVERRIDES="xdxgi=n,b" %command%', "dxgi.dll")
+        && lo.stripOverride('WINEDLLOVERRIDES="xdxgi=n,b" %command%', "dxgi.dll")
+          === 'WINEDLLOVERRIDES="xdxgi=n,b" %command%'}`);
+    console.log(`  ours inside a shared clause is still recognised: ${
+      lo.hasOverride('WINEDLLOVERRIDES="d3d11,dxgi=n,b" %command%', "dxgi.dll")}`);
+    console.log(`  the removal choice says what stays: ${
+      lo.launchChoices({ current: 'WINEDLLOVERRIDES="winmm=n,b;dxgi=n,b" %command%', recorded: null,
+        filename: "dxgi.dll" }).find((c) => c.action === "clear")?.value
+        === 'WINEDLLOVERRIDES="winmm=n,b" %command%'}`);
 
     // Recorded and not empty: putting it back is the exact answer.
     const withRecord = lo.launchChoices({
