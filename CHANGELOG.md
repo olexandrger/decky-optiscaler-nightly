@@ -20,6 +20,13 @@ Newest first. Each release ships `Decky OptiScaler.zip` for Decky Loader's
   menu) never reached the game and flipped back; turning FG on rewrote the FG
   pair from an output OptiScaler had reset at runtime; the upscaler read as
   plain FFX when the game held another FSR 4 model than the ini.
+- Ported from upstream's audit (upstream is no longer rebased on; fixes are
+  ported, see AGENTS.md): two live edits inside one 100 ms poll no longer lose
+  the first (an unapplied command is carried into the next, seqs strictly
+  increase, concurrent pushes no longer share a temp file); overlapping wiki
+  downloads no longer leave the resolver forced to IPv4 for the whole plugin;
+  removing OptiScaler's override keeps other DLLs in the same
+  `WINEDLLOVERRIDES`.
 - Removed the frame-rate tiles, the "in game" backend line, the game-reported
   FSR/FFX FG version lists and the panel's upscaler switch: all read
   OptiScaler's State, so the backend always sent them empty and only harness

@@ -3169,6 +3169,28 @@ def check_frontend_types_match_backend():
         shutil.rmtree(root, ignore_errors=True)
 
 
+def check_upstream_review_file():
+    """docs/upstream-review.md stays readable by scripts/upstream_review.py.
+
+    The daily task starts each upstream review from its marker; a marker the
+    script cannot parse would stop that, or start the review from scratch.
+    """
+    import importlib.util
+    spec = importlib.util.spec_from_file_location("upstream_review", ROOT / "scripts" / "upstream_review.py")
+    review = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(review)
+    print("\nUpstream review record")
+    text = review.REVIEW.read_text(encoding="utf-8")
+    check("the review file names the last upstream commit read, in full",
+          len(review.MARKER_RE.findall(text)) == 1, review.MARKER_RE.findall(text))
+    items = review.open_items(text)
+    malformed = [item for item in items if not re.match(r"[\w-]+( [\w-]+)? \([0-9a-f]{7,40}\): \S", item)]
+    check("every open item names its finding and upstream commit", not malformed, malformed)
+    done = re.findall(r"^- \[x\] (.+)$", text, re.M)
+    unexplained = [item for item in done if not re.search(r"Ported in [0-9a-f]{7,40}|Already covered|Not applicable", item)]
+    check("every closed item says how it was closed", not unexplained, unexplained)
+
+
 def main():
     logging.basicConfig(level=logging.ERROR)
     asyncio.run(run())
@@ -3178,6 +3200,7 @@ def main():
     check_live_push_only_what_moved()
     check_running_config()
     check_frontend_types_match_backend()
+    check_upstream_review_file()
     check_live_fields_match_optiscalers_menu()
     check_live_keys()
     check_remembered_choices()

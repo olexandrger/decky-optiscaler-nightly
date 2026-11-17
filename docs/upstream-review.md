@@ -1,0 +1,60 @@
+# Upstream review
+
+What this fork has taken from upstream
+([danielcamilo1/decky-optiscaler](https://github.com/danielcamilo1/decky-optiscaler),
+`main`) and what is still to look at. The fork ports fixes and ideas one
+commit at a time and never rebases (AGENTS.md, "Taking from upstream").
+`scripts/upstream_review.py` reads and updates this file; keep its two
+machine-read parts as they are: the `reviewed:` line and the `- [ ]` / `- [x]`
+items.
+
+reviewed: 6a243593df7986981ec714598d91540952c852e2
+
+Every upstream commit up to and including `reviewed` has been read, and each
+thing in it worth a port is in the queue below. The next review starts after it
+(`python3 scripts/upstream_review.py new`).
+
+## Queue
+
+Open items, oldest first. One port a day at most (the daily task's step 6).
+Each line: id, upstream commit, what upstream found or did. An item is checked
+against the fork's code before anything is written: many were found in code the
+fork has since changed.
+
+- [ ] UI-02 (886d5f0): switching games while a page is open keeps the previous game's detail and writable controls, so an edit can go to the wrong game folder; async loads have no target check, and an older reply can overwrite a newer one.
+- [ ] PD-02 (886d5f0): setup writes Steam's launch options as only this plugin's override and the wiki's flags, dropping the player's own wrappers and arguments.
+- [ ] CD-05 (886d5f0): the payload cache counts as extracted when OptiScaler.dll exists; an extraction that failed half way is trusted by later installs, which skip missing support files silently.
+- [ ] CD-08 (886d5f0): FSR 4 file import, REFramework, OptiPatcher and live-control installs write the game folder outside the install/uninstall lock.
+- [ ] PD-01 (886d5f0): an existing OptiScaler.ini is not backed up; uninstall deletes it with the install's files.
+- [ ] CD-02 (886d5f0): a reinstall rebuilds the manifest from this install only, so OptiPatcher and earlier imported files are no longer owned and uninstall leaves them.
+- [ ] CD-04 (886d5f0): installing the live-control ASI writes over the file in place (write_bytes) even when a running game has it mapped.
+- [ ] UI-07 (886d5f0): the full-screen Now Playing page drops write errors and the restart-needed notice the Quick Access panel shows.
+- [ ] UI-09 (886d5f0): Now Playing does not pass the detected FidelityFX file version, so the FSR version names differ from the Quick Access panel's.
+- [ ] UI-06 (886d5f0): adding live control with the game stopped does not refresh the status afterwards, and a failure is not shown.
+- [ ] UI-01 (886d5f0): after automatic settings are written, an older local write record still overrides the new values on screen.
+- [ ] UI-03 (886d5f0): the automatic toggle has no in-progress state; turned off while applying, it comes back on.
+- [ ] UI-05 (886d5f0): re-picking the wiki entry by hand leaves the setup page on the old plan.
+- [ ] UI-08 (886d5f0): a launch-option toggle snaps back because a stale read overwrites the optimistic state.
+- [ ] UI-10 (886d5f0): a failed log read leaves the Logs tab on "Reading OptiScaler log" for good, or its buttons disabled.
+- [ ] UI-11 (886d5f0): the game page's "Restart now" is a bare button the D-pad cannot reach.
+- [ ] PD-06 (886d5f0): automatic mode refreshes the wiki plan but does not write the new settings to the installed game.
+- [ ] TS-04 (886d5f0): the automatic-install orchestration has no integration test tying "done" to the written config.
+- [ ] TS-01b (886d5f0): all-options.tsx computes ungrouped sections, empty enums and inverted ranges but exits on React errors only.
+- [ ] IDEA restore-point (886d5f0): a restore point of the game's files and ini before an upgrade, with a rollback on the game's page (upstream restorepoint.py); candidate for "Update OptiScaler in this game". A feature: needs a decision.
+- [ ] IDEA game-profiles (886d5f0): per-game requirements surfaced in setup (upstream gameprofiles.py: Phantom Blade Zero's executable folder and 100% output scale). A feature: needs a decision.
+
+## Done
+
+- [x] CD-03 (886d5f0): live commands lost between two pushes. Ported in c8515e3.
+- [x] CD-07 (886d5f0): IPv4 fallback patching the resolver for every thread. Ported in 1f6c3c1.
+- [x] PD-07 (886d5f0): removing our override deleted other DLLs in the same WINEDLLOVERRIDES. Ported in 6807916.
+- [x] CD-01 (886d5f0): half installs that cannot be undone. Already covered: transactional installs (installer `_Journal`).
+- [x] TS-01 (886d5f0): run.tsx printing false without failing. Already covered: CI fails on a line ending ": false".
+
+## Not taken
+
+- 886d5f0: the OptiScaler 0.9.5 bundle and its live control calibrated against the 0.9.5 PDB (reads OptiScaler's internals; AGENTS.md "Live editing").
+- 886d5f0, 2369d02: the community FSR 4.1.1b / 4.1.2 Lite Exact downloads (the fork uses the bundled upscaler's Lite / RDNA2 models).
+- 886d5f0, 2369d02: archives committed to `bin/`.
+- 405deac, 6a24359: upstream's own repository metadata, docs and release notes.
+- CD-09, CD-10 (886d5f0): security findings whose details upstream keeps private; nothing to port from.

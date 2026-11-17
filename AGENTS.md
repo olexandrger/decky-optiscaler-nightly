@@ -26,6 +26,8 @@ What the fork adds on top of upstream:
   built and tested against each bundled nightly (see below);
 - the panel offers **Update OptiScaler in this game** when a game holds another
   OptiScaler than the bundled one;
+- fixes and ideas ported from upstream one commit at a time (never rebased),
+  tracked in `docs/upstream-review.md`;
 - `.github/workflows/nightly.yml` builds, tests and releases, started daily by a
   Claude scheduled task that also fixes what a new nightly breaks; the 10 newest
   releases are kept.
@@ -128,38 +130,54 @@ Moving a game from one to the other means removing OptiScaler with the first.
 - No adoption, no migration of upstream's settings or installs. Do not add any.
   `scripts/test_install.py` (ExclusiveWithOtherInstallsTests) holds this.
 
-## Rebasing on upstream
+## Taking from upstream (port, never rebase)
 
-The fork is kept as **a stack of commits on top of upstream `main`**. Sync by
-rebasing, not merging, so the fork's changes stay a readable patch series.
+The fork **no longer rebases on or merges upstream** `main`. Upstream moved to
+0.9.5 with a live control that reads OptiScaler's internals through a
+PDB-calibrated layout, and rewrote most of the files the fork changes; replaying
+the fork on that would resolve nearly every conflict to "keep the fork's side".
+Upstream is a source of ideas and fixes. Each useful one is **ported as its own
+fork commit**, written against the fork's code and under the rules of this file:
+
+- Port the fix or the idea, not the diff. Check the problem exists here first
+  (reproduce it, or read the fork's code path), then fix it the fork's way and
+  add a test that fails without the fix.
+- The commit message starts `Port: ` and names the upstream commit, plus the
+  finding id when there is one (`upstream 886d5f0, audit CD-03`).
+- Never take: anything reading or writing OptiScaler's `State` or internals
+  outside the plugin API and the generated `Config` layout (upstream's ASI, its
+  PDB layouts, backend or FFX FG switching through State); committed archives in
+  `bin/`; community FSR 4 downloads or the 4.1.1b preset (the fork's Steam Deck
+  presets are FSR 4 Lite / RDNA2 from the bundled upscaler); upstream's pinned
+  OptiScaler version, payload lists and reference INI; upstream's names (a file,
+  folder, route or key a port adds gets a `-nightly` name, see "Exclusive with
+  upstream's plugin").
+- A port that writes INI keys uses keys that exist in OptiScaler 10 (the schema
+  generated from the bundled nightly's INI is the reference) and the `ffx` /
+  `ffx_12` backend ids.
+- History is never rewritten for this: plain commits, plain `git push`.
+
+**Where the review stands: `docs/upstream-review.md`.** Its `reviewed:` line is
+the last upstream commit read; everything up to it has been looked at, and each
+thing worth a port is in its queue (`- [ ]`), with what was done (`- [x]`,
+naming the fork commit) and what was turned down, with the reason. So a review
+never starts from the beginning again:
 
 ```bash
-git remote add upstream https://github.com/danielcamilo1/decky-optiscaler   # once
-git fetch upstream
-git rebase upstream/main          # replay the fork's commits on upstream
+python3 scripts/upstream_review.py new      # fetches upstream; commits after the marker, oldest first
+python3 scripts/upstream_review.py queue    # open items
+python3 scripts/upstream_review.py mark SHA # after reading up to SHA and queueing what it holds
 ```
 
-Resolving conflicts, by file kind:
+`mark` only moves forward along `upstream/main`. If upstream ever rewrites its
+history so the marker is no longer on it, `new` stops and says so: review from
+the merge base by hand, then set the marker again.
 
-| Files | Resolution |
-|---|---|
-| Generated: `src/config/generatedSchema.ts`, `py_modules/optiscaler/schema_generated.py`, `asi/generated/config_mirror.h`, `py_modules/optiscaler/live_fields.json` | Take either side, then regenerate: `python3 scripts/sync_optiscaler_headers.py`, `python3 scripts/generate_schema.py`. Never merge them by hand. |
-| `bin/OptiScaler-*.7z` | Keep it deleted: the fork commits no OptiScaler archive (`bin/.gitignore`). An upstream bump shows as modify/delete; resolve with `git rm`. |
-| `defaults/OptiScaler.reference.ini`, and the pinned values in `py_modules/optiscaler/constants.py` (`OPTISCALER_VERSION`, `PAYLOAD_*`, `FSR4_BUNDLED_*`, payload/retired lists) | Keep the fork's side, then re-run `scripts/bundle_nightly.py --latest` so they are consistent. Upstream will keep pinning 0.9.x; that is expected. |
-| `asi/` (live-control ASI) | Keep the fork's `asi/live.cpp` (plugin API, Config only; see "Live editing"), `asi/plugin_sdk/` and `asi/optiscaler_ref/` (synced to the bundled nightly). Upstream's ASI targets 0.9.x's `State`: do not take its changes; port an upstream live feature only if it fits the plugin-API design. The built ASI is not committed. |
-| Steam Deck FSR 4 (`basic.ts` presets, `installer.py`, `fsr4build.py`, `test_fsr4.py`) | Keep the fork's Lite/RDNA2 presets. Do not bring back the 4.1.1b preset or download. |
-| Identity names (`MANIFEST_NAME`, `BACKUP_DIR`, `LAUNCH_RECORD_NAME`, `PLUGIN_ID`, `ROUTE`, storage keys, context-menu marker) | Keep the fork's `-nightly` names. A new file, folder, route or key upstream adds gets its own `-nightly` name too. |
-| Upstream features unrelated to the above | Take them. If they write INI keys, check the keys exist in OptiScaler 10 (the schema generated from the nightly's INI is the reference) and use `ffx`/`ffx_12` backend ids. |
-
-After the rebase, run the full checks (below), then push with
-`git push --force-with-lease origin main`. Release tags keep pointing at their
-original commits, so rewriting `main` does not break existing releases. The
-first release after a rebase lists the whole replayed stack plus the upstream
-commits pulled in under "Fork changes", because the previous tag is no longer an
-ancestor of `main`; that is expected.
+Small steps: a port is one queue item, one commit, its own test. The daily task
+(below) reviews new upstream commits and ports at most one item a day.
 
 `CLAUDE.md` only imports this file. Upstream's `.gitignore` excludes `CLAUDE.md`,
-so it is tracked here with `git add -f`; leave upstream's `.gitignore` alone.
+so it is tracked here with `git add -f`.
 
 ## Installing is transactional
 
@@ -257,6 +275,22 @@ Vilnius, after OptiScaler-nightly's 04:00 UTC build) is what releases:
    input). That run re-runs every check on exactly the build the fix was made
    for and releases it; a newer nightly published meanwhile waits for the next
    day. If that run fails too, it reverts its commit and reports.
+4. Only once the release is settled (released, nothing new, or the fix and its
+   pinned run done; not after a failure it reported), the upstream step
+   ("Taking from upstream"): `upstream_review.py new`; each new upstream
+   commit is read and its port candidates queued, then `mark` moves the marker
+   and that goes in as one commit `Upstream review: <old>..<new>`.
+5. Then at most **one port** from the queue, oldest first. The item is checked
+   against the fork's code first; one that does not apply is ticked with the
+   reason and the next is checked (three checked a day at most). One that does
+   is fixed the fork's way with a test that fails without it, every check
+   passes, and it is pushed as `Port: ...` with the queue item ticked in the
+   same commit. If `build.yml` fails on that push, the task reverts it and
+   reports. An item marked as needing a decision (a feature, a UI change, or
+   anything near "Live editing" or "Exclusive with upstream's plugin") is not
+   ported: the task reports it once, with a recommendation, and leaves it. The
+   port is released by the next day's run (`main` has commits since the last
+   release).
 
 A failure of `test_live_asi.py` is maintained like any other (usually
 `generate_asi_layout.py` meeting a new kind of Config member or a new way
@@ -265,7 +299,7 @@ A failure of `test_live_asi.py` is maintained like any other (usually
 layout checks. A failure of the check against OptiScaler's own menu is not
 fixed automatically: whether that setting stays live is a decision, so the
 task reports it. It never force-pushes or touches tags and releases itself, makes at most
-one autofix a day, and stops with a report instead of pushing when an autofix
+one autofix and one port a day, and stops with a report instead of pushing when an autofix
 did not help or the fix needs a decision. A transient failure (GitHub 5xx, DNS,
 apt mirrors) gets one retry of the same run; it only reports when that keeps
 happening. It messages only when a human is needed.
