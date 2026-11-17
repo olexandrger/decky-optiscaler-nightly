@@ -629,6 +629,7 @@ def check_live_control():
     """
     import json
     import re
+    from unittest import mock
     from optiscaler import live
 
     print("\nLive in-game control")
@@ -665,6 +666,12 @@ def check_live_control():
         state = live.status(str(target))
         check("no live channel before install", not state["attached"] and state["state"] == "absent")
 
+        def consume():
+            """The ASI applying the command file: its status names that seq."""
+            seq = (target / live.CMD_FILE).read_text().split()[1]
+            (target / live.STATUS_FILE).write_text(
+                f"schema {live.STATUS_SCHEMA}\nstatus ready\nseq {seq}\napplied 1\nerror \n")
+
         fake_asi = root / "fake.asi"
         fake_asi.write_bytes(b"MZ fake")
         check("asi installs into the plugins folder",
@@ -686,6 +693,7 @@ def check_live_control():
         check("command file is the documented wire format",
               body[0].startswith("seq ") and body[1:] == ["set FGEnabled bool 0", "set Sharpness f32 0.5"],
               body)
+        consume()
         # On is OptiScaler's own FG key: its menu pairs the write with State's
         # fgChanged, which (re)activates a generator fed by the game.
         fg_on = live.apply_changes(str(target), [{"section": "FrameGen", "key": "Enabled", "value": "true"}])
@@ -706,6 +714,7 @@ def check_live_control():
         check("an ffx upscaler version change is written, then the upscaler re-created",
               ups_body[1:] == ["set FfxUpscalerIndex i32 1", "set ShowFps bool 1", "reinit"]
               and ups["reinit"], ups_body)
+        consume()
         check("without ReInitUpscalers it waits for the next launch",
               live.apply_changes(str(target), [
                   {"section": live.FFX_UPSCALER_SECTION, "key": live.FFX_UPSCALER_KEY, "value": "1"}],
@@ -727,6 +736,7 @@ def check_live_control():
         check("an FSR 4 model change is written, then the upscaler re-created",
               model_body[1:] == ["set Fsr4Model u8 3", "unset HDR", "reinit"]
               and model["applied"] == ["Fsr4Model", "HDR"] and not model["deferred"], model_body)
+        consume()
         check("'auto' for a resettable setting unsets it, as the overlay's Auto does",
               live.apply_changes(str(target), [
                   {"section": "FSR", "key": "Fsr4Model", "value": "auto"}])["applied"] == ["Fsr4Model"])
@@ -740,6 +750,54 @@ def check_live_control():
         check("a change with nothing live-settable sends nothing",
               live.apply_changes(str(target), [
                   {"section": "Hotfix", "key": "DisableOverlays", "value": "true"}])["sent"] is False)
+
+        # Two pushes inside one ASI poll (100 ms): the ASI applies only the
+        # newest file, so the first must travel inside the second (upstream's
+        # audit CD-03: it used to be dropped while both reported sent).
+        consume()
+        first = live.apply_changes(str(target), [
+            {"section": "Sharpness", "key": "Sharpness", "value": "0.3"},
+            {"section": "FSR", "key": "Fsr4Model", "value": "2"}])
+        second = live.apply_changes(str(target), [
+            {"section": "Sharpness", "key": "Sharpness", "value": "0.7"},
+            {"section": "Menu", "key": "ShowFps", "value": "true"}])
+        merged = (target / live.CMD_FILE).read_text().splitlines()
+        check("a command the game has not applied yet is carried into the next one",
+              merged[1:] == ["set Sharpness f32 0.7", "set Fsr4Model u8 2", "set ShowFps bool 1", "reinit"],
+              merged)
+        check("and the newer command has the higher seq", second["seq"] > first["seq"],
+              (first["seq"], second["seq"]))
+        consume()
+        live.apply_changes(str(target), [{"section": "Menu", "key": "ShowFps", "value": "false"}])
+        check("once the game has applied it, the next command holds only its own change",
+              (target / live.CMD_FILE).read_text().splitlines()[1:] == ["set ShowFps bool 0"])
+        consume()
+        with mock.patch.object(live.time, "time_ns", return_value=5_000_000_000_000):
+            a = live._send(str(target), ["set Sharpness f32 0.1"])
+            consume()
+            b = live._send(str(target), ["set Sharpness f32 0.2"])
+        check("two commands in the same millisecond still get different seqs", b > a, (a, b))
+        consume()
+        import threading as _threading
+        errors = []
+
+        def push(index):
+            try:
+                live._send(str(target), [f"set Member{index} i32 {index}"])
+            except Exception as exc:  # what a shared temp file used to raise
+                errors.append(repr(exc))
+        workers = [_threading.Thread(target=push, args=(i,)) for i in range(8)]
+        for worker in workers:
+            worker.start()
+        for worker in workers:
+            worker.join()
+        held = (target / live.CMD_FILE).read_text().splitlines()[1:]
+        check("concurrent pushes neither fail nor lose each other",
+              not errors and sorted(held) == sorted(f"set Member{i} i32 {i}" for i in range(8)),
+              errors or held)
+        check("and leave no temporary files behind",
+              not [p.name for p in target.iterdir() if p.name.endswith(".tmp")])
+        consume()
 
         (target / live.DUMP_FILE).write_text(
             "fields 2\nSharpness f32 1 0.5 0.400000006 -\nDx12Upscaler i32 0 - 0 -\n")
@@ -1465,6 +1523,7 @@ def check_wiki_transport():
               attempts[1] is not attempts[0])
         check("the resolver is put back afterwards",
               socket_mod.getaddrinfo is attempts[0])
+
 
         # A server that answered is not retried: asking again says the same.
         attempts.clear()

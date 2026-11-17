@@ -27,6 +27,7 @@ channel against the real OptiScaler under Wine.
 import json
 import os
 import re
+import threading
 import time
 from pathlib import Path
 
@@ -503,15 +504,80 @@ def _same_dir(windows_path, target_dir):
     return theirs[-depth:] == ours[-depth:]
 
 
+_SEND_LOCKS = {}
+_SEND_LOCKS_GUARD = threading.Lock()
+
+
+def _send_lock(path):
+    with _SEND_LOCKS_GUARD:
+        return _SEND_LOCKS.setdefault(str(path), threading.Lock())
+
+
+def _unconsumed(path, target_dir):
+    """(seq, command lines) of a command file the ASI has not applied yet."""
+    try:
+        text = path.read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return None, []
+    head = re.match(r"seq (\d+)", text)
+    if not head:
+        return None, []
+    seq = int(head.group(1))
+    applied = _read_status_seq(target_dir)
+    if applied is not None and applied == seq:
+        return seq, []
+    return seq, [line.strip() for line in text.splitlines()[1:] if line.strip()]
+
+
+def _read_status_seq(target_dir):
+    try:
+        raw = _parse_status(_control_path(target_dir, STATUS_FILE).read_text(
+            encoding="utf-8", errors="replace"))
+    except OSError:
+        return None
+    return _number(raw.get("seq"), int)
+
+
+def _merge(pending, lines):
+    """One command holding both: a later set/unset of a member replaces an earlier one.
+
+    The ASI applies reinit and dump after every write in the file, whatever
+    their position, so each is kept once, at the end.
+    """
+    by_member, order, flags = {}, [], []
+    for line in [*pending, *lines]:
+        parts = line.split()
+        if parts and parts[0] in ("set", "unset") and len(parts) >= 2:
+            if parts[1] not in by_member:
+                order.append(parts[1])
+            by_member[parts[1]] = line
+        elif parts and line not in flags:
+            flags.append(line)
+    return [by_member[member] for member in order] + flags
+
+
 def _send(target_dir, lines):
-    """Write one command, atomically, under a fresh sequence number."""
-    seq = time.time_ns() // 1_000_000
-    body = "\n".join([f"seq {seq}", *lines, ""])
+    """Write a command, atomically, under a new sequence number.
+
+    The ASI polls the command file every 100 ms and applies only the newest one,
+    so a command it has not applied yet (its status still names an older seq)
+    is carried into this one rather than overwritten: two edits in quick
+    succession used to leave only the second, with both reported as sent.
+    """
     path = _control_path(target_dir, CMD_FILE)
-    # Write-then-replace so the ASI never reads a half-written command file.
-    temp = path.with_suffix(".cmd.tmp")
-    temp.write_text(body, encoding="utf-8")
-    os.replace(temp, path)
+    with _send_lock(path):
+        previous, pending = _unconsumed(path, target_dir)
+        # Strictly increasing: the ASI skips a file whose seq it already applied.
+        seq = max(time.time_ns() // 1_000_000, (previous or 0) + 1)
+        body = "\n".join([f"seq {seq}", *_merge(pending, lines), ""])
+        # Write-then-replace so the ASI never reads a half-written command file;
+        # a name of its own, so two writers never replace each other's.
+        temp = path.with_name(f"{path.name}.{os.getpid()}.{threading.get_ident()}.tmp")
+        try:
+            temp.write_text(body, encoding="utf-8")
+            os.replace(temp, path)
+        finally:
+            temp.unlink(missing_ok=True)
     return seq
 
 
