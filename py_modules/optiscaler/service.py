@@ -6,7 +6,7 @@ import os
 import time
 from pathlib import Path
 
-from . import autoplan, fsr4build, installer, live, monitor, reframework, steam
+from . import autoplan, fsr4build, installer, live, monitor, reframework, running, steam
 from .constants import (
     FSR4_DECK_MODELS,
     DEFAULT_PROXY,
@@ -1058,6 +1058,27 @@ class OptiScalerService:
         except Exception as exc:
             self.log.exception("optipatcher change failed for %s", target_dir)
             return {"ok": False, "error": str(exc)}
+
+    async def get_running_config(self, target_dir):
+        """The running game's settings as ini values, and which were changed in-game."""
+        return await self._run(running.snapshot, target_dir)
+
+    async def keep_running_changes(self, target_dir, keys):
+        """Write what was changed in OptiScaler's menu to the ini, as it is now.
+
+        Already in effect in the game, so nothing is pushed back to it.
+        """
+        snap = await self._run(running.snapshot, target_dir)
+        if not snap.get("ready"):
+            return {"ok": False, "error": "The game is not running with the in-game plugin"}
+        wanted = [key for key in (keys or snap["unsaved"]) if key in snap["values"]]
+        changes = [{"section": key.split(".", 1)[0], "key": key.split(".", 1)[1],
+                    "value": snap["values"][key]} for key in wanted]
+        if not changes:
+            return {"ok": True, "kept": []}
+        result = await self.write_config(target_dir, changes, push_live=False)
+        result["kept"] = [f"{c['section']}.{c['key']}" for c in result.get("applied", [])]
+        return result
 
     async def get_live_status(self, target_dir):
         """Whether settings can currently be changed without a restart."""

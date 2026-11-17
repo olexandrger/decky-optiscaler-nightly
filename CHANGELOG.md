@@ -14,6 +14,13 @@ Newest first. Each release ships `Decky OptiScaler.zip` for Decky Loader's
   dll names). Live: frame generation on/off, HUD fix, debug view, depth copy,
   XeFG multiplier, sharpness, the FPS overlay and the FSR version. Not live:
   switching the upscaler backend or the FFX frame generator.
+- **Running now** in the Quick Access panel and on the game's page: OptiScaler's
+  settings as the running game holds them (the in-game plugin writes a
+  read-only snapshot whenever one moves). What was changed in OptiScaler's own
+  menu shows in the controls, marked as not saved, with **Keep them in
+  OptiScaler.ini**. The generated ini-key map no longer maps `Dx12Upscaler`,
+  `VulkanUpscaler`, `Fsr4GpuSupport`, `Downscaler` and two fakenvapi keys to the
+  wrong member.
 - Live: the FSR 4 model and the init flags, the way OptiScaler's overlay
   changes them (write, then rebuild the upscaler on the same backend); "auto"
   unsets them. The FSR version control is shown while the game runs (it was

@@ -51,6 +51,11 @@ installs over the regular plugin (same name, same settings and per-game records)
   is not live from the panel; the Quick Access panel's **OptiScaler menu**
   button opens OptiScaler's own overlay for that (it presses the game's
   `[Menu] ShortcutKey`, Insert by default, on a virtual keyboard).
+- **Running now**: while the game runs, the panel shows OptiScaler's settings as
+  the game holds them, read through the in-game plugin, including what you
+  changed in OptiScaler's own menu (upscaler backend, FG output, ...). Those are
+  marked as not saved, with **Keep them in OptiScaler.ini**; the upscaler
+  OptiScaler last created comes from `OptiScaler.log`.
 - **Live-control diagnostics** (Quick Access panel and the game's page): which
   OptiScaler is installed and which one last ran, which commit the in-game
   plugin was built for, whether OptiScaler loaded it, what it reports and the

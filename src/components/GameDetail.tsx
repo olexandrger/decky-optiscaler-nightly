@@ -15,8 +15,10 @@ import { useAutoPlan } from "../hooks/useAutoPlan";
 import { useConfig } from "../hooks/useConfig";
 import { restartGame } from "../hooks/useRunningGame";
 import { useLiveStatus } from "../hooks/useLiveStatus";
+import { useRunningConfig } from "../hooks/useRunningConfig";
+import { RunningConfig } from "./RunningConfig";
 import { OutdatedInstall } from "./OutdatedInstall";
-import type { GameDetail as GameDetailData, PayloadStatus, RunningGame } from "../types";
+import type { GameDetail as GameDetailData, OptionChange, OptionMeta, PayloadStatus, RunningGame } from "../types";
 import { BasicPanel } from "./BasicPanel";
 import { Centered, Pill } from "./Common";
 import { ConfigTab } from "./ConfigTab";
@@ -162,6 +164,16 @@ export function GameDetail({
   // re-read it whenever this game stops running rather than trusting our copy.
   const config = useConfig(targetDir, installed, isRunning);
   const { status: liveStatus } = useLiveStatus(targetDir, isRunning);
+  const runningCfg = useRunningConfig(targetDir, Boolean(isRunning && liveStatus?.ready));
+  const values = runningCfg.merge(config.values);
+  const applyOptions = (changes: OptionChange[]) => {
+    runningCfg.markEdited(changes);
+    config.setOptions(changes);
+  };
+  const applyOption = (option: OptionMeta, value: string) => {
+    runningCfg.markEdited([{ section: option.section, key: option.key, value }]);
+    config.setOption(option, value);
+  };
   const {
     plan,
     recommendation,
@@ -371,13 +383,24 @@ export function GameDetail({
             content: (
               <TabBody>
                 <LiveStats live={liveStatus} />
+                {targetDir ? (
+                  <RunningConfig
+                    targetDir={targetDir}
+                    running={runningCfg.running}
+                    unsaved={runningCfg.unsaved}
+                    onKept={() => {
+                      void config.reload();
+                      void runningCfg.refresh();
+                    }}
+                  />
+                ) : null}
                 {/* No targetDir here on purpose: switching the upscaler in the
                     running game belongs in the Quick Access panel, which is
                     where the game is actually being driven from. This tab is
                     for setting a game up, and its changes take effect at
                     launch. */}
                 <BasicPanel
-                  values={config.values}
+                  values={values}
                   disabled={config.loading}
                   gpu={detail.gpu}
                   live={liveStatus}
@@ -387,7 +410,7 @@ export function GameDetail({
                   onAutoChange={(enabled) => void changeAuto(enabled)}
                   fsr4Build={config.fsr4Build}
                   onEnableFsr4={config.enableFsr4}
-                  onApply={config.setOptions}
+                  onApply={applyOptions}
                 />
                 <PanelSection>
                   <PanelSectionRow>
@@ -420,9 +443,9 @@ export function GameDetail({
                 tabId={tab.id}
                 sections={tab.sections}
                 blurb={tab.blurb}
-                values={config.values}
+                values={values}
                 disabled={config.loading || config.saving}
-                onChange={config.setOption}
+                onChange={applyOption}
                 onResetSection={config.resetSection}
               />
             </TabBody>

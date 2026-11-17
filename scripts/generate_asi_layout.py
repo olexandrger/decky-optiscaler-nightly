@@ -246,10 +246,28 @@ def parse_ini_map(source_text):
             continue
         how = match.group("how")
         mapping[ini_key] = {
-            "member": match.group("member"),
+            "member": _member_fed_by_local(text, match) or match.group("member"),
             "read": "Enum" if how.startswith("Enum") else how,
         }
     return mapping
+
+
+# `auto v = readX(...)` / `if (auto v = readX(...))`: the member is the one
+# whose set_from_config is handed that local, not merely the next one. Taking
+# the next one mapped Fsr4GpuSupport to Fsr4EnableWatermark and Dx12Upscaler
+# to CustomUpscaler.
+LOCAL_RE = re.compile(r"(?:auto|std::optional<[^>]*>)\s+(?P<local>[A-Za-z_]\w*)\s*=\s*$")
+
+
+def _member_fed_by_local(text, match):
+    before = text[max(0, match.start() - 120):match.start()]
+    local = LOCAL_RE.search(before)
+    if not local:
+        return None
+    name = re.escape(local.group("local"))
+    feed = re.compile(r"(?P<member>[A-Za-z_]\w*)\s*\.set_from_config\((?P<arg>[^;]*?\b" + name + r"\b[^;]*)\)\s*;")
+    found = feed.search(text, match.end(), match.end() + 1200)
+    return found.group("member") if found else None
 
 
 def emit_header(members):
@@ -295,6 +313,62 @@ def emit_header(members):
     return "\n".join(lines)
 
 
+ENUM_RE = re.compile(r"enum\s+class\s+(?P<name>\w+)\s*(?::\s*[\w:]+)?\s*\{(?P<body>[^{}]*)\}")
+ENUM_CONFIG_RE = re.compile(r"struct\s+EnumConfig\s*<\s*(?P<name>\w+)\s*>\s*\{(?P<body>.*?)\};", re.S)
+PAIR_RE = re.compile(r"\{\s*(?P<enum>\w+)::(?P<value>\w+)\s*,\s*\"(?P<code>[^\"]*)\"\s*\}")
+UPSCALER_CASE_RE = re.compile(r"case\s+Upscaler::(?P<value>\w+)\s*:\s*return\s+\"(?P<code>[^\"]*)\"\s*;")
+
+
+def parse_enums(*texts):
+    """{enum: {"values": {name: int}, "codes": {int: ini token}}} from the headers.
+
+    The tokens are what the ini holds ("ffx", "XeFG"): EnumConfig<T>::mapping,
+    and UpscalerToCode for Upscaler. The panel turns OptiScaler's live values
+    back into those, so it can show them as ini values.
+    """
+    text = "\n".join(strip_comments(t) for t in texts)
+    enums = {}
+    for match in ENUM_RE.finditer(text):
+        values, next_value = {}, 0
+        for entry in (e.strip() for e in match.group("body").split(",")):
+            if not entry:
+                continue
+            name, _, explicit = (part.strip() for part in entry.partition("="))
+            if explicit:
+                try:
+                    next_value = int(explicit, 0)
+                except ValueError:
+                    raise SystemExit(f"enum {match.group('name')}: cannot evaluate {entry!r}")
+            values[name] = next_value
+            next_value += 1
+        enums[match.group("name")] = {"values": values, "codes": {}}
+    for match in ENUM_CONFIG_RE.finditer(text):
+        enum = enums.get(match.group("name"))
+        if enum is None:
+            continue
+        for pair in PAIR_RE.finditer(match.group("body")):
+            if pair.group("value") in enum["values"]:
+                enum["codes"][str(enum["values"][pair.group("value")])] = pair.group("code")
+    upscaler = enums.get("Upscaler")
+    to_code = re.search(r"UpscalerToCode\s*\(\s*Upscaler\s+\w+\s*\)\s*\{(?P<body>.*?)\n\}", text, re.S)
+    if upscaler and to_code:
+        for case in UPSCALER_CASE_RE.finditer(to_code.group("body")):
+            if case.group("value") in upscaler["values"] and case.group("code"):
+                upscaler["codes"][str(upscaler["values"][case.group("value")])] = case.group("code")
+    # Hand-rolled reads in Config.cpp:  lstrcmpiA(x.value().c_str(), "nukems") == 0)
+    #                                       FGNvngxReplacement.set_from_config(FGNvngxReplacement::Nukems);
+    for case in STRCMP_CASE_RE.finditer(text):
+        enum = enums.get(case.group("enum"))
+        if enum and case.group("value") in enum["values"]:
+            enum["codes"].setdefault(str(enum["values"][case.group("value")]), case.group("code"))
+    return enums
+
+
+STRCMP_CASE_RE = re.compile(
+    r"lstrcmpiA\([^,]+,\s*\"(?P<code>[^\"]+)\"\s*\)\s*==\s*0\s*\)\s*\{?\s*"
+    r"\w+\.set_from_config\(\s*(?P<enum>\w+)::(?P<value>\w+)\s*\)")
+
+
 def main():
     header = (REF / "Config.h").read_text(encoding="utf-8", errors="replace")
     source = (REF / "Config.cpp").read_text(encoding="utf-8", errors="replace")
@@ -318,10 +392,24 @@ def main():
             "kind": member["kind"],
             "read": info["read"],
         }
-    OUT_JSON.write_text(json.dumps({"fields": fields}, indent=1, sort_keys=True), encoding="utf-8")
+    enum_sources = [header, source] + [
+        (REF / name).read_text(encoding="utf-8", errors="replace")
+        for name in ("OptiTypes.h", "OptiTypes.cpp", "State.h") if (REF / name).is_file()]
+    all_enums = parse_enums(*enum_sources)
+    used = sorted({f["kind"][5:] for f in fields.values() if f["kind"].startswith("enum:")})
+    enums = {name: all_enums[name] for name in used if name in all_enums}
+    # An enum the ini spells as a word, with no token table found: the panel
+    # could not show it, so fail here (the daily fix job then sees why).
+    wordless = sorted(name for name in used
+                      if any(f["kind"] == "enum:" + name and f["read"] == "String" for f in fields.values())
+                      and not enums.get(name, {}).get("codes"))
+    if wordless:
+        raise SystemExit(f"no ini tokens found for enums read as strings: {wordless}")
+    OUT_JSON.write_text(json.dumps({"fields": fields, "enums": enums}, indent=1, sort_keys=True),
+                        encoding="utf-8")
 
     print(f"members: {len(members)} (skipped {len(skipped)} non-data declarations)")
-    print(f"ini keys mapped: {len(fields)}")
+    print(f"ini keys mapped: {len(fields)}, enums with tokens: {len(enums)}")
     print(f"wrote {OUT_HEADER.relative_to(ROOT)} and {OUT_JSON.relative_to(ROOT)}")
     for probe in ("FrameGen.Enabled", "Upscalers.Dx12Upscaler", "XeFG.InterpolationCount"):
         print(f"  {probe:28} -> {fields.get(probe)}")

@@ -45,8 +45,8 @@ live ones go through `asi/live.cpp`, an ASI OptiScaler loads from the game's
   `scripts/generate_asi_layout.py` generates from `asi/optiscaler_ref/Config.h`.
   That header must be the bundled dll's own: the dll names its commit in its
   startup banner (`OptiScaler v10.0.0-dev (1e568bb3) (...)`) and
-  `scripts/sync_optiscaler_headers.py` fetches `Config.h`/`Config.cpp` at that
-  commit. `bundle_nightly.py` runs it, so bundling a nightly keeps them in step.
+  `scripts/sync_optiscaler_headers.py` fetches `Config.h`/`Config.cpp` (and the
+  enum headers, below) at that commit. `bundle_nightly.py` runs it, so bundling a nightly keeps them in step.
 - The ASI validates `Config` (file name, path, defaults) before writing anything
   and otherwise reports `failed` and stays inert.
 - Live keys are `optiscaler.live.LIVE_FIELDS`: settings OptiScaler re-reads per
@@ -63,9 +63,19 @@ live ones go through `asi/live.cpp`, an ASI OptiScaler loads from the game's
   generator. Those need OptiScaler's `State` internals. The panel records them
   for the next launch; OptiScaler's own overlay (the **OptiScaler menu** button)
   switches them live.
+- The other direction is read-only: the ASI writes every Config field as
+  OptiScaler loaded it (`decky_optiscaler_live.loaded`) and as it is now
+  (`.values`, rewritten when one moves). `py_modules/optiscaler/running.py`
+  turns them back into ini values, so the panel shows a running game's real
+  settings, including what was changed in OptiScaler's menu and not saved
+  (marked, with **Keep them in OptiScaler.ini**). Backend and FG switching
+  stay in OptiScaler's menu; the panel shows the outcome. Enum tokens ("ffx",
+  "XeFG") come from `OptiTypes.h/.cpp` and `State.h`, synced at the dll's
+  commit and parsed as text for their enum tables only.
 
-**Do not** read or write OptiScaler's `State`, or anything else not reachable
-through the plugin API or the generated `Config` layout. Upstream's 0.9.x ASI
+**Do not** read or write OptiScaler's `State` in memory, or anything else not
+reachable through the plugin API or the generated `Config` layout (`State.h`
+is synced only for its enum tables, as text). Upstream's 0.9.x ASI
 did (hash-table internals, flag runs found by memory pattern) and broke on the
 first nightly that moved them. A new live setting goes into `LIVE_FIELDS` only
 if OptiScaler genuinely re-reads it while running, or if `ReInitUpscalers`
@@ -74,7 +84,9 @@ makes it re-read; anything else would look applied and do nothing.
 `scripts/test_live_asi.py` holds this, in the real bundled OptiScaler under Wine
 (no game, no GPU): the installer's own install, the ASI loading and attaching,
 every Config member with a literal default in `Config.h` read back at its
-offset, INI sentinel values read back, every live setting applied through
+offset, INI sentinel values read back, the running-settings snapshot matching
+the ini for every key as loaded (nothing marked as changed in-game) and
+following every live change, every live setting applied through
 `live.apply_changes` and read back, bad commands refused, and a deliberately
 broken layout ending in `failed` with nothing written. CI runs it on every push
 and before every release. What it cannot check is that a change shows in a
@@ -163,7 +175,8 @@ folder when that subfolder is missing), repacks the archive into `bin/`, and
 rewrites every pinned value: version, archive name and SHA-256, payload file and
 dir lists (retiring files a previous bundle shipped), the bundled FidelityFX
 upscaler hash, and the plugin version (`<base>-nightly.<date>`); and it syncs
-`asi/optiscaler_ref/Config.{h,cpp}` to the commit the dll was built from. Do not
+`asi/optiscaler_ref/` (`Config.{h,cpp}`, `OptiTypes.{h,cpp}`, `State.h`) to the
+commit the dll was built from. Do not
 hand-edit those values.
 
 The committed constants, reference INI, generated schema, OptiScaler headers and

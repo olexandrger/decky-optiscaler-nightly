@@ -3,8 +3,9 @@ e7e3872d
 Version:  v10.0.0-dev (built 20261030_104415)
 Source:   https://github.com/optiscaler/OptiScaler/tree/e7e3872d/OptiScaler
 
-Config.h and Config.cpp at the commit the bundled OptiScaler.dll names in
-its startup banner. scripts/generate_asi_layout.py turns them into
-asi/generated/config_mirror.h, the layout the live-control ASI writes
-Config with. Written by scripts/sync_optiscaler_headers.py (bundling a
-nightly runs it); do not edit by hand.
+Config.h, Config.cpp, OptiTypes.h, OptiTypes.cpp, State.h at the commit the bundled OptiScaler.dll
+names in its startup banner. scripts/generate_asi_layout.py turns them
+into asi/generated/config_mirror.h, the layout the live-control ASI
+writes Config with, and py_modules/optiscaler/live_fields.json (ini keys
+and enum tokens). Written by scripts/sync_optiscaler_headers.py
+(bundling a nightly runs it); do not edit by hand.

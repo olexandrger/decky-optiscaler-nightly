@@ -34,7 +34,14 @@ REF = ROOT / "asi" / "optiscaler_ref"
 SOURCE_REPO = "optiscaler/OptiScaler"
 RAW = "https://raw.githubusercontent.com/" + SOURCE_REPO + "/{commit}/OptiScaler/{name}"
 #: What the layout generator reads. Nothing else of OptiScaler's source is used.
-HEADERS = ("Config.h", "Config.cpp")
+#: Config.h/.cpp give the layout and the ini keys; OptiTypes.h/.cpp and State.h
+#: are read as text only, for the enum token tables ("ffx", "XeFG", ...) the
+#: panel needs to show OptiScaler's live values as ini values. State's memory is
+#: never read or written.
+HEADERS = ("Config.h", "Config.cpp", "OptiTypes.h", "OptiTypes.cpp", "State.h")
+#: A marker each file must contain, so an error page is not taken for a header.
+MARKERS = {"Config.h": b"class Config", "Config.cpp": b"Config::", "OptiTypes.h": b"enum class Upscaler",
+           "OptiTypes.cpp": b"UpscalerToCode", "State.h": b"class State"}
 
 BUILD_RE = re.compile(rb"OptiScaler v([0-9][\w.\-]*) \(([0-9a-f]{7,40})\) \((\d{8}_\d{6})\)")
 
@@ -56,7 +63,7 @@ def fetch(commit, name, opener=urllib.request.urlopen, sleep=None):
 
     kwargs = {"sleep": sleep} if sleep else {}
     data = bundle_nightly.with_retries(get, f"fetching {name} at {commit}", **kwargs)
-    if len(data) < 1000 or b"Config" not in data:
+    if len(data) < 1000 or MARKERS.get(name, b"") not in data:
         raise ValueError(f"{url} does not look like OptiScaler's {name}")
     return data
 
@@ -76,11 +83,12 @@ def sync(dll_bytes, opener=urllib.request.urlopen, sleep=None, regenerate=True):
             f"{commit}\n\n"
             f"Version:  v{version} (built {built})\n"
             f"Source:   https://github.com/{SOURCE_REPO}/tree/{commit}/OptiScaler\n\n"
-            "Config.h and Config.cpp at the commit the bundled OptiScaler.dll names in\n"
-            "its startup banner. scripts/generate_asi_layout.py turns them into\n"
-            "asi/generated/config_mirror.h, the layout the live-control ASI writes\n"
-            "Config with. Written by scripts/sync_optiscaler_headers.py (bundling a\n"
-            "nightly runs it); do not edit by hand.\n",
+            f"{', '.join(HEADERS)} at the commit the bundled OptiScaler.dll\n"
+            "names in its startup banner. scripts/generate_asi_layout.py turns them\n"
+            "into asi/generated/config_mirror.h, the layout the live-control ASI\n"
+            "writes Config with, and py_modules/optiscaler/live_fields.json (ini keys\n"
+            "and enum tokens). Written by scripts/sync_optiscaler_headers.py\n"
+            "(bundling a nightly runs it); do not edit by hand.\n",
             encoding="utf-8")
         print(f"OptiScaler headers synced to {commit} ({version}, built {built})")
     if regenerate:

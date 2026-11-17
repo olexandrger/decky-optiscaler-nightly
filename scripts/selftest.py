@@ -1869,6 +1869,108 @@ def check_live_push_only_what_moved():
         shutil.rmtree(root, ignore_errors=True)
 
 
+def check_running_config():
+    """The running game's settings as the panel shows them.
+
+    Built so a setting changed in OptiScaler's own menu shows in the panel,
+    marked as not saved. Wrongly marked settings would be worse than none: an
+    "auto" OptiScaler resolved at startup, a volatile value it never saves, or
+    a value the panel itself just wrote are not changes the user made.
+    """
+    import tempfile
+    from optiscaler import live, running
+    from optiscaler.service import OptiScalerService
+
+    print("\nRunning config (OptiScaler's settings in the game)")
+    enums = running.ENUMS
+    check("the backend tokens come from OptiScaler's own UpscalerToCode",
+          "ffx" in enums.get("Upscaler", {}).get("codes", {}).values()
+          and "xess" in enums.get("Upscaler", {}).get("codes", {}).values(), enums.get("Upscaler"))
+    check("the FG output tokens come from its EnumConfig table",
+          "XeFG" in enums.get("FGOutput", {}).get("codes", {}).values(), enums.get("FGOutput"))
+    mapped = {k: running.FIELDS.get(k, {}).get("member") for k in (
+        "Upscalers.Dx12Upscaler", "FSR.Fsr4GpuSupport", "Upscalers.VulkanUpscaler")}
+    check("ini keys read through a local map to the member that local feeds",
+          mapped == {"Upscalers.Dx12Upscaler": "Dx12Upscaler", "FSR.Fsr4GpuSupport": "Fsr4GpuSupport",
+                     "Upscalers.VulkanUpscaler": "VulkanUpscaler"}, mapped)
+
+    def code(enum, token):
+        return next(int(n) for n, c in enums[enum]["codes"].items() if c.lower() == token)
+
+    root = Path(tempfile.mkdtemp(prefix="optiscaler-running-"))
+    try:
+        target = root / "game"
+        target.mkdir()
+        (target / INI_NAME).write_text(
+            "[Upscalers]\nDx12Upscaler=ffx\n[FrameGen]\nEnabled=true\nFGOutput=fsrfg\n"
+            "[FSR]\nFsr4Model=auto\nUpscalerIndex=0\n[Sharpness]\nSharpness=0.55\n"
+            "[Menu]\nShowFps=false\n")
+        (target / live.STATUS_FILE).write_text(
+            f"schema {live.STATUS_SCHEMA}\nbuilt_for 03b37db7\nstatus ready\napi 3\n"
+            "reinit_available 1\nseq 0\napplied 0\nreinit -1\nconfig 0x1\nfields 380\nerror \n")
+
+        def fields(**over):
+            base = {
+                "Dx12Upscaler": f"i32 1 {code('Upscaler', 'ffx')} 0 - 0",
+                "FGEnabled": "bool 1 1 0 1 0",
+                "FGOutput": f"u32 1 {code('FGOutput', 'fsrfg')} 0 - 0",
+                "Fsr4Model": "u8 1 3 0 - 0",          # "auto" resolved by OptiScaler at load
+                "FfxUpscalerIndex": "i32 1 0 0 0 0",
+                "Sharpness": "f32 1 0.550000012 0.300000012 0.550000012 0",
+                "ShowFps": "bool 1 0 0 0 0",
+                "HDR": "bool 1 1 0 - 1",               # volatile: OptiScaler's own override
+            }
+            base.update(over)
+            return "fields %d\n" % len(base) + "".join(f"{k} {v}\n" for k, v in base.items())
+
+        (target / running.LOADED_FILE).write_text(fields())
+        (target / running.VALUES_FILE).write_text(fields())
+        snap = running.snapshot(str(target))
+        check("as loaded, nothing is marked as changed in-game", snap["ready"] and snap["unsaved"] == [],
+              snap.get("unsaved"))
+        values = snap["values"]
+        check("live values come back as ini values",
+              values.get("Upscalers.Dx12Upscaler") == "ffx" and values.get("FrameGen.Enabled") == "true"
+              and values.get("FrameGen.FGOutput") == "fsrfg" and values.get("Sharpness.Sharpness") == "0.55",
+              {k: values.get(k) for k in ("Upscalers.Dx12Upscaler", "FrameGen.Enabled",
+                                          "FrameGen.FGOutput", "Sharpness.Sharpness")})
+
+        # Changed in OptiScaler's menu: XeFG output, XeSS, FPS overlay on.
+        (target / running.VALUES_FILE).write_text(fields(
+            FGOutput=f"u32 1 {code('FGOutput', 'xefg')} 0 - 0",
+            Dx12Upscaler=f"i32 1 {code('Upscaler', 'xess')} 0 - 0",
+            ShowFps="bool 1 1 0 0 0",
+            HDR="bool 1 0 0 - 1"))
+        snap = running.snapshot(str(target))
+        check("settings changed in OptiScaler's menu are marked, and only those",
+              snap["unsaved"] == ["FrameGen.FGOutput", "Menu.ShowFps", "Upscalers.Dx12Upscaler"],
+              snap["unsaved"])
+        check("their live values are what the panel shows",
+              snap["values"]["FrameGen.FGOutput"] == "xefg" and snap["values"]["Upscalers.Dx12Upscaler"] == "xess")
+
+        (target / "OptiScaler.log").write_text(
+            "[18:18:13.439232] [I] TryCreateOptiFeature Creating OptiScaler feature, HandleId: 1000001\n"
+            "[18:18:13.439248] [I] TryCreateOptiFeature Creating FSR 3.X upscaler feature\n"
+            "[18:25:01.000000] [I] TryCreateOptiFeature Creating XeSS upscaler feature\n")
+        check("the upscaler OptiScaler last created is read from its log",
+              running.snapshot(str(target))["created"] == {"upscaler": "XeSS upscaler", "at": "18:25:01"})
+
+        service = OptiScalerService(ROOT, root / "s", root / "r", root / "h", logging.getLogger("t"))
+        kept = asyncio.run(service.keep_running_changes(str(target), []))
+        check("keeping writes them to the ini as they are now",
+              kept["ok"] and sorted(kept["kept"]) == ["FrameGen.FGOutput", "Menu.ShowFps",
+                                                       "Upscalers.Dx12Upscaler"], kept)
+        check("and nothing is marked any more", running.snapshot(str(target))["unsaved"] == [])
+        check("keeping pushes nothing back into the game",
+              not (target / live.CMD_FILE).exists())
+
+        (target / live.STATUS_FILE).write_text(f"schema {live.STATUS_SCHEMA}\nstatus failed\napi 3\n")
+        check("without a ready in-game plugin there is no snapshot",
+              running.snapshot(str(target))["ready"] is False)
+    finally:
+        shutil.rmtree(root, ignore_errors=True)
+
+
 def check_optipatcher():
     """OptiPatcher ships alongside and installs into the same plugin folder."""
     import tempfile
@@ -2662,6 +2764,7 @@ def main():
     check_live_diagnostics()
     check_debug_report()
     check_live_push_only_what_moved()
+    check_running_config()
     check_remembered_choices()
     check_launch_record()
     check_launch_options_read()

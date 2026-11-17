@@ -29,9 +29,11 @@
 //                                   unset <member>  drop the value (the overlay's "Auto")
 //                                   reinit      re-create the upscaler
 //                                   dump        write every field to .dump
-//   decky_optiscaler_live.status  rewritten every second (schema 7):
+//   decky_optiscaler_live.status  rewritten every second (schema 8):
 //                                 status loaded|searching|ready|failed
-//   decky_optiscaler_live.dump    <member> <kind> <engaged> <value> <default> <ini>
+//   decky_optiscaler_live.dump    <member> <kind> <engaged> <value> <default> <ini> <volatile>
+//   decky_optiscaler_live.values  the same, rewritten whenever a setting moves (read-only)
+//   decky_optiscaler_live.loaded  the same, once, as OptiScaler loaded them
 //   decky_optiscaler_live.log     what the plugin did
 
 #define __USE_MINGW_ANSI_STDIO 1
@@ -51,7 +53,7 @@
 
 using namespace optimirror;
 
-#define STATUS_SCHEMA 7
+#define STATUS_SCHEMA 8
 
 // The OptiScaler commit whose Config.h this was compiled against (asi/build.sh
 // passes asi/optiscaler_ref/SOURCE_COMMIT.txt). Reported so the panel can tell
@@ -92,6 +94,8 @@ static wchar_t g_logPath[MAX_PATH];
 static wchar_t g_cmdPath[MAX_PATH];
 static wchar_t g_statusPath[MAX_PATH];
 static wchar_t g_dumpPath[MAX_PATH];
+static wchar_t g_valuesPath[MAX_PATH];
+static wchar_t g_loadedPath[MAX_PATH];
 
 static char g_status[32] = "loaded";
 static char g_error[256] = "";
@@ -413,7 +417,7 @@ template <class T> static void FormatOptional(const CustomOptional<T>* o, const 
     if (o->base.engaged) snprintf(value, sizeof(value), fmt, o->base.value);
     snprintf(def, sizeof(def), fmt, o->defaultValue);
     if (o->configIni.engaged) snprintf(ini, sizeof(ini), fmt, o->configIni.value);
-    snprintf(out, outLen, "%d %s %s %s", o->base.engaged ? 1 : 0, value, def, ini);
+    snprintf(out, outLen, "%d %s %s %s %d", o->base.engaged ? 1 : 0, value, def, ini, o->isVolatile ? 1 : 0);
 }
 
 static void FormatField(const FieldDesc* f, char* out, size_t outLen) {
@@ -426,7 +430,7 @@ static void FormatField(const FieldDesc* f, char* out, size_t outLen) {
         if (o->base.engaged) snprintf(v, sizeof(v), "%d", o->base.value ? 1 : 0);
         snprintf(d, sizeof(d), "%d", o->defaultValue ? 1 : 0);
         if (o->configIni.engaged) snprintf(i, sizeof(i), "%d", o->configIni.value ? 1 : 0);
-        snprintf(out, outLen, "bool %d %s %s %s", o->base.engaged ? 1 : 0, v, d, i);
+        snprintf(out, outLen, "bool %d %s %s %s %d", o->base.engaged ? 1 : 0, v, d, i, o->isVolatile ? 1 : 0);
         return;
     }
     case OPTI_I32: {
@@ -447,7 +451,7 @@ static void FormatField(const FieldDesc* f, char* out, size_t outLen) {
         if (o->base.engaged) snprintf(v, sizeof(v), "%u", (unsigned) o->base.value);
         snprintf(d, sizeof(d), "%u", (unsigned) o->defaultValue);
         if (o->configIni.engaged) snprintf(i, sizeof(i), "%u", (unsigned) o->configIni.value);
-        snprintf(out, outLen, "u8 %d %s %s %s", o->base.engaged ? 1 : 0, v, d, i);
+        snprintf(out, outLen, "u8 %d %s %s %s %d", o->base.engaged ? 1 : 0, v, d, i, o->isVolatile ? 1 : 0);
         return;
     }
     case OPTI_FLOAT: {
@@ -456,7 +460,7 @@ static void FormatField(const FieldDesc* f, char* out, size_t outLen) {
         if (o->base.engaged) snprintf(v, sizeof(v), "%.9g", (double) o->base.value);
         snprintf(d, sizeof(d), "%.9g", (double) o->defaultValue);
         if (o->configIni.engaged) snprintf(i, sizeof(i), "%.9g", (double) o->configIni.value);
-        snprintf(out, outLen, "f32 %d %s %s %s", o->base.engaged ? 1 : 0, v, d, i);
+        snprintf(out, outLen, "f32 %d %s %s %s %d", o->base.engaged ? 1 : 0, v, d, i, o->isVolatile ? 1 : 0);
         return;
     }
     default:
@@ -497,10 +501,11 @@ static char* ReadWholeFile(const wchar_t* path) {
     return buf;
 }
 
-static void WriteDump() {
+/** Every field, one line each, into a heap buffer the caller frees. */
+static char* FormatAllFields(size_t* lenOut) {
     size_t cap = kFieldCount * 160 + 256, used = 0;
     char* body = (char*) HeapAlloc(GetProcessHeap(), 0, cap);
-    if (!body) return;
+    if (!body) return NULL;
     used += (size_t) snprintf(body, cap, "fields %u\n", (unsigned) kFieldCount);
     for (size_t i = 0; i < kFieldCount && g_config; i++) {
         char line[200];
@@ -509,7 +514,44 @@ static void WriteDump() {
         if (n < 0 || (size_t) n >= cap - used) break;
         used += (size_t) n;
     }
+    *lenOut = used;
+    return body;
+}
+
+static void WriteDump() {
+    size_t used = 0;
+    char* body = FormatAllFields(&used);
+    if (!body) return;
     WriteFileAtomically(g_dumpPath, body, used);
+    HeapFree(GetProcessHeap(), 0, body);
+}
+
+/** FNV-1a, to see whether the settings moved since the last snapshot. */
+static unsigned long long Fnv1a(const char* data, size_t len) {
+    unsigned long long hash = 1469598103934665603ULL;
+    for (size_t i = 0; i < len; i++) { hash ^= (unsigned char) data[i]; hash *= 1099511628211ULL; }
+    return hash;
+}
+
+static unsigned long long g_valuesHash = 0;
+
+/**
+ * OptiScaler's settings as they are now, read-only: what the panel shows for a
+ * running game, including what was changed in OptiScaler's own menu and not
+ * saved. Rewritten only when something moved. `first` also writes the
+ * snapshot as loaded, which tells the panel those changes apart from values
+ * OptiScaler resolved itself at startup.
+ */
+static void WriteValues(bool first) {
+    size_t used = 0;
+    char* body = FormatAllFields(&used);
+    if (!body) return;
+    unsigned long long hash = Fnv1a(body, used);
+    if (first) WriteFileAtomically(g_loadedPath, body, used);
+    if (first || hash != g_valuesHash) {
+        WriteFileAtomically(g_valuesPath, body, used);
+        g_valuesHash = hash;
+    }
     HeapFree(GetProcessHeap(), 0, body);
 }
 
@@ -622,6 +664,8 @@ static void SetPaths(HMODULE opti) {
     _snwprintf(g_cmdPath, MAX_PATH, L"%ls\\decky_optiscaler_live.cmd", g_dir);
     _snwprintf(g_statusPath, MAX_PATH, L"%ls\\decky_optiscaler_live.status", g_dir);
     _snwprintf(g_dumpPath, MAX_PATH, L"%ls\\decky_optiscaler_live.dump", g_dir);
+    _snwprintf(g_valuesPath, MAX_PATH, L"%ls\\decky_optiscaler_live.values", g_dir);
+    _snwprintf(g_loadedPath, MAX_PATH, L"%ls\\decky_optiscaler_live.loaded", g_dir);
 }
 
 static DWORD WINAPI Worker(LPVOID) {
@@ -662,12 +706,14 @@ static DWORD WINAPI Worker(LPVOID) {
     }
     strcpy(g_status, "ready");
     LogLine("Config found at %p (%u fields)", (void*) g_config, (unsigned) kFieldCount);
+    WriteValues(true);
     WriteStatus();
 
     for (;;) {
         PollCommands();
         DWORD now = GetTickCount();
         if (now - lastStatus >= 1000) {
+            WriteValues(false);
             WriteStatus();
             lastStatus = now;
         }

@@ -6,10 +6,12 @@ import { useAutoPlan } from "../hooks/useAutoPlan";
 import { useConfig } from "../hooks/useConfig";
 import { useLiveStatus } from "../hooks/useLiveStatus";
 import { LiveDiagnostics } from "./LiveDiagnostics";
+import { RunningConfig } from "./RunningConfig";
+import { useRunningConfig } from "../hooks/useRunningConfig";
 import { OutdatedInstall } from "./OutdatedInstall";
 import { restartGame } from "../hooks/useRunningGame";
 import { toggleMenu } from "../api";
-import type { Game, GameDetail, LiveStatus, RunningGame } from "../types";
+import type { Game, GameDetail, LiveStatus, RunningGame, OptionChange } from "../types";
 import { BasicPanel } from "./BasicPanel";
 import { GamesList } from "./GamesList";
 import { LiveTiles } from "./LiveStats";
@@ -129,6 +131,14 @@ function NowPlayingTab({
   // This tab is only ever shown over a running game, so the live channel is
   // always worth polling here.
   const { status: live, refresh: refreshLive } = useLiveStatus(targetDir, Boolean(runningGame));
+  // What the running game actually has, including changes made in OptiScaler's
+  // own menu; laid over the ini for the keys changed in-game.
+  const runningCfg = useRunningConfig(targetDir, Boolean(runningGame && live?.ready));
+  const values = runningCfg.merge(config.values);
+  const applyOptions = (changes: OptionChange[]) => {
+    runningCfg.markEdited(changes);
+    config.setOptions(changes);
+  };
   // Read-only over a running game: the mode is chosen on the full page, where
   // the plan it comes from can actually be read.
   const { plan, auto } = useAutoPlan(detail?.path ?? null, detail?.name ?? null, installed);
@@ -147,8 +157,8 @@ function NowPlayingTab({
 
   // Only meaningful on the XeSS frame generator, which is the one that can do
   // more than 2X; anywhere else it would be a number that means nothing.
-  const multiplier = supportsMultiplier(config.values)
-    ? config.values[MULTIPLIER_SECTION]?.[MULTIPLIER_KEY]
+  const multiplier = supportsMultiplier(values)
+    ? values[MULTIPLIER_SECTION]?.[MULTIPLIER_KEY]
     : null;
   const fgSub = multiplier
     ? curatedLabel(`${MULTIPLIER_SECTION}.${MULTIPLIER_KEY}`, multiplier)
@@ -180,6 +190,18 @@ function NowPlayingTab({
           onUpdated={() => {
             void resolve();
             void refreshLive();
+          }}
+        />
+      ) : null}
+
+      {installed && targetDir ? (
+        <RunningConfig
+          targetDir={targetDir}
+          running={runningCfg.running}
+          unsaved={runningCfg.unsaved}
+          onKept={() => {
+            void config.reload();
+            void runningCfg.refresh();
           }}
         />
       ) : null}
@@ -285,7 +307,7 @@ function NowPlayingTab({
             <Centered>Reading config…</Centered>
           ) : (
             <BasicPanel
-              values={config.values}
+              values={values}
               gpu={detail.gpu}
               live={live}
               ffx={detail.install.fsr4?.ffx}
@@ -296,7 +318,7 @@ function NowPlayingTab({
               onLiveChanged={() => void refreshLive()}
               fsr4Build={config.fsr4Build}
               onEnableFsr4={config.enableFsr4}
-              onApply={config.setOptions}
+              onApply={applyOptions}
             />
           )}
 

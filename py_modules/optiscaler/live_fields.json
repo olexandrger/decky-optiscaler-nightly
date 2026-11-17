@@ -1,4 +1,208 @@
 {
+ "enums": {
+  "FGInput": {
+   "codes": {
+    "0": "NoFG",
+    "1": "Upscaler",
+    "2": "DLSSG",
+    "3": "NvngxFG",
+    "4": "FSRFG",
+    "5": "FSRFG30",
+    "6": "XeFG",
+    "7": "ForceXeLL"
+   },
+   "values": {
+    "DLSSG": 2,
+    "FSRFG": 4,
+    "FSRFG30": 5,
+    "ForceXeLL": 7,
+    "NoFG": 0,
+    "NvngxFG": 3,
+    "Upscaler": 1,
+    "XeFG": 6
+   }
+  },
+  "FGNvngxReplacement": {
+   "codes": {
+    "0": "none",
+    "1": "nukems",
+    "2": "arturs",
+    "3": "ffx",
+    "4": "combo"
+   },
+   "values": {
+    "Arturs": 2,
+    "Combo": 4,
+    "Custom": 5,
+    "FFX": 3,
+    "None": 0,
+    "Nukems": 1
+   }
+  },
+  "FGOutput": {
+   "codes": {
+    "0": "NoFG",
+    "1": "FSRFG",
+    "2": "DLSSG",
+    "3": "XeFG",
+    "4": "Reprojection"
+   },
+   "values": {
+    "DLSSG": 2,
+    "FSRFG": 1,
+    "NoFG": 0,
+    "Reprojection": 4,
+    "XeFG": 3
+   }
+  },
+  "FSR4Model": {
+   "codes": {},
+   "values": {
+    "Count": 4,
+    "FP8": 0,
+    "INT8": 1,
+    "INT8Lite": 3,
+    "INT8_2": 2
+   }
+  },
+  "FSR4Support": {
+   "codes": {},
+   "values": {
+    "Count": 5,
+    "FP8": 1,
+    "INT8": 2,
+    "INT8Lite": 4,
+    "INT8_2": 3,
+    "None": 0
+   }
+  },
+  "ForceReflex": {
+   "codes": {},
+   "values": {
+    "Count": 3,
+    "ForceDisable": 1,
+    "ForceEnable": 2,
+    "InGame": 0
+   }
+  },
+  "FrameTimeSource": {
+   "codes": {},
+   "values": {
+    "Input": 0,
+    "Opti": 1,
+    "Zero": 2
+   }
+  },
+  "LFXMode": {
+   "codes": {},
+   "values": {
+    "Aggressive": 1,
+    "Conservative": 0,
+    "Count": 3,
+    "ReflexIDs": 2
+   }
+  },
+  "LowLatencyInput": {
+   "codes": {},
+   "values": {
+    "AntiLag2": 2,
+    "Auto": 1,
+    "None": 0,
+    "OptiScaler": 6,
+    "Reflex": 3,
+    "UeLowLatency": 5,
+    "XeLL": 4,
+    "_": 7
+   }
+  },
+  "LowLatencyMode": {
+   "codes": {},
+   "values": {
+    "AntiLag2": 3,
+    "AntiLagVk": 5,
+    "Auto": 1,
+    "FpsLimiter": 7,
+    "LatencyFlex": 2,
+    "None": 0,
+    "Reflex": 6,
+    "XeLL": 4,
+    "_": 8
+   }
+  },
+  "ReprojectionFill": {
+   "codes": {
+    "0": "strech",
+    "1": "dithering",
+    "2": "noise",
+    "3": "debug",
+    "4": "soft"
+   },
+   "values": {
+    "Debug": 3,
+    "Dithering": 1,
+    "Noise": 2,
+    "SoftEdge": 4,
+    "StrechEdge": 0
+   }
+  },
+  "Scaler": {
+   "codes": {},
+   "values": {
+    "Bicubic": 1,
+    "CatmullRom": 2,
+    "Count": 8,
+    "FSR1": 0,
+    "Kaiser2": 5,
+    "Kaiser3": 6,
+    "Lanczos2": 3,
+    "Lanczos3": 4,
+    "Magic": 7
+   }
+  },
+  "SharpenShader": {
+   "codes": {
+    "0": "rcas",
+    "1": "da",
+    "2": "lcda"
+   },
+   "values": {
+    "DepthAware": 1,
+    "LocalContrastDepthAware": 2,
+    "RCAS": 0
+   }
+  },
+  "Upscaler": {
+   "codes": {
+    "0": "xess",
+    "1": "xess_12",
+    "10": "dlss_12",
+    "11": "dlssd",
+    "2": "fsr21",
+    "3": "fsr21_12",
+    "4": "fsr22",
+    "5": "fsr22_12",
+    "6": "fsr31",
+    "7": "ffx",
+    "8": "ffx_12",
+    "9": "dlss"
+   },
+   "values": {
+    "DLSS": 9,
+    "DLSSD": 11,
+    "DLSS_on12": 10,
+    "FFX": 7,
+    "FFX_on12": 8,
+    "FSR21": 2,
+    "FSR21_on12": 3,
+    "FSR22": 4,
+    "FSR22_on12": 5,
+    "FSR31": 6,
+    "Reset": 12,
+    "XeSS": 0,
+    "XeSS_on12": 1
+   }
+  }
+ },
  "fields": {
   "Anisotropy.AFModifyComparison": {
    "kind": "bool",
@@ -261,8 +465,8 @@
    "read": "Bool"
   },
   "FSR.Fsr4GpuSupport": {
-   "kind": "bool",
-   "member": "Fsr4EnableWatermark",
+   "kind": "enum:FSR4Support",
+   "member": "Fsr4GpuSupport",
    "read": "Enum"
   },
   "FSR.Fsr4Model": {
@@ -1271,8 +1475,8 @@
    "read": "Bool"
   },
   "OutputScaling.Downscaler": {
-   "kind": "float",
-   "member": "OutputScalingMultiplier",
+   "kind": "enum:Scaler",
+   "member": "OutputScalingDownscaler",
    "read": "Enum"
   },
   "OutputScaling.Enabled": {
@@ -1526,13 +1730,13 @@
    "read": "String"
   },
   "Upscalers.Dx12Upscaler": {
-   "kind": "std::string",
-   "member": "CustomUpscaler",
+   "kind": "enum:Upscaler",
+   "member": "Dx12Upscaler",
    "read": "String"
   },
   "Upscalers.VulkanUpscaler": {
-   "kind": "std::string",
-   "member": "CustomUpscalerVk",
+   "kind": "enum:Upscaler",
+   "member": "VulkanUpscaler",
    "read": "String"
   },
   "V-Sync.ForceVsync": {
@@ -1641,8 +1845,8 @@
    "read": "Bool"
   },
   "fakenvapi.ForceReflex": {
-   "kind": "enum:LowLatencyInput",
-   "member": "LowLatencyInput",
+   "kind": "enum:ForceReflex",
+   "member": "FN_ForceReflex",
    "read": "Enum"
   },
   "fakenvapi.ForceXeLL": {
@@ -1651,8 +1855,8 @@
    "read": "Bool"
   },
   "fakenvapi.LatencyFlexMode": {
-   "kind": "enum:ForceReflex",
-   "member": "FN_ForceReflex",
+   "kind": "enum:LFXMode",
+   "member": "FN_LatencyFlexMode",
    "read": "Enum"
   },
   "fakenvapi.LowLatencyInput": {

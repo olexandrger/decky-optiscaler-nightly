@@ -173,6 +173,23 @@ export const installOptipatcher = callable<
 >("install_optipatcher");
 
 export const getLiveStatus = callable<[targetDir: string], LiveStatus>("get_live_status");
+
+/** OptiScaler's settings in the running game, as ini values (read-only). */
+export interface RunningConfig {
+  ok: boolean;
+  /** The in-game plugin is ready and has written its snapshot. */
+  ready: boolean;
+  /** "Section.Key" -> ini value, as OptiScaler holds it now. */
+  values: Record<string, string>;
+  /** Keys changed in the running game (OptiScaler's menu) that the ini does not hold. */
+  unsaved: string[];
+  /** The upscaler OptiScaler last created, from OptiScaler.log. */
+  created?: { upscaler: string; at: string } | null;
+}
+export const getRunningConfig = callable<[targetDir: string], RunningConfig>("get_running_config");
+export const keepRunningChanges = callable<[targetDir: string, keys: string[]], ActionResult & { kept?: string[] }>(
+  "keep_running_changes"
+);
 export const installLive = callable<[targetDir: string], ActionResult>("install_live");
 export const switchUpscaler = callable<[targetDir: string, code: string], ActionResult>(
   "switch_upscaler"

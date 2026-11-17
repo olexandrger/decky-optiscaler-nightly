@@ -37,7 +37,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "py_modules"))
-from optiscaler import constants, installer, live  # noqa: E402
+from optiscaler import constants, installer, live, running  # noqa: E402
 from optiscaler.inifile import IniFile  # noqa: E402
 from optiscaler.payload import Payload  # noqa: E402
 
@@ -103,6 +103,13 @@ SENTINELS = {
     "InitFlags.JitterCancellation": "true",
     "InitFlags.DisplayResolution": "true",
     "InitFlags.DynamicResolution": "true",
+}
+# Shown from the running game, not set live: enums the ini spells as words,
+# read back through the token tables generated from OptiScaler's headers.
+DISPLAY_SENTINELS = {
+    "Upscalers.Dx12Upscaler": "xess",
+    "FrameGen.FGInput": "fsrfg",
+    "FrameGen.FGOutput": "xefg",
 }
 # What the panel then changes live. Different from every sentinel.
 LIVE_VALUES = {
@@ -218,7 +225,7 @@ def install(scratch, asi):
     for change in live.ini_requirements():
         ini.set(change["section"], change["key"], change["value"])
     ini.set("Log", "LogToFile", "true")
-    for key, value in SENTINELS.items():
+    for key, value in {**SENTINELS, **DISPLAY_SENTINELS}.items():
         section, name = key.split(".", 1)
         ini.set(section, name, value)
     ini.save()
@@ -245,10 +252,10 @@ def run(wine, scratch):
         synced = (ROOT / "asi" / "optiscaler_ref" / "SOURCE_COMMIT.txt").read_text().split()[0]
         check("it names the OptiScaler commit it was built for",
               st.get("built_for") and synced.startswith(st["built_for"][:7]), st.get("built_for"))
-        running = live.running_build(str(game))
-        if running:
+        ran = live.running_build(str(game))
+        if ran:
             check("that is the commit of the OptiScaler that loaded it",
-                  running[1][:7] == st["built_for"][:7], running)
+                  ran[1][:7] == st["built_for"][:7], ran)
         facts = {label: tone for label, _, tone in live.diagnostics(str(game), str(asi))["facts"]}
         check("the panel's diagnostics rate the running plugin as fine",
               facts.get("In-game plugin status") == "ok"
@@ -275,6 +282,18 @@ def run(wine, scratch):
             want = live.LIVE_FIELDS[key].encode(value)
             check(f"{key} reads back as OptiScaler parsed it from the ini",
                   got is not None and same(field.wire_type, got[4], want), got)
+
+        print("\nThe running game's settings, as the panel shows them")
+        check("the plugin writes OptiScaler's settings as loaded and as they are now",
+              wait_for(lambda: (game / running.LOADED_FILE).is_file()
+                       and (game / running.VALUES_FILE).is_file(), 10))
+        snap = running.snapshot(str(game))
+        check(f"as loaded, none of {len(snap['values'])} settings is marked as changed in-game",
+              snap["ready"] and len(snap["values"]) >= 200 and snap["unsaved"] == [],
+              snap["unsaved"][:8] or len(snap["values"]))
+        for key, value in {**SENTINELS, **DISPLAY_SENTINELS}.items():
+            check(f"{key} shows as the ini value OptiScaler holds",
+                  running.same(snap["values"].get(key), value), snap["values"].get(key))
 
         print("\nLive changes, through the panel's own code")
         changes = [{"section": k.split(".", 1)[0], "key": k.split(".", 1)[1], "value": v}
@@ -306,6 +325,19 @@ def run(wine, scratch):
             check("the upscaler re-init was requested through the plugin API",
                   _status_line(game, "reinit") in ("0", "1")
                   and "ReInitUpscalers" in "\n".join(live.log_tail(str(game), 20)))
+
+        # What the panel did live is not in the ini (the harness bypasses it),
+        # exactly like a change made in OptiScaler's own menu.
+        changed = sorted(key for key in LIVE_VALUES if key not in expected_deferred
+                         and not running.same(LIVE_VALUES[key], SENTINELS[key]))
+        check("the live snapshot follows within a couple of seconds",
+              wait_for(lambda: running.snapshot(str(game))["unsaved"] == changed, 10),
+              (running.snapshot(str(game))["unsaved"], changed))
+        snap = running.snapshot(str(game))
+        check("and shows each new value",
+              all(running.same(snap["values"].get(key), LIVE_VALUES[key]) for key in changed),
+              {key: snap["values"].get(key) for key in changed if
+               not running.same(snap["values"].get(key), LIVE_VALUES[key])})
 
         print("\nBad commands")
         before = dump(game).get("Sharpness")

@@ -38,7 +38,7 @@ STATUS_FILE = "decky_optiscaler_live.status"
 LOG_FILE = "decky_optiscaler_live.log"
 DUMP_FILE = "decky_optiscaler_live.dump"
 # The status-file format this module reads (asi/live.cpp STATUS_SCHEMA).
-STATUS_SCHEMA = 7
+STATUS_SCHEMA = 8
 
 # A status file older than this means the ASI is not running - the game exited,
 # or it never loaded. The ASI heartbeats every few seconds precisely so that
@@ -529,8 +529,8 @@ def read_dump(target_dir):
     fields = {}
     for line in path.read_text(encoding="utf-8", errors="replace").splitlines():
         parts = line.split()
-        if len(parts) == 6:
-            name, kind, engaged, value, default, ini = parts
+        if len(parts) in (6, 7):  # the 7th is the volatile flag (schema 8)
+            name, kind, engaged, value, default, ini = parts[:6]
             fields[name] = (kind, engaged == "1", value, default, ini)
         elif len(parts) == 2 and parts[0] != "fields":
             fields[parts[0]] = (parts[1], None, None, None, None)

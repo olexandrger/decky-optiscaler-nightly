@@ -190,6 +190,12 @@ class Plugin:
     async def get_live_status(self, target_dir: str) -> dict:
         return await self.service.get_live_status(target_dir)
 
+    async def get_running_config(self, target_dir: str) -> dict:
+        return await self.service.get_running_config(target_dir)
+
+    async def keep_running_changes(self, target_dir: str, keys: list = None) -> dict:
+        return await self.service.keep_running_changes(target_dir, keys or [])
+
     async def install_live(self, target_dir: str) -> dict:
         return await self.service.install_live(target_dir)
 
