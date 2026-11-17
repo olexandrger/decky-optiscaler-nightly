@@ -70,7 +70,15 @@ jobs:
 
       - name: Install tools
         run: |
-          sudo apt-get update -qq && sudo apt-get install -y -qq p7zip-full libarchive-tools
+          # Runner DNS/mirror hiccups are transient (11 Nov: "Temporary failure
+          # resolving 'security.ubuntu.com'" failed a run): retry downloads,
+          # then the whole install.
+          for attempt in 1 2 3; do
+            sudo apt-get -o Acquire::Retries=5 update -qq &&
+              sudo apt-get -o Acquire::Retries=5 install -y -qq p7zip-full libarchive-tools && break
+            [ "$attempt" = 3 ] && exit 1
+            echo "apt failed (attempt $attempt); retrying in 30s"; sleep 30
+          done
           pnpm install --frozen-lockfile
 
       - name: Decide, and bundle the newest nightly

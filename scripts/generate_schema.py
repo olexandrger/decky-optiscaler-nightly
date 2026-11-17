@@ -135,11 +135,15 @@ def find_numeric_choices(comments):
     return None
 
 
-# OptiScaler 10 lets Dx12Upscaler/VulkanUpscaler name a folder under 'custom'
-# as well as a built-in backend, and says so on a line of its own -- sometimes
-# after the "- Default (auto) is" spec, sometimes between the backend list and
-# a bare "Default (auto) is ..." line. Neither shape is a value spec.
-CUSTOM_FOLDER_RE = re.compile(r"^or the name of a folder\b", re.I)
+# OptiScaler 10 lets the upscaler keys name a custom upscaler as well as a
+# built-in backend, and says so on a line of its own -- sometimes after the
+# "- Default (auto) is" spec, sometimes between the backend list and a bare
+# "Default (auto) is ..." line. Neither shape is a value spec. The wording
+# moves between nightlies ("or the name of a folder in the 'custom' folder",
+# then from 2026-11-13 "or the name of a custom upscaler: a folder ... or one
+# registered by an ASI plugin" and "... with 'ffx' or 'dlss', run through
+# dx11on12"), so match only the stable opening.
+CUSTOM_FOLDER_RE = re.compile(r"^or the name of\b", re.I)
 
 
 def infer(key, comments):

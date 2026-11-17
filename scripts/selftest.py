@@ -195,6 +195,13 @@ async def run():
               f"{multiplier['type']} {multiplier.get('options')}")
         check("multiplier labelled 2X/3X/4X",
               multiplier.get("optionLabels") == {"1": "2X", "2": "3X", "3": "4X"})
+        # The upscaler pickers: a nightly rewording the "or a custom upscaler"
+        # note once turned Dx12Upscaler into a free-text field (2026-11-13).
+        for key in ("Dx11Upscaler", "Dx12Upscaler", "VulkanUpscaler"):
+            picker = by_id[("Upscalers", key)]
+            check(f"{key} is a choice of backends, not free text",
+                  picker["type"] == "enum" and {"dlss", "xess"} <= set(picker.get("options") or []),
+                  f"{picker['type']} {picker.get('options')}")
         dx12 = by_id[("Upscalers", "Dx12Upscaler")]
         check("ffx documented as also serving FSR 4",
               "4.x" in (dx12.get("optionLabels") or {}).get("ffx", ""),
