@@ -52,6 +52,13 @@ using namespace optimirror;
 
 #define STATUS_SCHEMA 6
 
+// The OptiScaler commit whose Config.h this was compiled against (asi/build.sh
+// passes asi/optiscaler_ref/SOURCE_COMMIT.txt). Reported so the panel can tell
+// "built for another OptiScaler" apart from everything else that stops it.
+#ifndef DECKY_BUILT_FOR
+#define DECKY_BUILT_FOR "unknown"
+#endif
+
 // How many times (200 ms apart) Config is looked for before giving up.
 #ifndef DECKY_SEARCH_ATTEMPTS
 #define DECKY_SEARCH_ATTEMPTS 150
@@ -305,10 +312,15 @@ static bool LooksLikeConfig(const Config* cfg) {
     return true;
 }
 
+static unsigned g_scanSections = 0;
+static unsigned long long g_scanPointers = 0;
+
 static Config* FindConfig(HMODULE opti) {
     ScopedScanCache cache;
     Section sections[16];
     int n = ModuleDataSections(opti, sections, 16);
+    g_scanSections = (unsigned) n;
+    g_scanPointers = 0;
     for (int s = 0; s < n; s++) {
         unsigned char* p = (unsigned char*) (((uintptr_t) sections[s].base + 7) & ~(uintptr_t) 7);
         unsigned char* end = sections[s].base + sections[s].size;
@@ -318,6 +330,7 @@ static Config* FindConfig(HMODULE opti) {
             uintptr_t address = (uintptr_t) candidate;
             if (address < 0x10000 || address > 0x7FFFFFFFFFFFull) continue;
             if (address & 0xF) continue;  // operator new is 16-byte aligned
+            g_scanPointers++;
             if (LooksLikeConfig(candidate)) return candidate;
         }
     }
@@ -487,6 +500,7 @@ static void WriteStatus() {
     char body[2048];
     int n = snprintf(body, sizeof(body),
                      "schema %d\n"
+                     "built_for %s\n"
                      "status %s\n"
                      "api %u\n"
                      "reinit_available %d\n"
@@ -499,7 +513,7 @@ static void WriteStatus() {
                      "dir %s\n"
                      "heartbeat %llu\n"
                      "error %s\n",
-                     STATUS_SCHEMA, g_status, api ? api->version : 0u,
+                     STATUS_SCHEMA, DECKY_BUILT_FOR, g_status, api ? api->version : 0u,
                      (api && OPTI_API_HAS(api, ReInitUpscalers)) ? 1 : 0, g_seq, g_applied, g_reinit,
                      (void*) g_config, (unsigned) kFieldCount, (unsigned long) GetCurrentProcessId(),
                      dir, (unsigned long long) GetTickCount64(), g_error);
@@ -601,8 +615,11 @@ static DWORD WINAPI Worker(LPVOID) {
     SetPaths(g_opti);
     {
         const OptiPluginApi* api = g_api;
-        LogLine("attached to OptiScaler, plugin API %u (%s)", api ? api->version : 0u,
-                api ? "OptiPluginInit called" : "no OptiPluginInit");
+        char module[MAX_PATH];
+        NarrowCopy(module, sizeof(module), g_dir);
+        LogLine("attached to OptiScaler in %s, plugin API %u (%s); built for OptiScaler %s", module,
+                api ? api->version : 0u, api ? "OptiPluginInit called" : "no OptiPluginInit",
+                DECKY_BUILT_FOR);
     }
 
     strcpy(g_status, "searching");
@@ -613,7 +630,9 @@ static DWORD WINAPI Worker(LPVOID) {
         if (attempt == 0 || attempt % 30 == 0) WriteStatus();
         if (attempt >= DECKY_SEARCH_ATTEMPTS) {  // ~30 s: the layout does not match this build
             strcpy(g_status, "failed");
-            SetError("OptiScaler's Config was not found: the ASI's layout does not match this build");
+            SetError("OptiScaler's Config was not found: the ASI's layout does not match this build "
+                     "(built for OptiScaler %s; %u data sections, %llu candidate pointers checked)",
+                     DECKY_BUILT_FOR, g_scanSections, g_scanPointers);
             WriteStatus();
             return 0;
         }

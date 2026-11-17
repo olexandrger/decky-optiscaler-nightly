@@ -1715,6 +1715,95 @@ def check_menu_key():
         shutil.rmtree(root, ignore_errors=True)
 
 
+def check_debug_report():
+    """The panel's live-control diagnostics, and the report it saves to ~/Downloads.
+
+    Built so a user on a Deck can see why live editing does nothing and send
+    one file. Each fact must point at the cause it names.
+    """
+    import tempfile
+    from optiscaler import live
+    from optiscaler.service import OptiScalerService
+
+    print("\nLive-control diagnostics report")
+    root = Path(tempfile.mkdtemp(prefix="optiscaler-debug-"))
+    try:
+        target = root / "Some Game (2026)"
+        (target / live.PLUGIN_SUBDIR).mkdir(parents=True)
+        (target / live.PLUGIN_SUBDIR / live.ASI_NAME).write_bytes(b"MZ" + b"\0" * 64)
+        (target / "OptiScaler.ini").write_text("[Plugins]\nLoadAsiPlugins=true\n[Log]\nLogToFile=true\n")
+        (target / "OptiScaler.log").write_text(
+            "[info] OptiScaler v10.0.0-dev (1e568bb3) (20261116_122736)\n"
+            f"[info] Loaded: C:\\game\\plugins\\{live.ASI_NAME}\n")
+        (target / live.STATUS_FILE).write_text(
+            f"schema {live.STATUS_SCHEMA}\nbuilt_for 1e568bb3\nstatus ready\napi 3\n"
+            "reinit_available 1\nseq 4\napplied 1\nreinit -1\nconfig 0x1\nfields 377\nerror \n")
+        (target / live.CMD_FILE).write_text("seq 4\nset Menu.ShowFps bool 1\n")
+        install = {"version": "10.0.0-pre1", "bundled_version": "10.0.0-pre1"}
+
+        st = live.status(str(target))
+        check("the status carries the commit the in-game plugin was built for",
+              st.get("built_for") == "1e568bb3", st.get("built_for"))
+        check("the running build is read from OptiScaler's banner",
+              live.running_build(str(target)) == ("10.0.0-dev", "1e568bb3", "20261116_122736"))
+
+        result = live.diagnostics(str(target), install=install)
+        facts = {label: (value, tone) for label, value, tone in result["facts"]}
+        tones = {label: tone for label, (_, tone) in facts.items()}
+        check("a working setup has no warning or failure in it",
+              all(t == "ok" for t in tones.values()), tones)
+        for label in ("OptiScaler installed here", "OptiScaler that last ran",
+                      "In-game plugin built for", "In-game plugin file",
+                      "LoadAsiPlugins in OptiScaler.ini", "OptiScaler loaded it",
+                      "In-game plugin status", "Last command from the panel"):
+            check(f"the diagnostics show: {label}", label in facts, sorted(facts))
+
+        (target / live.STATUS_FILE).write_text(
+            f"schema {live.STATUS_SCHEMA}\nbuilt_for e7e3872d\nstatus failed\napi 3\n"
+            "error OptiScaler's Config was not found\n")
+        (target / "OptiScaler.ini").write_text("[Plugins]\nLoadAsiPlugins=false\n")
+        (target / live.CMD_FILE).write_text("seq 9\nset Menu.ShowFps bool 1\n")
+        facts = {label: (value, tone) for label, value, tone in
+                 live.diagnostics(str(target), install={**install, "version": "10.0.0-pre1-old"})["facts"]}
+        check("a plugin built for another OptiScaler than the one that ran is flagged",
+              facts["In-game plugin built for"][1] == "bad"
+              and "1e568bb3" in facts["In-game plugin built for"][0], facts.get("In-game plugin built for"))
+        check("plugins switched off in the ini is flagged",
+              facts["LoadAsiPlugins in OptiScaler.ini"][1] == "bad")
+        check("a failed in-game plugin shows as failed, with its error",
+              facts["In-game plugin status"][1] == "bad"
+              and "Config was not found" in facts["Its last error"][0])
+        check("an install older than the bundle is flagged",
+              facts["OptiScaler installed here"][1] == "warn")
+        check("a command the in-game plugin has not applied is flagged",
+              facts["Last command from the panel"][1] == "warn")
+
+        home = root / "home"
+        service = OptiScalerService(ROOT, root / "s", root / "r", home, logging.getLogger("t"))
+        shown = asyncio.run(service.live_diagnostics(str(target)))
+        check("the panel gets the facts and whether OptiScaler is logging",
+              shown["ok"] and shown["facts"] and shown["logging"] is True, shown.get("logging"))
+        saved = asyncio.run(service.save_debug_report(str(target)))
+        path = Path(saved.get("path") or "")
+        check("the debug report is saved to ~/Downloads",
+              saved["ok"] and path.parent == home / "Downloads" and path.is_file(), saved)
+        text = path.read_text() if path.is_file() else ""
+        check("the report's file name is safe and names the game",
+              path.name.startswith("decky-optiscaler-nightly-debug-Some_Game_2026_"), path.name)
+        for needle in (str(target), "built_for e7e3872d", "OptiScaler v10.0.0-dev (1e568bb3)",
+                       "LoadAsiPlugins=false", "seq 9\nset Menu.ShowFps", live.ASI_NAME,
+                       "[ bad] In-game plugin built for"):
+            check(f"the report includes {needle!r}", needle in text)
+
+        empty = root / "empty"
+        empty.mkdir()
+        bare = asyncio.run(service.live_diagnostics(str(empty)))
+        check("a folder with nothing in it still gets a report, logging off",
+              bare["ok"] and bare["logging"] is False and bare["report"], bare.get("logging"))
+    finally:
+        shutil.rmtree(root, ignore_errors=True)
+
+
 def check_optipatcher():
     """OptiPatcher ships alongside and installs into the same plugin folder."""
     import tempfile
@@ -2506,6 +2595,7 @@ def main():
     asyncio.run(run())
     check_live_control()
     check_live_diagnostics()
+    check_debug_report()
     check_remembered_choices()
     check_launch_record()
     check_launch_options_read()

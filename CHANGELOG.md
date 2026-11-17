@@ -14,6 +14,10 @@ Newest first. Each release ships `Decky OptiScaler.zip` for Decky Loader's
   dll names). Live: frame generation on/off, HUD fix, debug view, depth copy,
   XeFG multiplier, sharpness, the FPS overlay and the FSR version. Not live:
   switching the upscaler backend or the FFX frame generator.
+- Live-control diagnostics in the Quick Access panel and on the game's page,
+  with **Save debug report** (a text file in `~/Downloads`). The ASI now names
+  the OptiScaler commit it was built for (`built_for` in its status) and, when it
+  gives up, how much it searched.
 - `scripts/test_live_asi.py`: the ASI inside the real bundled OptiScaler under
   Wine, run by CI on every push and before every release.
 - **Update OptiScaler in this game**, in the Quick Access panel and on the game's

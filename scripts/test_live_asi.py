@@ -227,6 +227,17 @@ def run(wine, scratch):
             return
         check("it speaks this plugin's status format", st["schema"] == live.STATUS_SCHEMA, st["schema"])
         check("it reports the folder the panel manages", st["dir_matches"] is True, st["dir"])
+        synced = (ROOT / "asi" / "optiscaler_ref" / "SOURCE_COMMIT.txt").read_text().split()[0]
+        check("it names the OptiScaler commit it was built for",
+              st.get("built_for") and synced.startswith(st["built_for"][:7]), st.get("built_for"))
+        running = live.running_build(str(game))
+        if running:
+            check("that is the commit of the OptiScaler that loaded it",
+                  running[1][:7] == st["built_for"][:7], running)
+        facts = {label: tone for label, _, tone in live.diagnostics(str(game), str(asi))["facts"]}
+        check("the panel's diagnostics rate the running plugin as fine",
+              facts.get("In-game plugin status") == "ok"
+              and facts.get("In-game plugin built for", "ok") == "ok", facts)
         check("OptiScaler's log names the ASI as loaded", live.loaded_by_optiscaler(str(game)) is True)
         api = st["api"] or 0
         print(f"  (OptiScaler plugin API {api}, upscaler re-init {'available' if st['can_reinit'] else 'not available'})")

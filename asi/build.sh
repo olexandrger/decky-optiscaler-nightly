@@ -17,7 +17,9 @@ out="${1:-$here/../bin/decky_optiscaler_live.asi}"
 
 python3 "$here/../scripts/generate_asi_layout.py" >/dev/null
 
-flags=(-shared -O2 -fno-exceptions -std=c++17
+# The commit this is built against goes into the status file (built_for).
+commit="$(head -1 "$here/optiscaler_ref/SOURCE_COMMIT.txt" 2>/dev/null | tr -cd '0-9a-f' | cut -c1-12)"
+flags=(-shared -O2 -fno-exceptions -std=c++17 "-DDECKY_BUILT_FOR=\"${commit:-unknown}\""
        -Wall -Wextra -Werror -Wno-unused-parameter -Wno-cast-function-type
        -I"$here" -s)
 

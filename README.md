@@ -49,6 +49,13 @@ installs over the regular plugin (same name, same settings and per-game records)
   is not live from the panel; the Quick Access panel's **OptiScaler menu**
   button opens OptiScaler's own overlay for that (it presses the game's
   `[Menu] ShortcutKey`, Insert by default, on a virtual keyboard).
+- **Live-control diagnostics** (Quick Access panel and the game's page): which
+  OptiScaler is installed and which one last ran, which commit the in-game
+  plugin was built for, whether OptiScaler loaded it, what it reports and the
+  last command it applied. **Save debug report** writes all of it, with the raw
+  status, command, plugin log and `OptiScaler.log` excerpts, to
+  `~/Downloads/decky-optiscaler-nightly-debug-<game>-<time>.txt`; when
+  OptiScaler is not logging, one button turns its log on for the next launch.
 - A game set up by an earlier build shows **Update OptiScaler in this game**,
   which reapplies the bundled OptiScaler with the game's choices and its
   OptiScaler.ini kept.

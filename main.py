@@ -196,6 +196,12 @@ class Plugin:
     async def switch_upscaler(self, target_dir: str, code: str) -> dict:
         return await self.service.switch_upscaler(target_dir, code)
 
+    async def live_diagnostics(self, target_dir: str) -> dict:
+        return await self.service.live_diagnostics(target_dir)
+
+    async def save_debug_report(self, target_dir: str) -> dict:
+        return await self.service.save_debug_report(target_dir)
+
     async def get_live_log(self, target_dir: str, lines: int = 40) -> dict:
         return await self.service.get_live_log(target_dir, lines)
 

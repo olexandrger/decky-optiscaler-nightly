@@ -1,5 +1,6 @@
 """Facade tying the backend modules into the API the frontend calls."""
 
+import re
 import asyncio
 import os
 import time
@@ -13,6 +14,7 @@ from .constants import (
     OPTIPATCHER_NAME,
     OPTIPATCHER_VERSION,
     OPTISCALER_VERSION,
+    LOG_NAME,
     PAYLOAD_ARCHIVE,
     PLUGIN_ID,
     PROXY_FILENAMES,
@@ -1077,6 +1079,27 @@ class OptiScalerService:
                 {"section": "Upscalers", "key": key, "value": code},
             ], push_live=False)
         return result
+
+    async def live_diagnostics(self, target_dir):
+        """What decides live editing in this game, for the panel's diagnostics."""
+        install = await self._run(installer.detect, target_dir)
+        result = await self._run(live.diagnostics, target_dir, self.live_asi_path(), install)
+        result["logging"] = (await self._run(live.running_build, target_dir)) is not None \
+            or (Path(target_dir) / LOG_NAME).is_file()
+        return {"ok": True, **result}
+
+    async def save_debug_report(self, target_dir):
+        """Write the diagnostics, with the raw files, to ~/Downloads."""
+        try:
+            result = await self.live_diagnostics(target_dir)
+            folder = self.home / "Downloads"
+            folder.mkdir(parents=True, exist_ok=True)
+            name = re.sub(r"[^A-Za-z0-9._-]+", "_", Path(target_dir).name)[:60] or "game"
+            path = folder / f"decky-optiscaler-nightly-debug-{name}-{time.strftime('%Y%m%d-%H%M%S')}.txt"
+            await self._run(path.write_text, result["report"], "utf-8")
+            return {"ok": True, "path": str(path)}
+        except OSError as exc:
+            return {"ok": False, "error": str(exc)}
 
     async def get_live_log(self, target_dir, lines=40):
         return {"lines": await self._run(live.log_tail, target_dir, lines)}

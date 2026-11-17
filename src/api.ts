@@ -183,6 +183,19 @@ export const getLiveLog = callable<[targetDir: string, lines?: number], { lines:
 
 export const getMonitor = callable<[targetDir: string], MonitorReport>("get_monitor");
 export const clearLog = callable<[targetDir: string], ActionResult>("clear_log");
+export interface LiveDiagnostics {
+  ok: boolean;
+  /** [label, value, tone]: tone is "ok", "warn" or "bad". */
+  facts: [string, string, "ok" | "warn" | "bad"][];
+  report: string;
+  /** OptiScaler writes OptiScaler.log here (most evidence comes from it). */
+  logging: boolean;
+  error?: string;
+}
+export const liveDiagnostics = callable<[targetDir: string], LiveDiagnostics>("live_diagnostics");
+export const saveDebugReport = callable<[targetDir: string], ActionResult & { path?: string }>(
+  "save_debug_report"
+);
 export const setLogging = callable<[targetDir: string, enabled: boolean], ActionResult>(
   "set_logging"
 );

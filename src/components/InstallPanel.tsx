@@ -22,6 +22,7 @@ import { useAutoPlan } from "../hooks/useAutoPlan";
 import type { GameDetail, LiveStatus, PayloadStatus } from "../types";
 import { KeyValue, Mono, Notice, Pill } from "./Common";
 import { Fsr4Panel } from "./Fsr4Panel";
+import { LiveDiagnostics } from "./LiveDiagnostics";
 import { LivePanel } from "./LivePanel";
 import { OptipatcherPanel } from "./OptipatcherPanel";
 import { WikiSearch } from "./WikiSearch";
@@ -425,7 +426,10 @@ export function InstallPanel({ detail, status, appid, live, onChanged }: Props) 
       ) : null}
 
       {detail.install.installed ? (
-        <LivePanel targetDir={detail.install.path} status={live} onChanged={onChanged} />
+        <>
+          <LivePanel targetDir={detail.install.path} status={live} onChanged={onChanged} />
+          <LiveDiagnostics targetDir={detail.install.path} />
+        </>
       ) : null}
 
       {detail.install.installed ? (

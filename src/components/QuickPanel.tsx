@@ -5,6 +5,7 @@ import { resolveGame } from "../shortcuts";
 import { useAutoPlan } from "../hooks/useAutoPlan";
 import { useConfig } from "../hooks/useConfig";
 import { useLiveStatus } from "../hooks/useLiveStatus";
+import { LiveDiagnostics } from "./LiveDiagnostics";
 import { OutdatedInstall } from "./OutdatedInstall";
 import { restartGame } from "../hooks/useRunningGame";
 import { toggleMenu } from "../api";
@@ -321,6 +322,8 @@ function NowPlayingTab({
               </PanelSectionRow>
             </PanelSection>
           ) : null}
+
+          <LiveDiagnostics targetDir={detail.install.path} />
 
           <PanelSection>
             <PanelSectionRow>

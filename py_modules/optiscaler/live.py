@@ -343,6 +343,8 @@ def status(target_dir, source=None):
         "schema": None,
         # OptiScaler's plugin API version (0: it never called OptiPluginInit).
         "api": None,
+        # The OptiScaler commit the in-game plugin was compiled for.
+        "built_for": None,
         # Whether settings read at upscaler creation can be applied live: needs
         # OptiPluginApi::ReInitUpscalers (plugin API 2 and later).
         "can_reinit": False,
@@ -378,6 +380,7 @@ def status(target_dir, source=None):
     report["seq"] = raw.get("seq")
     report["schema"] = _number(raw.get("schema"), int)
     report["api"] = _number(raw.get("api"), int)
+    report["built_for"] = raw.get("built_for") or None
     fresh = age < STATUS_STALE_SECONDS
     # "loaded"/"searching" mean the plugin is running but has not found Config
     # yet; "failed" means it gave up (its layout does not match this build).
@@ -519,3 +522,145 @@ def log_tail(target_dir, lines=40):
         return path.read_text(encoding="utf-8", errors="replace").splitlines()[-lines:]
     except OSError:
         return []
+
+
+# ------------------------------------------------------------ diagnostics --
+
+_BANNER_RE = re.compile(r"OptiScaler v([0-9][\w.\-]*) \(([0-9a-f]{7,40})\)(?: \((\d{8}_\d{6})\))?")
+_RELEVANT_RE = re.compile(r"plugin|\.asi|LoadAsiPlugins|decky_optiscaler|OptiPluginInit|\[E\]|error",
+                          re.IGNORECASE)
+
+
+def _read_text(path, limit=2_000_000):
+    try:
+        with Path(path).open("r", encoding="utf-8", errors="replace") as handle:
+            return handle.read(limit)
+    except OSError:
+        return None
+
+
+def _age(path):
+    try:
+        seconds = time.time() - Path(path).stat().st_mtime
+    except OSError:
+        return None
+    if seconds < 90:
+        return f"{seconds:.0f} s ago"
+    if seconds < 5400:
+        return f"{seconds / 60:.0f} min ago"
+    return f"{seconds / 3600:.1f} h ago"
+
+
+def running_build(target_dir):
+    """(version, commit, built) from the banner in the game's OptiScaler.log."""
+    text = _read_text(Path(target_dir) / "OptiScaler.log", 400_000)
+    match = _BANNER_RE.search(text or "")
+    return match.groups() if match else None
+
+
+def diagnostics(target_dir, source=None, install=None):
+    """Everything that decides whether live editing works in this game.
+
+    ``install`` is installer.detect() for the folder (version, filename). Returns
+    {"facts": [[label, value, tone]], "report": text}; tone is "ok", "warn" or
+    "bad" for the panel to colour, the report carries the raw files as well.
+    """
+    target = Path(target_dir)
+    install = install or {}
+    st = status(target_dir, source)
+    facts = []
+
+    def fact(label, value, tone="ok"):
+        facts.append([label, str(value), tone])
+
+    bundled = install.get("bundled_version")
+    version = install.get("version")
+    fact("OptiScaler installed here", f"{version or 'unknown'}"
+         + ("" if not bundled or version == bundled else f" (this plugin ships {bundled})"),
+         "ok" if version and version == bundled else "warn")
+
+    log_path = target / "OptiScaler.log"
+    running = running_build(target_dir)
+    if running:
+        fact("OptiScaler that last ran", f"v{running[0]} ({running[1]})"
+             + (f", built {running[2]}" if running[2] else "") + f", log {_age(log_path)}")
+    else:
+        fact("OptiScaler that last ran", "no OptiScaler.log here (it has not run since install, "
+             "or LogToFile is off)" if not log_path.is_file() else "no version banner in OptiScaler.log",
+             "warn")
+
+    built_for = st.get("built_for")
+    if built_for and running:
+        same = running[1].startswith(built_for[:7]) or built_for.startswith(running[1][:7])
+        fact("In-game plugin built for", built_for + ("" if same else
+             f" — but the game ran {running[1]}: restart the game, or Update OptiScaler in this game"),
+             "ok" if same else "bad")
+    elif built_for:
+        fact("In-game plugin built for", built_for)
+
+    asi = target / PLUGIN_SUBDIR / ASI_NAME
+    if asi.is_file():
+        current = st.get("asi_current")
+        fact("In-game plugin file", f"{PLUGIN_SUBDIR}/{ASI_NAME}, {asi.stat().st_size} bytes"
+             + ("" if current is not False else " — older than this plugin's: Update OptiScaler in this game"),
+             "ok" if current is not False else "bad")
+    else:
+        fact("In-game plugin file", f"missing ({PLUGIN_SUBDIR}/{ASI_NAME}): Update OptiScaler in this game", "bad")
+
+    enabled = st.get("load_enabled")
+    fact("LoadAsiPlugins in OptiScaler.ini", {True: "true", False: "off: OptiScaler skips plugins",
+                                              None: "not set (OptiScaler's default: off)"}[enabled],
+         "ok" if enabled else "bad")
+    loaded = st.get("loaded_by_optiscaler")
+    fact("OptiScaler loaded it", {True: "yes (OptiScaler.log)", False: "no: searched plugins/ without it",
+                                  None: "unknown (nothing in OptiScaler.log)"}[loaded],
+         "ok" if loaded else ("bad" if loaded is False else "warn"))
+
+    state = st.get("state")
+    tone = "ok" if st.get("ready") else ("warn" if state in ("loaded", "searching", "absent") else "bad")
+    status_bits = [state or "absent"]
+    if st.get("age") is not None:
+        status_bits.append(f"written {st['age']} s ago" + (" (stale: game not running?)"
+                                                           if st["age"] >= STATUS_STALE_SECONDS else ""))
+    if st.get("api") is not None:
+        status_bits.append(f"plugin API {st['api']}")
+    if st.get("schema") not in (None, STATUS_SCHEMA):
+        status_bits.append(f"status format {st['schema']} (another build)")
+    fact("In-game plugin status", ", ".join(status_bits), tone)
+    if st.get("error"):
+        fact("Its last error", st["error"], "bad")
+    if st.get("dir_matches") is False:
+        fact("Reports from", f"{st['dir']} (not this folder)", "bad")
+
+    cmd = target / CMD_FILE
+    if cmd.is_file():
+        sent = ((_read_text(cmd) or "").split() + ["", "?"])[1]
+        applied = st.get("seq")
+        fact("Last command from the panel", f"seq {sent}, sent {_age(cmd)}; the in-game plugin "
+             f"last applied seq {applied or 'none yet'}", "ok" if applied == sent else "warn")
+
+    def section(title, body):
+        return f"\n===== {title} =====\n{(body or '(none)').rstrip()}\n"
+
+    ini_text = _read_text(target / "OptiScaler.ini") or ""
+    plugins_ini = "\n".join(line for line in ini_text.splitlines()
+                            if re.match(r"\s*(\[Plugins\]|\[Log\]|LoadAsiPlugins|Path|LogToFile|LogLevel)", line))
+    log_text = _read_text(log_path) or ""
+    log_lines = log_text.splitlines()
+    relevant = [line for line in log_lines if _RELEVANT_RE.search(line)][:120]
+    plugins_dir = target / PLUGIN_SUBDIR
+    listing = "\n".join(f"{p.name}  {p.stat().st_size} bytes" for p in sorted(plugins_dir.iterdir())) \
+        if plugins_dir.is_dir() else "(no plugins/ folder)"
+
+    report = [f"Decky OptiScaler Nightly live-control report, {time.strftime('%Y-%m-%d %H:%M:%S')}",
+              f"Game folder: {target}", ""]
+    report += [f"[{tone:>4}] {label}: {value}" for label, value, tone in facts]
+    report.append(section(STATUS_FILE, _read_text(target / STATUS_FILE)))
+    report.append(section(CMD_FILE, _read_text(cmd)))
+    report.append(section(LOG_FILE + " (last 80 lines)", "\n".join(log_tail(target_dir, 80))))
+    report.append(section("plugins/", listing))
+    report.append(section("OptiScaler.ini [Plugins]/[Log]", plugins_ini))
+    report.append(section(f"OptiScaler.log: plugin lines ({len(relevant)})", "\n".join(relevant)))
+    report.append(section("OptiScaler.log: first 40 lines", "\n".join(log_lines[:40])))
+    report.append(section("OptiScaler.log: last 80 lines", "\n".join(log_lines[-80:])))
+    return {"facts": facts, "report": "\n".join(report), "status": st}
