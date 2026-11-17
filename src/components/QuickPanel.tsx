@@ -5,6 +5,7 @@ import { resolveGame } from "../shortcuts";
 import { useAutoPlan } from "../hooks/useAutoPlan";
 import { useConfig } from "../hooks/useConfig";
 import { useLiveStatus } from "../hooks/useLiveStatus";
+import { OutdatedInstall } from "./OutdatedInstall";
 import { restartGame } from "../hooks/useRunningGame";
 import { toggleMenu } from "../api";
 import type { Game, GameDetail, LiveStatus, RunningGame } from "../types";
@@ -168,6 +169,20 @@ function NowPlayingTab({
         </PanelSectionRow>
       </PanelSection>
 
+      {/* A game set up by an earlier build keeps that build's OptiScaler and
+          live-control ASI until it is reapplied. */}
+      {installed && detail ? (
+        <OutdatedInstall
+          install={detail.install}
+          live={live}
+          runningGame={runningGame}
+          onUpdated={() => {
+            void resolve();
+            void refreshLive();
+          }}
+        />
+      ) : null}
+
       {resolving ? <Centered>Looking up this game…</Centered> : null}
 
       {!resolving && notFound ? (
@@ -213,11 +228,11 @@ function NowPlayingTab({
 
       {installed && detail ? (
         <>
-          {/* OptiScaler's own overlay is the one place settings change while the
-              game runs (the panel's live control is not available with the
-              bundled OptiScaler). It opens on a keyboard shortcut, so this
-              closes the Quick Access menu — otherwise the key would go to
-              Steam's overlay — and presses it on a virtual keyboard. */}
+          {/* OptiScaler's own overlay changes everything while the game runs,
+              including what the panel's live control cannot (the upscaler
+              backend). It opens on a keyboard shortcut, so this closes the
+              Quick Access menu — otherwise the key would go to Steam's overlay
+              — and presses it on a virtual keyboard. */}
           <PanelSection>
             <PanelSectionRow>
               <ButtonItem
@@ -242,10 +257,12 @@ function NowPlayingTab({
                 OptiScaler menu
               </ButtonItem>
             </PanelSectionRow>
-            {live && !live.asi_installed ? (
+            {live ? (
               <PanelSectionRow>
                 <Notice tone="info">
-                  Changes made here apply when the game restarts.
+                  {live.ready
+                    ? "Frame generation, HUD fix, sharpness, the FPS overlay and the FSR version apply immediately; other changes when the game restarts."
+                    : "Changes made here apply when the game restarts."}
                 </Notice>
               </PanelSectionRow>
             ) : null}
@@ -335,15 +352,19 @@ function InstallPill({
 /** Whether the in-game plugin is answering, shown wherever the game is. */
 function LivePill({ live }: Readonly<{ live: LiveStatus | null }>) {
   if (!live) return null;
-  if (live.attached) {
+  if (live.ready) {
     // An in-game plugin older than the one this build ships attaches and
     // answers normally, so the only sign of it is what it leaves out. Say so
     // here; the Setup tab's Logs page explains it and offers the reinstall.
     if (live.asi_current === false) return <Pill color="#5a4a20">live · outdated</Pill>;
-    return <Pill color="#2f6b3f">live{live.can_switch_upscaler ? "" : " · fg only"}</Pill>;
+    return <Pill color="#2f6b3f">live</Pill>;
   }
-  // No live-control plugin in this game: panel edits wait for a restart, which
-  // is how this build is meant to work rather than a fault.
+  // Loaded, still looking for OptiScaler's Config.
+  if (live.attached) return <Pill>connecting…</Pill>;
+  // It looked and gave up: its layout does not match this OptiScaler build.
+  // Nothing was written; panel edits wait for a restart.
+  if (live.state === "failed") return <Pill color="#5a4a20">restart to apply</Pill>;
+  // No live-control plugin in this game: panel edits wait for a restart.
   if (!live.asi_installed) return <Pill>restart to apply</Pill>;
   return <Pill color="#5a4a20">not connected</Pill>;
 }

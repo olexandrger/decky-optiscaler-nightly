@@ -14,6 +14,7 @@ from .constants import (
     OPTIPATCHER_VERSION,
     OPTISCALER_VERSION,
     PAYLOAD_ARCHIVE,
+    PLUGIN_ID,
     PROXY_FILENAMES,
     REFRAMEWORK_DLL,
 )
@@ -756,6 +757,26 @@ class OptiScalerService:
             self.log.exception("install failed for %s", target_dir)
             return {"ok": False, "error": str(exc)}
 
+    async def update_install(self, target_dir):
+        """Reapply the bundled OptiScaler to a game this plugin set up earlier.
+
+        For a game installed by an earlier build of the plugin: same proxy
+        filename, OptiScaler.ini kept, OptiPatcher kept if the game had it, and
+        the live-control ASI replaced by the one built for this OptiScaler. A
+        running game keeps what it loaded until it restarts.
+        """
+        refused = self._foreign(target_dir)
+        if refused:
+            return refused
+        manifest = await self._run(installer.read_manifest, Path(target_dir))
+        if not manifest or manifest.get("plugin") != PLUGIN_ID or not manifest.get("filename"):
+            return {"ok": False, "error": "Install OptiScaler with this plugin first."}
+        if manifest.get("reframework"):
+            return {"ok": False, "error": "This game's REFramework is managed too: reinstall "
+                                          "from the game's page in Libraries & all settings."}
+        return await self.install(target_dir, manifest["filename"], preserve_ini=True,
+                                  optipatcher=bool(manifest.get("optipatcher")))
+
     async def uninstall(self, target_dir, remove_ini=True):
         try:
             async with self._mutation_lock:
@@ -827,13 +848,16 @@ class OptiScalerService:
                 # Only claim a live change when the in-game plugin is actually
                 # answering; otherwise the command file would sit unread and the
                 # user would be told the change took effect when it did not.
+                # "ready" rather than merely "attached": until the ASI has found
+                # OptiScaler's Config it cannot apply anything.
                 state = live.status(target_dir)
-                if not state.get("attached"):
+                if not state.get("ready"):
                     return {"ok": True, "sent": False, "reason": state.get("state"),
-                            "attached": False}
-                outcome = live.apply_changes(target_dir, result["applied"])
+                            "attached": bool(state.get("attached"))}
+                outcome = live.apply_changes(target_dir, result["applied"],
+                                             can_reinit=state.get("can_reinit", False))
                 outcome["attached"] = True
-                outcome["can_switch_upscaler"] = state.get("can_switch_upscaler", False)
+                outcome["can_switch_upscaler"] = False
                 return outcome
 
             result["live"] = await self._run(push)

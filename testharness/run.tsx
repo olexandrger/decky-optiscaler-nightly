@@ -1562,6 +1562,52 @@ async function render(name: string, element: React.ReactElement) {
       !findAll(qp.host, "[data-tab]").some((n) => n.getAttribute("data-tab") === "settings")}`);
   }
 
+  console.log("\n=== quick panel: game set up by an earlier build ===");
+  {
+    const previousLookup = fixtures.find_running_game;
+    const outdatedDetail = {
+      ...detail,
+      install: { ...detail.install, version: "10.0.0-pre1-20261030",
+                 bundled_version: "10.0.0-pre1-20261116", outdated: true },
+    };
+    fixtures.find_running_game = { ...previousLookup, detail: outdatedDetail };
+    const updates: any[] = [];
+    fixtures.update_install = (...args: any[]) => { updates.push(args); return { ok: true }; };
+    const old = await render(
+      "QuickPanel (outdated)",
+      <QuickPanel
+        runningGame={{ appid: 1091500, name: "Cyberpunk 2077", gameid: "1091500" }}
+        onOpenManager={() => {}}
+      />
+    );
+    const text = () => old.host.textContent ?? "";
+    console.log(`  says which OptiScaler the game has and which the plugin ships: ${
+      text().includes("10.0.0-pre1-20261030") && text().includes("10.0.0-pre1-20261116")}`);
+    const button = findAll(old.host, '[data-mock="ButtonItem"]')
+      .find((node) => (node.textContent ?? "").includes("Update OptiScaler in this game"));
+    console.log(`  offers the update: ${Boolean(button)}`);
+    fixtures.find_running_game = previousLookup;
+    await act(async () => {
+      (button as HTMLElement | undefined)?.click();
+    });
+    await settle();
+    console.log(`  the update goes to this game's folder: ${
+      updates.length === 1 && updates[0][0] === detail.install.path}`);
+    console.log(`  then offers the restart that loads it: ${text().includes("Restart game to load it")}`);
+    old.root.unmount();
+
+    const current = await render(
+      "QuickPanel (current)",
+      <QuickPanel
+        runningGame={{ appid: 1091500, name: "Cyberpunk 2077", gameid: "1091500" }}
+        onOpenManager={() => {}}
+      />
+    );
+    console.log(`  a current install shows no update: ${
+      !(current.host.textContent ?? "").includes("Update OptiScaler in this game")}`);
+    current.root.unmount();
+  }
+
   console.log("\n=== backend calls made ===");
   console.log("  " + Array.from(new Set(calls)).join(", "));
 

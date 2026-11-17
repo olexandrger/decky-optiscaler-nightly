@@ -85,10 +85,12 @@ def check_bin():
             + "\nRun `python3 scripts/bundle_nightly.py --latest` (or give it a downloaded .7z)."
         )
 
+    # Live in-game control ships with every build: the ASI is compiled against
+    # the bundled nightly's own Config.h and is not in git (bin/.gitignore).
     asi = bin_dir / "decky_optiscaler_live.asi"
     if not asi.is_file():
-        print("  note: bin/decky_optiscaler_live.asi missing -- live in-game control "
-              "will be unavailable. Build it with asi/build.sh.")
+        sys.exit("bin/decky_optiscaler_live.asi missing: run `bash asi/build.sh` after bundling "
+                 "(scripts/test_live_asi.py then checks it against the bundled OptiScaler).")
     if not (bin_dir / "OptiPatcher.asi").is_file():
         print("  note: bin/OptiPatcher.asi missing -- the OptiPatcher option will be "
               "offered as unavailable. Fetch it from the OptiPatcher rolling release.")

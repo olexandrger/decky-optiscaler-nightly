@@ -34,12 +34,15 @@ jobs:
         run: |
           pnpm install --frozen-lockfile
           # 7-Zip and bsdtar: the two archivers the plugin unpacks the payload with.
+          # Wine and mingw-w64: the live-control ASI is built for, and tested inside,
+          # the bundled OptiScaler (scripts/test_live_asi.py).
           # Runner DNS/mirror hiccups are transient (11 Nov: "Temporary failure
           # resolving 'security.ubuntu.com'" failed a run): retry downloads,
           # then the whole install.
           for attempt in 1 2 3; do
             sudo apt-get -o Acquire::Retries=5 update -qq &&
-              sudo apt-get -o Acquire::Retries=5 install -y -qq p7zip-full libarchive-tools && break
+              sudo apt-get -o Acquire::Retries=5 install -y -qq --no-install-recommends \
+                p7zip-full libarchive-tools wine g++-mingw-w64-x86-64 && break
             [ "$attempt" = 3 ] && exit 1
             echo "apt failed (attempt $attempt); retrying in 30s"; sleep 30
           done
@@ -72,6 +75,11 @@ jobs:
           python3 scripts/generate_schema.py
           git diff --stat
 
+      # Compiled against the Config.h of the nightly just bundled (bundling
+      # synced asi/optiscaler_ref/ to the commit its dll names).
+      - name: Build the live-control ASI
+        run: bash asi/build.sh
+
       - name: Typecheck
         run: npx tsc --noEmit
 
@@ -90,6 +98,13 @@ jobs:
 
       - name: Nightly download retries
         run: python3 scripts/test_bundle.py
+
+      # The ASI inside the real bundled OptiScaler, under Wine: Config found,
+      # its layout checked field by field, every live setting applied and read
+      # back through the panel's own code. A nightly that breaks live editing
+      # fails here.
+      - name: Live editing inside OptiScaler (Wine)
+        run: python3 scripts/test_live_asi.py
 
       # Includes check_version_pin() (the archive in bin/ is the one
       # constants.py pins) and the real-payload install/upgrade/uninstall.

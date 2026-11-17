@@ -75,7 +75,8 @@ jobs:
           # then the whole install.
           for attempt in 1 2 3; do
             sudo apt-get -o Acquire::Retries=5 update -qq &&
-              sudo apt-get -o Acquire::Retries=5 install -y -qq p7zip-full libarchive-tools && break
+              sudo apt-get -o Acquire::Retries=5 install -y -qq --no-install-recommends \
+                p7zip-full libarchive-tools wine g++-mingw-w64-x86-64 && break
             [ "$attempt" = 3 ] && exit 1
             echo "apt failed (attempt $attempt); retrying in 30s"; sleep 30
           done
@@ -108,6 +109,8 @@ jobs:
           # No archive is committed: every release bundles the newest nightly.
           python3 scripts/bundle_nightly.py --latest
           python3 scripts/generate_schema.py
+          # The live-control ASI, against that nightly's own Config.h.
+          bash asi/build.sh
           # Every published build gets its own version: <base>-nightly.<date>.<run>.
           # The in-plugin updater compares versions, so a fork-only change on the
           # same nightly has to read as new.
@@ -127,6 +130,7 @@ jobs:
           python3 scripts/test_install.py 2>&1 | tee install.log
           python3 scripts/test_update.py
           python3 scripts/test_bundle.py
+          python3 scripts/test_live_asi.py 2>&1 | tee live.log
           HARNESS=run.tsx node testharness/build-and-run.mjs 2>&1 | tee harness.log
           grep -q "React errors/warnings: 0" harness.log
           if grep -E ": false$" harness.log; then exit 1; fi
@@ -178,7 +182,8 @@ jobs:
           # What is inside, OptiScaler's own changes in this nightly, this
           # fork's commits since its last release, and the test counts.
           python3 scripts/release_notes.py --zip decky-optiscaler-nightly.zip \
-            --selftest-log selftest.log --fsr4-log fsr4.log --install-log install.log > release-notes.md
+            --selftest-log selftest.log --fsr4-log fsr4.log --install-log install.log \
+            --live-log live.log > release-notes.md
           cat release-notes.md
           if gh release view "v$VERSION" >/dev/null 2>&1; then
             # Re-run for the same nightly: replace the zip and refresh the notes.

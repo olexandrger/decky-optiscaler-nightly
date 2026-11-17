@@ -15,6 +15,7 @@ import { useAutoPlan } from "../hooks/useAutoPlan";
 import { useConfig } from "../hooks/useConfig";
 import { restartGame } from "../hooks/useRunningGame";
 import { useLiveStatus } from "../hooks/useLiveStatus";
+import { OutdatedInstall } from "./OutdatedInstall";
 import type { GameDetail as GameDetailData, PayloadStatus, RunningGame } from "../types";
 import { BasicPanel } from "./BasicPanel";
 import { Centered, Pill } from "./Common";
@@ -241,7 +242,7 @@ export function GameDetail({
       >
         <span style={{ flexGrow: 1 }}>
           Applied in-game — no restart needed.
-          {config.live.backend_change ? " The upscaler reloads on the next frame." : ""}
+          {config.live.backend_change || config.live.reinit ? " The upscaler reloads on the next frame." : ""}
         </span>
       </div>
     ) : null;
@@ -464,6 +465,14 @@ export function GameDetail({
 
       {liveBanner}
       {restartBanner}
+      {installed && detail ? (
+        <OutdatedInstall
+          install={detail.install}
+          live={liveStatus}
+          runningGame={isRunning ? runningGame : null}
+          onUpdated={() => void load()}
+        />
+      ) : null}
 
       {config.error && installed ? (
         <div

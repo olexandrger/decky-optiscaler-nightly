@@ -4,16 +4,24 @@ OptiScaler only reads OptiScaler.ini at startup, so writing the file changes
 nothing until the game restarts. Its in-game overlay avoids that because it runs
 *inside* the game and writes straight into the live config object.
 
-This module drives a small ASI plugin (built from ``asi/``) that OptiScaler
-loads into the game process and that performs the same writes on our behalf. The
-two sides talk through two plain files next to OptiScaler.ini:
+This module drives a small ASI plugin (built from ``asi/live.cpp``) that
+OptiScaler loads into the game process. OptiScaler 10 hands it its plugin API
+(``asi/plugin_sdk/optiscaler_plugin.h``); the plugin writes Config fields at
+offsets generated from the nightly's own Config.h, and asks OptiScaler to
+re-create the upscaler through that API when a setting needs it. Nothing in
+OptiScaler's State is touched, so switching to another upscaler backend or FFX
+frame generator is not live: those keep "restart to apply".
+
+The two sides talk through plain files next to OptiScaler.ini:
 
     decky_optiscaler_live.cmd     what to apply, written here
     decky_optiscaler_live.status  what the ASI found and did, written there
+    decky_optiscaler_live.dump    every Config field, on request (tests)
 
 Files rather than a socket because they need no ports, no permissions and no
 knowledge of how Proton has wired the game's network up; the ASI polls the
-command file five times a second.
+command file ten times a second. scripts/test_live_asi.py runs this whole
+channel against the real OptiScaler under Wine.
 """
 
 import os
@@ -28,23 +36,15 @@ PLUGIN_SUBDIR = "plugins"
 CMD_FILE = "decky_optiscaler_live.cmd"
 STATUS_FILE = "decky_optiscaler_live.status"
 LOG_FILE = "decky_optiscaler_live.log"
+DUMP_FILE = "decky_optiscaler_live.dump"
+# The status-file format this module reads (asi/live.cpp STATUS_SCHEMA).
+STATUS_SCHEMA = 6
 
 # A status file older than this means the ASI is not running - the game exited,
 # or it never loaded. The ASI heartbeats every few seconds precisely so that
 # this stays a statement about the game and not about whether anyone happened to
 # change a setting recently.
 STATUS_STALE_SECONDS = 20
-
-# The backend ids OptiScaler accepts, from the overlay's own upscaler combos
-# (OptiScaler/menu/menu_common.cpp). In 0.9.4 these are plain strings in both
-# Config and State - they only became an enum after this release.
-BACKEND_CODES = (
-    "xess", "xess_12",
-    "fsr21", "fsr21_12",
-    "fsr22", "fsr22_12",
-    "ffx", "ffx_12", "fsr31", "fsr31_12",
-    "dlss", "dlssd",
-)
 
 # The FFX frame generators OptiScaler can be told to use, and the INI key that
 # records the choice. The list itself is not fixed: the FFX SDK reports what it
@@ -68,41 +68,26 @@ FFX_UPSCALER_KEY = "UpscalerIndex"
 FFX_UPSCALER_ID = f"{FFX_UPSCALER_SECTION}.{FFX_UPSCALER_KEY}"
 FFX_UPSCALER_MAX = FFX_FG_MAX
 
-# Only the FidelityFX backend has FSR versions to choose between; every other
-# upscaler ignores the index entirely.
-FFX_BACKENDS = ("ffx", "ffx_12", "fsr31", "fsr31_12")
-
-# Which INI key names the backend for each graphics API. The live switch can
-# only push one id into State::newBackend, and DX12 is what OptiScaler is
-# overwhelmingly used with on Proton, so it wins when several are set at once.
-BACKEND_KEY_PRIORITY = (
-    "Upscalers.Dx12Upscaler",
-    "Upscalers.VulkanUpscaler",
-    "Upscalers.Dx11Upscaler",
-)
-
-
 class LiveField:
     """One INI key the ASI can apply without a restart."""
 
-    def __init__(self, member, wire_type, encode, needs_backend_change=False,
-                 needs_fg_change=False, needs_feature_rebuild=False):
+    def __init__(self, member, wire_type, encode, needs_reinit=False):
         self.member = member
         self.wire_type = wire_type
         self.encode = encode
-        self.needs_backend_change = needs_backend_change
-        # Written through the ASI's own "fgindex" verb rather than a plain
-        # field write: OptiScaler rebuilds the frame generator from Config only
-        # when State::FGchanged and State::SCchanged say to.
-        self.needs_fg_change = needs_fg_change
-        # Written through the "ffxupscaler" verb, for the same reason one step
-        # further out: the index is read when the *upscaler* builds its context,
-        # so the whole feature has to be rebuilt for it to be re-read.
-        self.needs_feature_rebuild = needs_feature_rebuild
+        # Read when the upscaler is created rather than every frame: the write
+        # is followed by OptiPluginApi::ReInitUpscalers, which makes OptiScaler
+        # re-create the upscaler with the new value on its next frame.
+        self.needs_reinit = needs_reinit
 
 
 def _bool(value):
-    return "1" if str(value).strip().lower() in ("1", "true", "yes", "on") else "0"
+    text = str(value).strip().lower()
+    if text in ("1", "true", "yes", "on"):
+        return "1"
+    if text in ("0", "false", "no", "off"):
+        return "0"
+    raise ValueError(f"not a bool: {value!r}")
 
 
 def _int(value):
@@ -113,34 +98,21 @@ def _float(value):
     return repr(float(str(value).strip()))
 
 
-def _fg_index(value):
-    """An index into the FFX FG version list the running game reported."""
-    index = int(float(str(value).strip()))
-    if index < 0 or index >= FFX_FG_MAX:
-        raise ValueError(f"not an FFX FG index: {value!r}")
-    return str(index)
-
-
 def _ffx_upscaler_index(value):
-    """An index into the FFX upscaler version list the running game reported."""
+    """An index into the FFX upscaler versions OptiScaler offers."""
     index = int(float(str(value).strip()))
     if index < 0 or index >= FFX_UPSCALER_MAX:
         raise ValueError(f"not an FFX upscaler index: {value!r}")
     return str(index)
 
 
-def _backend(value):
-    """An upscaler id, checked against the ones OptiScaler actually knows."""
-    code = str(value).strip().lower()
-    if code not in BACKEND_CODES:
-        raise ValueError(f"not an OptiScaler backend id: {value!r}")
-    return code
-
-
-# Only settings OptiScaler genuinely re-reads while rendering belong here.
-# Anything that is consumed once, when a feature or swapchain is created, would
-# appear to work and silently do nothing, so it is deliberately left out and
-# keeps its "restart to apply" treatment.
+# Only settings OptiScaler genuinely re-reads while running belong here.
+# Anything consumed once, when a feature or swapchain is created, would appear
+# to work and silently do nothing, so it keeps its "restart to apply" treatment.
+# Not here on purpose: the upscaler backends (Dx11/Dx12/VulkanUpscaler) and the
+# FFX frame generator (FSR.FGIndex). Switching those in a running game takes
+# OptiScaler's State internals, which change between nightlies; OptiScaler's own
+# overlay does it, and the panel records them for the next launch.
 LIVE_FIELDS = {
     # Frame generation: FGEnabled is checked per frame by the swapchain and by
     # every FG dispatch path, which is exactly why the overlay's hotkey works.
@@ -151,32 +123,10 @@ LIVE_FIELDS = {
     "OptiFG.HUDFixExtended": LiveField("FGHUDFixExtended", "bool", _bool),
     "XeFG.InterpolationCount": LiveField("FGXeFGInterpolationCount", "i32", _int),
 
-    # Which FFX frame generator to run - the overlay's "Change FG" button.
-    # Config::FfxFGIndex is read when FSRFG_Dx12 builds its context, so unlike
-    # the upscaler this *is* a Config write; what makes it happen now rather
-    # than next launch is the pair of State flags the ASI raises with it.
-    FFX_FG_ID: LiveField("FfxFGIndex", "i32", _fg_index, needs_fg_change=True),
-
-    # Which FSR version the FidelityFX backend runs - the overlay's "FFX
-    # Upscaler" combo and the "Change Upscaler" button beside it. Read when
-    # FSR31Feature_*::CreateContext builds its context, so what makes it happen
-    # now is the feature being rebuilt, which the ASI asks for alongside the
-    # write. It is also where the exact version on screen comes from: the
-    # feature parses its own name out of this list at that same moment.
+    # Which FSR version the FidelityFX upscaler runs, read when it creates its
+    # context: written, then the upscaler is re-created through the plugin API.
     FFX_UPSCALER_ID: LiveField("FfxUpscalerIndex", "i32", _ffx_upscaler_index,
-                               needs_feature_rebuild=True),
-
-    # Upscaler override. Writing Config alone would not switch anything: the
-    # overlay's own "change upscaler" path puts the id in State::newBackend and
-    # marks every backend changed. Note that the overlay does *not* touch Config
-    # when it does that - see _drop_upscaler_writes for why we no longer do
-    # either.
-    "Upscalers.Dx11Upscaler": LiveField(
-        "Dx11Upscaler", "str", _backend, needs_backend_change=True),
-    "Upscalers.Dx12Upscaler": LiveField(
-        "Dx12Upscaler", "str", _backend, needs_backend_change=True),
-    "Upscalers.VulkanUpscaler": LiveField(
-        "VulkanUpscaler", "str", _backend, needs_backend_change=True),
+                               needs_reinit=True),
 
     # Cheap per-frame knobs, safe to move while playing.
     "Sharpness.OverrideSharpness": LiveField("OverrideSharpness", "bool", _bool),
@@ -265,6 +215,7 @@ def remove_asi(target_dir, logger=None):
         _control_path(target_dir, CMD_FILE),
         _control_path(target_dir, STATUS_FILE),
         _control_path(target_dir, LOG_FILE),
+        _control_path(target_dir, DUMP_FILE),
     ):
         try:
             if path.is_file():
@@ -372,86 +323,6 @@ def _number(text, cast, unknown=None):
     return None if value == unknown else value
 
 
-def _frame_rates(fps, present_slot_ms, fg_slot_ms):
-    """Both frame rates, deciding by evidence which measurement is which.
-
-    OptiScaler times two things. ``State::presentFrameTime`` is written in
-    ``wrapped_swapchain``'s ``LocalPresent`` and ``State::lastFGFrameTime`` in
-    ``FGHooks::FGPresent``; one of those hooks sits on the swapchain the game
-    presents into and the other on the one that reaches the screen. Reading the
-    sources does not settle which is which -- the two hooks are installed on
-    swapchains that swap roles depending on how frame generation was set up --
-    and getting it backwards is invisible, because both numbers still look like
-    frame rates. It shipped backwards once, and the symptom was a base rate that
-    never appeared next to a "total" that was really the base.
-
-    So nothing here is assumed. Interpolation can only ever add frames, so the
-    shorter interval is the presented one and the longer is the rendered one,
-    whichever slot each came out of. Which of the two ``State::frameCount``
-    counts is then decided the same way: whichever interval agrees with the rate
-    it produced. That also validates the pair -- a counter that matches neither
-    interval is not counting either of these things, and the answer is withheld
-    rather than guessed at.
-
-    Returns (base, total), both None when they cannot be established.
-    """
-    if not fps or fps <= 0:
-        return None, None
-    if not present_slot_ms or not fg_slot_ms:
-        return None, None
-    if present_slot_ms <= 0 or fg_slot_ms <= 0:
-        return None, None
-
-    presented_ms, rendered_ms = sorted((present_slot_ms, fg_slot_ms))
-    ratio = presented_ms / rendered_ms
-    # A few per cent apart is the two measurements disagreeing, not
-    # interpolation: nothing is being generated and there is one frame rate.
-    if ratio > 0.95:
-        return round(fps, 1), round(fps, 1)
-
-    counted_ms = 1000.0 / fps
-    to_presented = abs(counted_ms - presented_ms) / presented_ms
-    to_rendered = abs(counted_ms - rendered_ms) / rendered_ms
-    # The counter is sampled over a whole tick and each interval is one frame's
-    # delta smoothed, so they agree loosely. Matching neither means the slot
-    # being counted is not one of these two, which is not something to average
-    # over.
-    if min(to_presented, to_rendered) > 0.30:
-        return None, None
-
-    if to_presented <= to_rendered:
-        return round(fps * ratio, 1), round(fps, 1)
-    return round(fps, 1), round(fps / ratio, 1)
-
-
-def _read_measurements(report, raw):
-    """The numbers and names the plugin sampled out of the running game."""
-    report["fps"] = _number(raw.get("fps"), float)
-    report["frames"] = _number(raw.get("frames"), int)
-    report["backend_entries"] = _number(raw.get("backend_entries"), int, unknown=-1)
-    report["fg_enabled"] = {"1": True, "0": False}.get(raw.get("fg_enabled"))
-    report["upscaler"] = {
-        "dx12": raw.get("dx12_upscaler") or None,
-        "dx11": raw.get("dx11_upscaler") or None,
-        "vulkan": raw.get("vulkan_upscaler") or None,
-    }
-    report["pending_backend"] = raw.get("pending_backend") or None
-    report["fg_index"] = _number(raw.get("fg_index"), int, unknown=-1)
-    # The frame generators the FFX SDK reported to *this* game, in FfxFGIndex
-    # order. Empty until the game has asked it, which is not an error.
-    versions = raw.get("ffx_fg_versions") or ""
-    report["ffx_fg_versions"] = [name for name in versions.split("|") if name]
-    # The same for the FSR versions its FidelityFX backend can run, which is
-    # what turns "FSR 3.X/4" into the exact version the overlay prints.
-    upscalers = raw.get("ffx_upscaler_versions") or ""
-    report["ffx_upscaler_versions"] = [name for name in upscalers.split("|") if name]
-    report["ffx_upscaler_index"] = _number(raw.get("ffx_upscaler_index"), int, unknown=-1)
-    report["rendered_ms"] = _number(raw.get("rendered_ms"), float, unknown=0.0)
-    report["presented_ms"] = _number(raw.get("presented_ms"), float, unknown=0.0)
-    report["base_fps"], report["total_fps"] = _frame_rates(
-        report["fps"], report["presented_ms"], report["rendered_ms"])
-
-
 def status(target_dir, source=None):
     """What the in-game side is doing right now."""
     path = _control_path(target_dir, STATUS_FILE)
@@ -463,45 +334,34 @@ def status(target_dir, source=None):
         "load_enabled": load_enabled(target_dir),
         "loaded_by_optiscaler": loaded_by_optiscaler(target_dir),
         "attached": False,
+        "ready": False,
         "state": "absent",
         "error": None,
         "seq": None,
-        "can_switch_upscaler": False,
-        # Whether the ASI located State::FGchanged/SCchanged, without which the
-        # FFX frame generator can be recorded but not changed in this session.
-        "can_change_fg": False,
-        "fg_index": None,
-        "ffx_fg_versions": [],
-        # Whether the FSR version can be changed without a restart, which needs
-        # a list to pick from and a registered upscaler to rebuild.
-        "can_change_ffx_upscaler": False,
-        "ffx_upscaler_index": None,
-        "ffx_upscaler_versions": [],
-        # Which status-file format the in-game plugin speaks. An install that
-        # predates a feature reports an older number rather than nothing at all.
+        # Which status-file format the in-game plugin speaks; anything but
+        # STATUS_SCHEMA is a plugin from another build of this one.
         "schema": None,
+        # OptiScaler's plugin API version (0: it never called OptiPluginInit).
+        "api": None,
+        # Whether settings read at upscaler creation can be applied live: needs
+        # OptiPluginApi::ReInitUpscalers (plugin API 2 and later).
+        "can_reinit": False,
         "age": None,
-        "fps": None,
-        "frames": None,
-        # How many upscalers OptiScaler has registered. Zero means a switch has
-        # nothing to act on yet, which is a different problem from not being
-        # able to find the map at all (None).
-        "backend_entries": None,
-        "fg_enabled": None,
-        # The rate the game renders at and the rate that reaches the screen.
-        # Equal until frame generation is actually inserting frames, and both
-        # None when the two intervals cannot be told apart from the counter.
-        "base_fps": None,
-        "total_fps": None,
-        "rendered_ms": None,
-        "presented_ms": None,
-        "upscaler": None,
-        "pending_backend": None,
         # Where the in-game side decided its control files live. It should be
         # target_dir; anything else means the plugin is writing where nothing is
         # reading, which is exactly how it used to fail.
         "dir": None,
         "dir_matches": None,
+        # Not available from the ASI (they lived in OptiScaler's State, which it
+        # no longer reads). Kept so the panel can treat them as "unknown".
+        "can_switch_upscaler": False,
+        "can_change_fg": False,
+        "can_change_ffx_upscaler": False,
+        "fps": None, "base_fps": None, "total_fps": None, "frames": None,
+        "rendered_ms": None, "presented_ms": None,
+        "backend_entries": None, "fg_enabled": None, "upscaler": None,
+        "pending_backend": None, "fg_index": None, "ffx_fg_versions": [],
+        "ffx_upscaler_index": None, "ffx_upscaler_versions": [],
     }
     if not path.is_file():
         return report
@@ -516,41 +376,16 @@ def status(target_dir, source=None):
     report["state"] = raw.get("status", "unknown")
     report["error"] = raw.get("error") or None
     report["seq"] = raw.get("seq")
-    _read_measurements(report, raw)
-    # Switching needs both halves of the overlay's own path: the backend map to
-    # mark, and State::newBackend to write. A null either side means frame
-    # generation still works but the upscaler cannot move yet.
-    def _found(name):
-        value = raw.get(name, "0")
-        return bool(value) and value not in ("0", "0x0", "(nil)", "0000000000000000")
-
-    # A switch works by marking every entry of State::changeBackend, so with no
-    # entries there is nothing to mark however healthy the pointers look. Older
-    # plugin builds do not report the count at all; there, fall back to the
-    # pointers rather than claiming the switch is unavailable.
-    registered = report["backend_entries"]
-    report["can_switch_upscaler"] = (
-        _found("backends") and _found("newbackend")
-        and (registered is None or registered > 0)
-    )
-    # Changing the FFX frame generator needs both halves too: the flags to
-    # raise, and a list to pick an index out of. An ASI that could not identify
-    # State::CapturedHudlesses reports a null pointer here and the switch is
-    # simply not offered - the ini still records the choice for the next launch.
     report["schema"] = _number(raw.get("schema"), int)
-    report["can_change_fg"] = _found("fgflags") and bool(report["ffx_fg_versions"])
-    # Changing the FSR version needs no flags of its own - it is answered by the
-    # same rebuild the upscaler switch uses - so what it needs is a list to pick
-    # from and an upscaler registered to rebuild.
-    report["can_change_ffx_upscaler"] = (
-        bool(report["ffx_upscaler_versions"])
-        and _found("backends") and (registered is None or registered > 0)
-    )
-    # "loaded" means the plugin is running but has not finished looking yet;
-    # both it and "ready" mean the game really does have our plugin in it.
-    report["attached"] = report["state"] in ("ready", "loaded", "searching") \
-        and age < STATUS_STALE_SECONDS
-    report["ready"] = report["state"] == "ready" and report["attached"]
+    report["api"] = _number(raw.get("api"), int)
+    fresh = age < STATUS_STALE_SECONDS
+    # "loaded"/"searching" mean the plugin is running but has not found Config
+    # yet; "failed" means it gave up (its layout does not match this build).
+    report["attached"] = report["state"] in ("ready", "loaded", "searching") and fresh
+    report["ready"] = report["state"] == "ready" and fresh \
+        and report["schema"] == STATUS_SCHEMA
+    report["can_reinit"] = report["ready"] and raw.get("reinit_available") == "1"
+    report["can_change_ffx_upscaler"] = report["can_reinit"]
     reported_dir = raw.get("dir") or None
     report["dir"] = reported_dir
     if reported_dir:
@@ -590,121 +425,90 @@ def _same_dir(windows_path, target_dir):
     return theirs[-depth:] == ours[-depth:]
 
 
-def apply_changes(target_dir, changes):
+def _send(target_dir, lines):
+    """Write one command, atomically, under a fresh sequence number."""
+    seq = time.time_ns() // 1_000_000
+    body = "\n".join([f"seq {seq}", *lines, ""])
+    path = _control_path(target_dir, CMD_FILE)
+    # Write-then-replace so the ASI never reads a half-written command file.
+    temp = path.with_suffix(".cmd.tmp")
+    temp.write_text(body, encoding="utf-8")
+    os.replace(temp, path)
+    return seq
+
+
+def apply_changes(target_dir, changes, can_reinit=True):
     """Ask the running game to adopt these INI changes immediately.
 
     ``changes`` are the same {section, key, value} dicts the config writer uses.
+    ``can_reinit`` is whether the running OptiScaler can re-create its upscaler
+    (status()["can_reinit"]); without it, settings that need that are deferred.
     Returns which ones were sent and which need a restart regardless.
     """
     live, deferred = [], []
-    backend_codes = {}
-    ffx_upscaler = None
+    reinit = False
     for change in changes:
         ini_key = f"{change['section']}.{change['key']}"
         field = LIVE_FIELDS.get(ini_key)
-        if field is None:
+        if field is None or (field.needs_reinit and not can_reinit):
             deferred.append(ini_key)
             continue
         try:
             encoded = field.encode(change["value"])
         except (TypeError, ValueError):
+            # "auto" and the like: OptiScaler resolves those at startup.
             deferred.append(ini_key)
             continue
-        if field.needs_fg_change:
-            # Its own verb: the ASI has to write Config and raise both State
-            # flags together, and a plain field write would do only the first.
-            live.append(f"fgindex {encoded}")
-            continue
-        if field.needs_feature_rebuild:
-            # Also its own verb, and held back rather than appended: it has to
-            # reach the game in front of any upscaler switch in the same
-            # command, because both are answered by one rebuild and the index
-            # has to be written before the rebuild is asked for.
-            ffx_upscaler = encoded
-            continue
         live.append(f"set {field.member} {field.wire_type} {encoded}")
-        if field.needs_backend_change:
-            backend_codes[ini_key] = encoded
-
-    # One id goes into State::newBackend; the API-specific keys disagree by
-    # design (fsr31 on DX12 is fsr31_12 on DX11), so pick by API priority.
-    switch_to = None
-    for ini_key in BACKEND_KEY_PRIORITY:
-        if ini_key in backend_codes:
-            switch_to = backend_codes[ini_key]
-            break
-    if switch_to:
-        live = _drop_upscaler_writes(live)
-        # First, so the id is in place before anything else this command does.
-        live.insert(0, f"backend {switch_to}")
-    if ffx_upscaler is not None:
-        live.insert(0, f"ffxupscaler {ffx_upscaler}")
+        reinit = reinit or field.needs_reinit
 
     if not live:
         return {"ok": True, "applied": [], "deferred": deferred, "sent": False}
-
-    seq = int(time.time() * 1000)
-    body = "\n".join([f"seq {seq}", *live, ""])
-    path = _control_path(target_dir, CMD_FILE)
+    if reinit:
+        # After the writes: the re-created upscaler reads the new values.
+        live.append("reinit")
     try:
-        # Write-then-replace so the ASI never reads a half-written command file.
-        temp = path.with_suffix(".cmd.tmp")
-        temp.write_text(body, encoding="utf-8")
-        os.replace(temp, path)
+        seq = _send(target_dir, live)
     except OSError as exc:
         return {"ok": False, "error": str(exc), "applied": [], "deferred": deferred, "sent": False}
-
     return {
         "ok": True,
         "sent": True,
         "seq": seq,
         "applied": [line.split(" ")[1] for line in live if line.startswith("set ")],
         "deferred": deferred,
-        "backend_change": bool(switch_to),
-        "backend": switch_to,
-        "fg_change": any(line.startswith("fgindex ") for line in live),
-        "ffx_upscaler_change": ffx_upscaler is not None,
+        "reinit": reinit,
     }
 
 
-def _drop_upscaler_writes(lines):
-    """Remove the Config upscaler writes from a command that also switches.
+def request_dump(target_dir):
+    """Ask the ASI to write every Config field it can see to DUMP_FILE."""
+    return _send(target_dir, ["dump"])
 
-    The overlay's "Change Upscaler" button writes *only* State::newBackend; it
-    leaves Config::Dx12Upscaler alone and OptiScaler updates it once it has
-    rebuilt the feature. It also refuses to act when newBackend already equals
-    the Config value, so pushing the new id into Config first is at best
-    pointless and at worst turns the switch into a no-op - exactly the shape of
-    "frame generation toggles, the upscaler never moves".
 
-    The INI is still written either way, so the choice survives a restart
-    regardless of what the running game does with it.
-    """
-    members = {LIVE_FIELDS[key].member for key in BACKEND_KEY_PRIORITY}
-    return [line for line in lines
-            if not (line.startswith("set ") and line.split(" ")[1] in members)]
+def read_dump(target_dir):
+    """{member: (kind, engaged, value, default, ini)} from the last dump."""
+    path = _control_path(target_dir, DUMP_FILE)
+    fields = {}
+    for line in path.read_text(encoding="utf-8", errors="replace").splitlines():
+        parts = line.split()
+        if len(parts) == 6:
+            name, kind, engaged, value, default, ini = parts
+            fields[name] = (kind, engaged == "1", value, default, ini)
+        elif len(parts) == 2 and parts[0] != "fields":
+            fields[parts[0]] = (parts[1], None, None, None, None)
+    return fields
 
 
 def switch_backend(target_dir, code):
-    """Push an upscaler switch on its own, the way the overlay's button does.
+    """Switching to another upscaler backend live is not supported.
 
-    Separate from apply_changes because it is a deliberate action rather than a
-    side effect of editing a setting: OptiScaler rebuilds the upscaler when it
-    sees this, which costs a frame.
+    It takes OptiScaler's State internals, which the ASI no longer touches; the
+    choice is recorded in the INI for the next launch, and OptiScaler's own
+    overlay (the Quick Access "OptiScaler menu" button) switches it live.
     """
-    code = str(code).strip().lower()
-    if code not in BACKEND_CODES:
-        return {"ok": False, "error": f"not an OptiScaler backend id: {code}"}
-    seq = int(time.time() * 1000)
-    body = "\n".join([f"seq {seq}", f"backend {code}", ""])
-    path = _control_path(target_dir, CMD_FILE)
-    try:
-        temp = path.with_suffix(".cmd.tmp")
-        temp.write_text(body, encoding="utf-8")
-        os.replace(temp, path)
-    except OSError as exc:
-        return {"ok": False, "error": str(exc)}
-    return {"ok": True, "sent": True, "backend": code, "seq": seq}
+    return {"ok": False, "error": "switching the upscaler live is done in OptiScaler's own "
+                                  "overlay; the panel applies it at the next launch"}
 
 
 def log_tail(target_dir, lines=40):

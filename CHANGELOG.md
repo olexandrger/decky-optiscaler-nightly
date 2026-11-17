@@ -6,6 +6,19 @@ Newest first. Each release ships `Decky OptiScaler.zip` for Decky Loader's
 
 ## [Unreleased]
 
+### Nightly fork
+
+- Live in-game control is back, rebuilt: a new ASI on OptiScaler 10's plugin API
+  (`OptiPluginInit`, `ReInitUpscalers`) writes only Config, with the layout
+  generated from the bundled nightly's own `Config.h` (fetched at the commit the
+  dll names). Live: frame generation on/off, HUD fix, debug view, depth copy,
+  XeFG multiplier, sharpness, the FPS overlay and the FSR version. Not live:
+  switching the upscaler backend or the FFX frame generator.
+- `scripts/test_live_asi.py`: the ASI inside the real bundled OptiScaler under
+  Wine, run by CI on every push and before every release.
+- **Update OptiScaler in this game**, in the Quick Access panel and on the game's
+  page, for a game that holds another OptiScaler than the bundled one.
+
 ## [0.0.7-nightly.20261030] - 2026-10-30 (nightly fork)
 
 Bundles the **OptiScaler 10.0.0-pre1 nightly** (`nightly-20261030`, master

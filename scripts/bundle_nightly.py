@@ -23,6 +23,8 @@ What it does, in order:
    anything a previous bundle shipped that this one does not), and the hash
    and size of the bundled FidelityFX upscaler DLL that FSR 4 restore uses.
 5. Copies the nightly's OptiScaler.ini to ``defaults/OptiScaler.reference.ini``.
+6. Syncs asi/optiscaler_ref/Config.{h,cpp} to the commit the dll was built from
+   and regenerates the ASI's Config layout (scripts/sync_optiscaler_headers.py).
    Run ``scripts/generate_schema.py`` afterwards to refresh Advanced settings.
 """
 
@@ -218,6 +220,10 @@ def main():
         root = flatten(extracted)
 
         version = version_label(root / "OptiScaler.dll", archive.name)
+        # The live-control ASI's Config layout comes from the source this dll
+        # was built from; fetch it now so the bundle and the ASI never disagree.
+        import sync_optiscaler_headers
+        sync_optiscaler_headers.sync((root / "OptiScaler.dll").read_bytes())
         files = sorted(p.name for p in root.iterdir() if p.is_file() and p.name not in NOT_PAYLOAD)
         dirs = sorted(p.name for p in root.iterdir() if p.is_dir())
         ffx = root / FFX_UPSCALER_DLL

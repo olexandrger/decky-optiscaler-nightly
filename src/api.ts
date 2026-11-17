@@ -139,6 +139,8 @@ export const install = callable<
   [targetDir: string, filename: string, preserveIni: boolean, optipatcher: boolean],
   ActionResult
 >("install");
+/** Reapply the bundled OptiScaler with the game's existing choices (ini kept). */
+export const updateInstall = callable<[targetDir: string], ActionResult>("update_install");
 export const uninstall = callable<[targetDir: string, removeIni: boolean], ActionResult>(
   "uninstall"
 );

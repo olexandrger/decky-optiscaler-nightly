@@ -6,7 +6,7 @@
 > This is [olexandrger](https://github.com/olexandrger)'s playground copy of
 > [danielcamilo1/decky-optiscaler](https://github.com/danielcamilo1/decky-optiscaler),
 > rebuilt against untested **OptiScaler nightly** builds. Things may break, settings
-> may be written wrongly, and live in-game control is disabled. No support, no
+> may be written wrongly, and live in-game control is a rewrite of its own. No support, no
 > stability promises, no releases you should rely on.
 >
 > **Want the plugin? Use the [original](https://github.com/danielcamilo1/decky-optiscaler/releases/latest).**
@@ -39,12 +39,19 @@ This branch bundles an **OptiScaler nightly** from
 in place of the 0.9.4 release — currently **10.0.0-pre1 (2026-10-30)**. It
 installs over the regular plugin (same name, same settings and per-game records).
 
-- **No live in-game control from the panel.** The live-control ASI targets
-  0.9.4's memory layout and is not shipped. Panel edits apply when the game
-  restarts (the panel offers **Restart game to apply**). For live changes, the
-  Quick Access panel's **OptiScaler menu** button opens OptiScaler's own overlay:
-  it closes the Quick Access menu and presses the game's menu shortcut
-  (`[Menu] ShortcutKey`, Insert by default) on a virtual keyboard.
+- **Live in-game control, rebuilt on OptiScaler 10's plugin API.** Frame
+  generation on/off, HUD fix, sharpness, the FPS overlay, the XeFG multiplier
+  and the FSR version apply in the running game; everything else when it
+  restarts (**Restart game to apply**). The ASI is compiled for each bundled
+  nightly from that nightly's own `Config.h` and tested inside it under Wine
+  (`scripts/test_live_asi.py`), so a nightly that breaks it fails the build
+  instead of shipping. Switching the upscaler backend or the FFX frame generator
+  is not live from the panel; the Quick Access panel's **OptiScaler menu**
+  button opens OptiScaler's own overlay for that (it presses the game's
+  `[Menu] ShortcutKey`, Insert by default, on a virtual keyboard).
+- A game set up by an earlier build shows **Update OptiScaler in this game**,
+  which reapplies the bundled OptiScaler with the game's choices and its
+  OptiScaler.ini kept.
 - FSR presets write 10.0's keys (`ffx` backend, `Fsr4GpuSupport`, `Fsr4Model`).
 - On the Steam Deck, **FSR 4 Lite** and **FSR 4 RDNA2** replace the community
   4.1.1b download: both are AMD models inside the bundled FidelityFX 4.1.2.

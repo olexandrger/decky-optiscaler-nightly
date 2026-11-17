@@ -1,3 +1,5 @@
-# The OptiScaler archive is bundled by scripts/bundle_nightly.py (CI does it
-# before testing and packaging) and never committed: ~70 MB per nightly.
+# Built in CI and never committed: the OptiScaler archive by
+# scripts/bundle_nightly.py (~70 MB per nightly), the live-control ASI by
+# asi/build.sh against that nightly's own Config.h.
 OptiScaler-*.7z
+decky_optiscaler_live.asi

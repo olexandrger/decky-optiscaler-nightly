@@ -22,41 +22,56 @@ What the fork adds on top of upstream:
 - Steam Deck FSR 4 presets use models inside the bundled upscaler (**FSR 4
   Lite**, **FSR 4 RDNA2**); the community 4.1.1b download is retired;
 - a Quick Access **OptiScaler menu** button opens OptiScaler's own overlay;
+- live editing from the panel through a new ASI on OptiScaler 10's plugin API,
+  built and tested against each bundled nightly (see below);
+- the panel offers **Update OptiScaler in this game** when a game holds another
+  OptiScaler than the bundled one;
 - `.github/workflows/nightly.yml` builds, tests and releases daily, keeping the 10 newest releases.
 
-## How settings change in this fork (do not "fix" this)
+## Live editing (keep it on the plugin API)
 
-**Edits made in the plugin's panel require a game restart. Live, in-game edits
-are made in OptiScaler's own overlay.** This is the intended design, not a bug
-or a missing feature.
+Some panel edits apply in the running game; the rest when it restarts. The
+live ones go through `asi/live.cpp`, an ASI OptiScaler loads from the game's
+`plugins/` folder (`[Plugins] LoadAsiPlugins=true`, which the installer sets).
 
-- The panel writes `OptiScaler.ini`, which OptiScaler reads once at startup. The
-  Quick Access panel says "Changes made here apply when the game restarts" and
-  offers **Restart game to apply**.
-- For live changes, the **OptiScaler menu** button closes the Quick Access menu
-  and presses the game's `[Menu] ShortcutKey` (Insert by default) on a uinput
-  virtual keyboard (`py_modules/optiscaler/keys.py`). OptiScaler's overlay runs
-  inside the game, so its changes apply immediately.
+- OptiScaler 10 calls `OptiPluginInit` in every ASI and hands it its plugin API
+  (`asi/plugin_sdk/optiscaler_plugin.h`, append-only, version-checked with
+  `OPTI_API_HAS`). The ASI finds OptiScaler's module through it and asks for
+  upscaler re-creation with `ReInitUpscalers` (API 2+).
+- The API does not expose OptiScaler's settings, so the ASI writes `Config`
+  directly, at offsets from `asi/generated/config_mirror.h`, which
+  `scripts/generate_asi_layout.py` generates from `asi/optiscaler_ref/Config.h`.
+  That header must be the bundled dll's own: the dll names its commit in its
+  startup banner (`OptiScaler v10.0.0-dev (1e568bb3) (...)`) and
+  `scripts/sync_optiscaler_headers.py` fetches `Config.h`/`Config.cpp` at that
+  commit. `bundle_nightly.py` runs it, so bundling a nightly keeps them in step.
+- The ASI validates `Config` (file name, path, defaults) before writing anything
+  and otherwise reports `failed` and stays inert.
+- Live keys are `optiscaler.live.LIVE_FIELDS`: settings OptiScaler re-reads per
+  frame, plus the FFX upscaler version (write, then `ReInitUpscalers`).
+  `py_modules/optiscaler/live.py` sends them as `set`/`reinit` commands through
+  `decky_optiscaler_live.cmd`/`.status`; the panel claims an edit took effect
+  only when the ASI is `ready` and the key was sent.
+- Not live, on purpose: switching to another upscaler backend or FFX frame
+  generator. Those need OptiScaler's `State` internals. The panel records them
+  for the next launch; OptiScaler's own overlay (the **OptiScaler menu** button)
+  switches them live.
 
-**Do not try to restore the panel's live editing.** Specifically, do not:
+**Do not** read or write OptiScaler's `State`, or anything else not reachable
+through the plugin API or the generated `Config` layout. Upstream's 0.9.x ASI
+did (hash-table internals, flag runs found by memory pattern) and broke on the
+first nightly that moved them. A new live setting goes into `LIVE_FIELDS` only
+if OptiScaler genuinely re-reads it while running, or if `ReInitUpscalers`
+makes it re-read; anything else would look applied and do nothing.
 
-- port or rebuild `asi/live.cpp` for OptiScaler 10, or put
-  `bin/decky_optiscaler_live.asi` back;
-- un-skip the ASI suites in `scripts/selftest.py` (they run only when the ASI is
-  in `bin/`);
-- add another IPC or memory-writing mechanism into the game process.
-
-Why: upstream's live control is an ASI that writes into OptiScaler's internal
-C++ `Config`/`State` objects at byte offsets mirrored from one exact OptiScaler
-build. OptiScaler 10 rewrote `State`: `newBackend` became an `Upscaler` enum,
-the frame-generation flag run and the FFX version lists moved. A nightly can
-reshuffle these on any day, so a port would break silently between builds, and
-it cannot be verified without a game running under Proton. The native overlay
-is maintained by OptiScaler itself and always matches the build.
-`asi/optiscaler_ref/SOURCE_COMMIT.txt` records the details.
-
-If a change would make the panel claim an edit took effect in a running game,
-it is wrong for this fork.
+`scripts/test_live_asi.py` holds this, in the real bundled OptiScaler under Wine
+(no game, no GPU): the installer's own install, the ASI loading and attaching,
+every Config member with a literal default in `Config.h` read back at its
+offset, INI sentinel values read back, every live setting applied through
+`live.apply_changes` and read back, bad commands refused, and a deliberately
+broken layout ending in `failed` with nothing written. CI runs it on every push
+and before every release. What it cannot check is that a change shows in a
+rendered frame: `OptiScaler.log` on the Deck is the source of truth for that.
 
 ## Exclusive with upstream's plugin (do not "fix" this either)
 
@@ -92,10 +107,10 @@ Resolving conflicts, by file kind:
 
 | Files | Resolution |
 |---|---|
-| Generated: `src/config/generatedSchema.ts`, `py_modules/optiscaler/schema_generated.py`, `asi/generated/config_mirror.h`, `py_modules/optiscaler/live_fields.json` | Take either side, then regenerate: `python3 scripts/generate_schema.py`, `python3 scripts/generate_asi_layout.py`. Never merge them by hand. |
+| Generated: `src/config/generatedSchema.ts`, `py_modules/optiscaler/schema_generated.py`, `asi/generated/config_mirror.h`, `py_modules/optiscaler/live_fields.json` | Take either side, then regenerate: `python3 scripts/sync_optiscaler_headers.py`, `python3 scripts/generate_schema.py`. Never merge them by hand. |
 | `bin/OptiScaler-*.7z` | Keep it deleted: the fork commits no OptiScaler archive (`bin/.gitignore`). An upstream bump shows as modify/delete; resolve with `git rm`. |
 | `defaults/OptiScaler.reference.ini`, and the pinned values in `py_modules/optiscaler/constants.py` (`OPTISCALER_VERSION`, `PAYLOAD_*`, `FSR4_BUNDLED_*`, payload/retired lists) | Keep the fork's side, then re-run `scripts/bundle_nightly.py --latest` so they are consistent. Upstream will keep pinning 0.9.x; that is expected. |
-| `asi/` (live-control ASI) | Accept upstream's source changes, but keep the ASI out of `bin/` (see above). |
+| `asi/` (live-control ASI) | Keep the fork's `asi/live.cpp` (plugin API, Config only; see "Live editing"), `asi/plugin_sdk/` and `asi/optiscaler_ref/` (synced to the bundled nightly). Upstream's ASI targets 0.9.x's `State`: do not take its changes; port an upstream live feature only if it fits the plugin-API design. The built ASI is not committed. |
 | Steam Deck FSR 4 (`basic.ts` presets, `installer.py`, `fsr4build.py`, `test_fsr4.py`) | Keep the fork's Lite/RDNA2 presets. Do not bring back the 4.1.1b preset or download. |
 | Identity names (`MANIFEST_NAME`, `BACKUP_DIR`, `LAUNCH_RECORD_NAME`, `PLUGIN_ID`, `ROUTE`, storage keys, context-menu marker) | Keep the fork's `-nightly` names. A new file, folder, route or key upstream adds gets its own `-nightly` name too. |
 | Upstream features unrelated to the above | Take them. If they write INI keys, check the keys exist in OptiScaler 10 (the schema generated from the nightly's INI is the reference) and use `ffx`/`ffx_12` backend ids. |
@@ -123,15 +138,16 @@ and refused (see "Exclusive with upstream's plugin").
 
 ## The OptiScaler archive is not committed
 
-`bin/` holds no OptiScaler archive in git (`bin/.gitignore`); about 70 MB per
-nightly would only grow history. Both workflows download the newest nightly and
+`bin/` holds no OptiScaler archive and no built ASI in git (`bin/.gitignore`);
+about 70 MB per nightly would only grow history. Both workflows download the newest nightly and
 bundle it before testing: `build.yml` on every push, so a nightly that breaks
 the plugin fails CI, and `nightly.yml` before it packages a release. Locally,
 bundle one before running the checks:
 
 ```bash
-python3 scripts/bundle_nightly.py --latest   # or a downloaded .7z path
+python3 scripts/bundle_nightly.py --latest   # or a downloaded .7z path (keep its dated name)
 python3 scripts/generate_schema.py
+bash asi/build.sh                            # zig, or x86_64-w64-mingw32-g++
 ```
 
 `bundle_nightly.py` flattens OptiScaler 10's `OptiScaler/` dependency folder into
@@ -139,19 +155,22 @@ the game-folder layout this plugin installs (OptiScaler 10 falls back to the exe
 folder when that subfolder is missing), repacks the archive into `bin/`, and
 rewrites every pinned value: version, archive name and SHA-256, payload file and
 dir lists (retiring files a previous bundle shipped), the bundled FidelityFX
-upscaler hash, and the plugin version (`<base>-nightly.<date>`). Do not hand-edit
-those values.
+upscaler hash, and the plugin version (`<base>-nightly.<date>`); and it syncs
+`asi/optiscaler_ref/Config.{h,cpp}` to the commit the dll was built from. Do not
+hand-edit those values.
 
-The committed constants, reference INI and generated schema are a snapshot of
-the nightly the code was last written against. CI rewrites them in its working
+The committed constants, reference INI, generated schema, OptiScaler headers and
+ASI layout are a snapshot of the nightly the code was last written against. CI rewrites them in its working
 tree and never commits them. Commit them yourself only when the fork's code
 depends on a newer nightly's INI (new keys in the panel, say). `package.py`
-refuses to build without exactly the pinned archive in `bin/`.
+refuses to build without exactly the pinned archive and the built ASI in `bin/`.
 
 ## Checks
 
 Run all of these before pushing; CI runs the same set, against the newest
-nightly. Bundle one first (see above); selftest fails without the archive.
+nightly. Bundle one and build the ASI first (see above); selftest fails without
+the archive. `test_live_asi.py` needs Wine (`apt install wine`) and mingw-w64
+(`apt install g++-mingw-w64-x86-64`).
 
 ```bash
 npx tsc --noEmit
@@ -161,15 +180,17 @@ python3 scripts/test_install.py   # a failed or interrupted install leaves the f
 python3 scripts/test_update.py    # the in-plugin updater
 python3 scripts/test_bundle.py    # the nightly download retries GitHub's transient failures
 python3 scripts/selftest.py
+python3 scripts/test_live_asi.py  # live editing inside the bundled OptiScaler, under Wine
 HARNESS=run.tsx node testharness/build-and-run.mjs          # "React errors/warnings: 0", no line ending ": false"
 HARNESS=all-options.tsx node testharness/build-and-run.mjs  # "real React errors: 0"
 HARNESS=live-fields.tsx node testharness/build-and-run.mjs  # exits non-zero on failure
 python3 scripts/package.py
 ```
 
-None of these run OptiScaler in a game. Whether it loads under Proton, which FSR
-4 model it creates, and whether the menu key reaches the game can only be
-checked on a Deck: `OptiScaler.log` in the game folder is the source of truth.
+None of these run OptiScaler in a game (`test_live_asi.py` runs it in a stand-in
+host). Whether it renders under Proton, which FSR 4 model it creates, whether a
+live change shows on screen and whether the menu key reaches the game can only
+be checked on a Deck: `OptiScaler.log` in the game folder is the source of truth.
 
 ## Automatic fixes
 
@@ -178,7 +199,10 @@ checks the latest "Bundle OptiScaler nightly" and "Build" runs. When one failed
 for a non-transient reason, it reproduces the failure against the nightly that
 run used, fixes the root cause under the rules of this file, runs every check
 above, pushes the fix to `main` as a commit starting `autofix: `, and reverts it
-if its Build run fails. It never force-pushes or touches tags and releases,
+if its Build run fails. A failure of `test_live_asi.py` is maintained like any
+other (usually `generate_asi_layout.py` meeting a new kind of Config member),
+under the "Live editing" rules: never by reaching into `State`, never by
+weakening the layout checks. It never force-pushes or touches tags and releases,
 makes at most one autofix a day, and stops with a report instead of pushing when
 an autofix did not help or the fix needs a decision. Transient failures (GitHub
 5xx, DNS, apt mirrors) only get a report.

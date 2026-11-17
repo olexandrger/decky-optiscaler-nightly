@@ -1,37 +1,10 @@
-e7e3872d410f704479d94d318d68d163b6b58947
+e7e3872d
 
-Version:  v10.0.0-pre1-20261030 (nightly)
-Date:     2026-10-29 (master HEAD; built by optiscaler/OptiScaler-nightly
-          as nightly-20261030 at 04:00 UTC on 2026-10-30)
-Source:   https://github.com/optiscaler/OptiScaler/tree/e7e3872d410f704479d94d318d68d163b6b58947/OptiScaler
-Binary:   https://github.com/optiscaler/OptiScaler-nightly/releases/tag/nightly-20261030
+Version:  v10.0.0-dev (built 20261030_104415)
+Source:   https://github.com/optiscaler/OptiScaler/tree/e7e3872d/OptiScaler
 
-These headers MUST match the OptiScaler build shipped in bin/. The layout
-mirror the ASI uses is generated from Config.h, so a mismatch means the ASI
-reads the wrong offsets - it fails its validation checks and stays inert.
-
-STATUS FOR 10.x: the live-control ASI is NOT shipped with this build.
-asi/generated/config_mirror.h is regenerated from this Config.h and compiles,
-but asi/live.cpp also hand-mirrors parts of State that 10.0 rewrote:
-
-  - State::newBackend is now an `Upscaler` enum, not a std::string, so the
-    "write a backend id, mark changeBackend" switch no longer applies;
-  - the GameExe/GameName/GameVersion head, the FG flag run around
-    CapturedHudlesses and the NVNGX ids were renamed/reordered;
-  - the FFX upscaler version list became per-API (ffxUpscalerVersionsDx12 /
-    ffxUpscalerVersionsVk, type FfxVersionList).
-
-scripts/selftest.py's ASI suites (check_asi_state_layout and friends) spell
-out every one of those assumptions and are skipped while bin/ has no ASI.
-Porting live control means rewriting state_head / state_fg_block / state_tail
-and the backend switch in live.cpp against this State.h, then re-enabling them.
-
-menu_common.cpp, wrapped_swapchain.cpp, FG_Hooks.cpp and
-FeatureProvider_{Dx11,Dx12,Vk}.cpp are vendored for reference, as before:
-they are where the overlay's own live writes, the two frame-time sources and
-the backend rebuild live.
-
-unordered_dense.h is unchanged: 10.0 pins the same external/unordered_dense
-commit as 0.9.4,
-
-    73f3cbb237e84d483afafc743f1f14ec53e12314
+Config.h and Config.cpp at the commit the bundled OptiScaler.dll names in
+its startup banner. scripts/generate_asi_layout.py turns them into
+asi/generated/config_mirror.h, the layout the live-control ASI writes
+Config with. Written by scripts/sync_optiscaler_headers.py (bundling a
+nightly runs it); do not edit by hand.

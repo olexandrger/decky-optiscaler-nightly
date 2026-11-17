@@ -122,6 +122,10 @@ export interface InstallInfo {
   foreign?: boolean;
   owner?: string | null;
   version: string | null;
+  /** The OptiScaler this plugin build ships. */
+  bundled_version?: string;
+  /** This game holds another OptiScaler than the bundled one: reapply it. */
+  outdated?: boolean;
   installed_at: number | null;
   ini_present: boolean;
   ini_path: string;
@@ -523,6 +527,8 @@ export interface LiveApplyResult {
   applied?: string[];
   deferred?: string[];
   backend_change?: boolean;
+  /** The upscaler is re-created on the next frame to pick the change up. */
+  reinit?: boolean;
   can_switch_upscaler?: boolean;
   error?: string;
 }

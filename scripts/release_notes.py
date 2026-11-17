@@ -75,7 +75,7 @@ def fork_commits(since, repo):
     return out
 
 
-def test_counts(selftest_log, fsr4_log, install_log=None):
+def test_counts(selftest_log, fsr4_log, install_log=None, live_log=None):
     found = []
     if selftest_log and Path(selftest_log).is_file():
         match = re.search(r"(\d+) passed, (\d+) failed", Path(selftest_log).read_text(errors="replace"))
@@ -93,6 +93,13 @@ def test_counts(selftest_log, fsr4_log, install_log=None):
         if match:
             status = "OK" if re.search(r"^OK", text, re.M) else "FAILED"
             found.append(f"install safety: {match.group(1)} tests, {status}")
+    if live_log and Path(live_log).is_file():
+        text = Path(live_log).read_text(errors="replace")
+        match = re.search(r"(\d+) passed, (\d+) failed", text)
+        if match:
+            api = re.search(r"OptiScaler plugin API (\d+)", text)
+            found.append(f"live editing inside the bundled OptiScaler (Wine): {match.group(1)} passed, "
+                         f"{match.group(2)} failed" + (f", plugin API {api.group(1)}" if api else ""))
     return found
 
 
@@ -102,6 +109,7 @@ def main():
     parser.add_argument("--selftest-log")
     parser.add_argument("--fsr4-log")
     parser.add_argument("--install-log")
+    parser.add_argument("--live-log")
     args = parser.parse_args()
 
     repo = os.environ.get("GITHUB_REPOSITORY", "")
@@ -147,7 +155,7 @@ def main():
         out.extend(commits or ["- None: only the bundled OptiScaler nightly is new."])
         out.append("")
 
-    counts = test_counts(args.selftest_log, args.fsr4_log, args.install_log)
+    counts = test_counts(args.selftest_log, args.fsr4_log, args.install_log, args.live_log)
     if counts:
         out.append("## Checks this release passed")
         out.append("")

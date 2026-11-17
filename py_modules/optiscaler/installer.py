@@ -138,6 +138,11 @@ def detect(target_dir):
         "foreign": False,
         "owner": None,
         "version": None,
+        # The OptiScaler this plugin build ships, and whether this game holds
+        # another one: an install made by an earlier build of the plugin keeps
+        # its OptiScaler (and live-control ASI, compiled for it) until reapplied.
+        "bundled_version": OPTISCALER_VERSION,
+        "outdated": False,
         "installed_at": None,
         "ini_present": False,
         "ini_path": None,
@@ -193,6 +198,7 @@ def detect(target_dir):
                 filename=name,
                 managed=True,
                 version=manifest.get("optiscaler_version"),
+                outdated=manifest.get("optiscaler_version") != OPTISCALER_VERSION,
                 installed_at=manifest.get("installed_at"),
             )
             result["reframework"]["managed"] = bool(manifest.get("reframework"))
