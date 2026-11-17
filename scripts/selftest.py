@@ -1524,6 +1524,46 @@ def check_wiki_transport():
         check("the resolver is put back afterwards",
               socket_mod.getaddrinfo is attempts[0])
 
+        # Requests run on worker threads. Two overlapping retries used to each
+        # swap the process-wide resolver and restore what they had found, which
+        # left IPv4-only installed for good (upstream's audit, CD-07).
+        import threading as threading_mod
+        original = socket_mod.getaddrinfo
+        families = {}
+
+        def fake_resolver(host, port, family=0, *args, **kwargs):
+            families[threading_mod.current_thread().name] = family
+            return []
+        socket_mod.getaddrinfo = fake_resolver
+        try:
+            entered = {name: threading_mod.Event() for name in ("a", "b")}
+            leave = {name: threading_mod.Event() for name in ("a", "b")}
+
+            def request(name):
+                with wiki_mod._ipv4_only():
+                    entered[name].set()
+                    leave[name].wait(5)
+                    socket_mod.getaddrinfo("example.invalid", 443)
+            threads = {name: threading_mod.Thread(target=request, args=(name,), name=name)
+                       for name in ("a", "b")}
+            threads["a"].start()
+            entered["a"].wait(5)
+            threads["b"].start()
+            entered["b"].wait(5)
+            leave["a"].set()
+            threads["a"].join(5)
+            socket_mod.getaddrinfo("example.invalid", 443)  # this thread asked for nothing
+            leave["b"].set()
+            threads["b"].join(5)
+            check("an overlapping request keeps IPv4 after the other one finishes",
+                  families.get("a") == socket_mod.AF_INET and families.get("b") == socket_mod.AF_INET,
+                  families)
+            check("a thread outside the block is not forced to IPv4",
+                  families.get(threading_mod.current_thread().name) == 0, families)
+            check("and once both are done the resolver is the original again",
+                  socket_mod.getaddrinfo is fake_resolver)
+        finally:
+            socket_mod.getaddrinfo = original
 
         # A server that answered is not retried: asking again says the same.
         attempts.clear()

@@ -11,6 +11,7 @@ import json
 import re
 import socket
 import ssl
+import threading
 import time
 import urllib.error
 import urllib.parse
@@ -137,6 +138,18 @@ def _is_tls_error(exc):
     return False
 
 
+_ipv4_lock = threading.Lock()
+_ipv4_thread = threading.local()
+_ipv4_users = 0
+_ipv4_real = None
+
+
+def _ipv4_resolver(host, port, family=0, *args, **kwargs):
+    if getattr(_ipv4_thread, "depth", 0):
+        family = socket.AF_INET
+    return _ipv4_real(host, port, family, *args, **kwargs)
+
+
 class _ipv4_only:
     """Resolve names to IPv4 for the duration of one request.
 
@@ -145,19 +158,33 @@ class _ipv4_only:
     Eyeballs, so it does not fall back the way a browser does — it sits on the
     first address until the timeout, every time, and the wiki simply never
     loads on that network while everything else on the Deck is fine.
+
+    Only the thread inside the block is forced to IPv4. Requests run on worker
+    threads, and each block used to swap the process-wide resolver and put back
+    whatever it had found: two overlapping requests left IPv4-only installed
+    for good (ported from upstream's audit, CD-07). The swap is now one shared
+    wrapper, installed while any thread needs it and removed by the last.
     """
 
     def __enter__(self):
-        self._real = socket.getaddrinfo
-
-        def ipv4(host, port, family=0, *args, **kwargs):
-            return self._real(host, port, socket.AF_INET, *args, **kwargs)
-
-        socket.getaddrinfo = ipv4
+        global _ipv4_users, _ipv4_real
+        with _ipv4_lock:
+            if _ipv4_users == 0:
+                _ipv4_real = socket.getaddrinfo
+                socket.getaddrinfo = _ipv4_resolver
+            _ipv4_users += 1
+        _ipv4_thread.depth = getattr(_ipv4_thread, "depth", 0) + 1
         return self
 
     def __exit__(self, *exc):
-        socket.getaddrinfo = self._real
+        global _ipv4_users, _ipv4_real
+        _ipv4_thread.depth -= 1
+        with _ipv4_lock:
+            _ipv4_users -= 1
+            if _ipv4_users == 0:
+                if socket.getaddrinfo is _ipv4_resolver:
+                    socket.getaddrinfo = _ipv4_real
+                _ipv4_real = None
         return False
 
 
