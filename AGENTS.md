@@ -59,6 +59,22 @@ live ones go through `asi/live.cpp`, an ASI OptiScaler loads from the game's
   `py_modules/optiscaler/live.py` sends them as `set`/`unset`/`reinit` commands through
   `decky_optiscaler_live.cmd`/`.status`; the panel claims an edit took effect
   only when the ASI is `ready` and the key was sent.
+- OptiScaler's own menu (`asi/optiscaler_ref/menu_common.cpp`, synced at the
+  dll's commit) is the reference for each live key: the panel does what the
+  menu does when it changes that setting, or the key is not live.
+  `scripts/selftest.py` (`check_live_fields_match_optiscalers_menu`) finds every
+  place the menu writes each `LIVE_FIELDS` member and fails if the menu also
+  does something the plugin cannot (a State flag, a backend switch). Its
+  `benign` list holds only side effects shown harmless in OptiScaler's own
+  consumer code, with the file named. Frame generation **on** is one the
+  plugin cannot write: the menu pairs it with State's `fgChanged`, which
+  (re)activates a generator fed by the game, so the Quick Access panel closes
+  itself and presses OptiScaler's own FG key (`[Menu] FGShortcutKey`, the value
+  the game holds) instead, only when the running game has FG off
+  (`service.press_live_keys`). Off is the write alone, as OptiScaler's key does
+  it. `[OptiFG] HUDFix` is not live for the same reason. The FPS overlay
+  button writes `ShowFps`/`FpsOverlayType`, exactly what OptiScaler's FPS and
+  FPS-cycle keys write, through OptiScaler's own type names (`fpsType[]`).
 - Not live, on purpose: switching to another upscaler backend or FFX frame
   generator. Those need OptiScaler's `State` internals. The panel records them
   for the next launch; OptiScaler's own overlay (the **OptiScaler menu** button)
@@ -229,9 +245,12 @@ Vilnius, after OptiScaler-nightly's 04:00 UTC build) is what releases:
    day. If that run fails too, it reverts its commit and reports.
 
 A failure of `test_live_asi.py` is maintained like any other (usually
-`generate_asi_layout.py` meeting a new kind of Config member), under the "Live
-editing" rules: never by reaching into `State`, never by weakening the layout
-checks. It never force-pushes or touches tags and releases itself, makes at most
+`generate_asi_layout.py` meeting a new kind of Config member or a new way
+`Config.cpp` reads a key, which the generator then has to learn), under the
+"Live editing" rules: never by reaching into `State`, never by weakening the
+layout checks. A failure of the check against OptiScaler's own menu is not
+fixed automatically: whether that setting stays live is a decision, so the
+task reports it. It never force-pushes or touches tags and releases itself, makes at most
 one autofix a day, and stops with a report instead of pushing when an autofix
 did not help or the fix needs a decision. A transient failure (GitHub 5xx, DNS,
 apt mirrors) gets one retry of the same run; it only reports when that keeps

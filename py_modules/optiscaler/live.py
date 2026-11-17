@@ -24,6 +24,7 @@ command file ten times a second. scripts/test_live_asi.py runs this whole
 channel against the real OptiScaler under Wine.
 """
 
+import json
 import os
 import re
 import time
@@ -71,10 +72,14 @@ FFX_UPSCALER_MAX = FFX_FG_MAX
 class LiveField:
     """One INI key the ASI can apply without a restart."""
 
-    def __init__(self, member, wire_type, encode, needs_reinit=False, resettable=False):
+    def __init__(self, member, wire_type, encode, needs_reinit=False, resettable=False, on_by_key=None):
         self.member = member
         self.wire_type = wire_type
         self.encode = encode
+        # Turning it on takes OptiScaler's own shortcut ([Menu] <on_by_key>):
+        # its menu pairs the change with a State flag the plugin API does not
+        # reach, and pressing the key runs exactly that code (service.py).
+        self.on_by_key = on_by_key
         # "auto" in the INI is an unset value; for these the ASI unsets it
         # (the overlay's "Auto"), instead of leaving it for the next launch.
         self.resettable = resettable
@@ -109,6 +114,21 @@ def _fsr4_model(value):
     return str(model)
 
 
+# OptiScaler's FPS overlay types ([Menu] FpsOverlayType), in its own order and
+# with its own names (menu_common.cpp fpsType[]), from the generated map.
+_GENERATED = json.loads(Path(__file__).with_name("live_fields.json").read_text(encoding="utf-8"))
+FPS_OVERLAY_TYPES = _GENERATED.get("labels", {}).get("FpsOverlay", [])
+# The type OptiScaler shows when the ini says "auto" (Config.h's default).
+FPS_OVERLAY_DEFAULT = int(_GENERATED.get("defaults", {}).get("Menu.FpsOverlayType", "0"))
+
+
+def _fps_overlay_type(value):
+    index = int(float(str(value).strip()))
+    if index < 0 or index >= len(FPS_OVERLAY_TYPES):
+        raise ValueError(f"not an FPS overlay type: {value!r}")
+    return str(index)
+
+
 def _is_auto(value):
     return str(value).strip().lower() in ("auto", "")
 
@@ -128,15 +148,27 @@ def _ffx_upscaler_index(value):
 # FFX frame generator (FSR.FGIndex). Switching those in a running game takes
 # OptiScaler's State internals, which change between nightlies; OptiScaler's own
 # overlay does it, and the panel records them for the next launch.
+#
+# What OptiScaler's own menu does next to each write is the reference, and
+# scripts/selftest.py (check_live_fields_match_optiscalers_menu) holds every
+# entry to it in the synced menu_common.cpp:
 LIVE_FIELDS = {
-    # Frame generation: FGEnabled is checked per frame by the swapchain and by
-    # every FG dispatch path, which is exactly why the overlay's hotkey works.
-    "FrameGen.Enabled": LiveField("FGEnabled", "bool", _bool),
-    "OptiFG.HUDFix": LiveField("FGHUDFix", "bool", _bool),
+    # Frame generation. Off is the write alone, exactly as OptiScaler's FG key
+    # does it: every FG path checks it each frame. On also needs State's
+    # fgChanged, which (re)activates the generator for a game-fed input (FSR
+    # FG, DLSSG, XeFG), so the panel presses OptiScaler's FG key for that.
+    "FrameGen.Enabled": LiveField("FGEnabled", "bool", _bool, on_by_key="FGShortcutKey"),
+    # Read per frame where the frame is generated (FSR FG and XeFG dispatch).
     "FrameGen.DebugView": LiveField("FGDebugView", "bool", _bool),
+    "XeFG.DebugView": LiveField("FGXeFGDebugView", "bool", _bool),
     "OptiFG.MakeDepthCopy": LiveField("FGMakeDepthCopy", "bool", _bool),
     "OptiFG.HUDFixExtended": LiveField("FGHUDFixExtended", "bool", _bool),
+    # XeFG applies it per frame (SetNumInterpolatedFrames); the menu's extra
+    # fgChanged only pauses the generator for a few frames.
     "XeFG.InterpolationCount": LiveField("FGXeFGInterpolationCount", "i32", _int),
+    # Not here: [OptiFG] HUDFix. On the FSR FG and XeFG outputs OptiScaler's
+    # menu also clears the captured HUDless frames and rebuilds the generator
+    # (State), so it waits for a restart or OptiScaler's menu.
 
     # Which FSR version the FidelityFX upscaler runs, read when it creates its
     # context: written, then the upscaler is re-created through the plugin API.
@@ -158,10 +190,13 @@ LIVE_FIELDS = {
     "InitFlags.DynamicResolution": LiveField("DynamicResolution", "bool", _bool,
                                              needs_reinit=True, resettable=True),
 
-    # Cheap per-frame knobs, safe to move while playing.
-    "Sharpness.OverrideSharpness": LiveField("OverrideSharpness", "bool", _bool),
+    # The override is read per frame, except by DLSS before 3, which OptiScaler's
+    # menu rebuilds for it; rebuilding always is the same thing, one frame later.
+    "Sharpness.OverrideSharpness": LiveField("OverrideSharpness", "bool", _bool, needs_reinit=True),
     "Sharpness.Sharpness": LiveField("Sharpness", "f32", _float),
+    # The FPS overlay: exactly what OptiScaler's FPS and FPS-cycle keys write.
     "Menu.ShowFps": LiveField("ShowFps", "bool", _bool),
+    "Menu.FpsOverlayType": LiveField("FpsOverlayType", "u32", _fps_overlay_type, resettable=True),
 }
 
 
@@ -478,13 +513,17 @@ def apply_changes(target_dir, changes, can_reinit=True):
     (status()["can_reinit"]); without it, settings that need that are deferred.
     Returns which ones were sent and which need a restart regardless.
     """
-    live, deferred = [], []
+    live, deferred, keys = [], [], []
     reinit = False
     for change in changes:
         ini_key = f"{change['section']}.{change['key']}"
         field = LIVE_FIELDS.get(ini_key)
         if field is None or (field.needs_reinit and not can_reinit):
             deferred.append(ini_key)
+            continue
+        if field.on_by_key and str(change["value"]).strip().lower() in ("true", "1", "yes", "on"):
+            # Turned on by OptiScaler's own key; the caller presses it.
+            keys.append({"ini_key": ini_key, "shortcut": field.on_by_key})
             continue
         if field.resettable and _is_auto(change["value"]):
             live.append(f"unset {field.member}")
@@ -500,14 +539,15 @@ def apply_changes(target_dir, changes, can_reinit=True):
         reinit = reinit or field.needs_reinit
 
     if not live:
-        return {"ok": True, "applied": [], "deferred": deferred, "sent": False}
+        return {"ok": True, "applied": [], "deferred": deferred, "sent": False, "keys": keys}
     if reinit:
         # After the writes: the re-created upscaler reads the new values.
         live.append("reinit")
     try:
         seq = _send(target_dir, live)
     except OSError as exc:
-        return {"ok": False, "error": str(exc), "applied": [], "deferred": deferred, "sent": False}
+        return {"ok": False, "error": str(exc), "applied": [], "deferred": deferred, "sent": False,
+                "keys": keys}
     return {
         "ok": True,
         "sent": True,
@@ -515,6 +555,7 @@ def apply_changes(target_dir, changes, can_reinit=True):
         "applied": [line.split(" ")[1] for line in live if line.startswith(("set ", "unset "))],
         "deferred": deferred,
         "reinit": reinit,
+        "keys": keys,
     }
 
 

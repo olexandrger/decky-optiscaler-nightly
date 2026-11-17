@@ -121,17 +121,42 @@ def normalize_default(text):
     return t
 
 
+# "... | 3 = Detailed + Graph | 4 Full | 5 Full + Graph": an entry of a "|"
+# list written without its "=" (Menu.FpsOverlayType). Without this the list
+# ended at 3 and schema.valid() refused the overlay types 4 to 7.
+MISSING_EQUALS_RE = re.compile(r"(^|\|)\s*(-?\d+)\s+(?=[^\s=|][^=|]*(?:\||$))")
+
+
+def _choice_pairs(line):
+    line = COMMA_ENTRY_RE.sub(" |", line)
+    if "|" in line:
+        line = MISSING_EQUALS_RE.sub(lambda m: f"{m.group(1)} {m.group(2)} = ", line)
+    return NUM_CHOICE_RE.findall(line)
+
+
 def find_numeric_choices(comments):
-    """Find a '0 = A / 1 = B' style enumeration in any comment line."""
-    for line in comments:
+    """Find a '0 = A / 1 = B' style enumeration, and the lines it takes.
+
+    The list may go on over the next lines ("; 7 = Custom" under
+    Menu.FpsOverlayType's "0 = Just FPS | ... | 6 = Low latency timings").
+    """
+    for at, line in enumerate(comments):
         if "=" not in line:
             continue
-        pairs = NUM_CHOICE_RE.findall(COMMA_ENTRY_RE.sub(" |", line))
-        if len(pairs) >= 2:
-            opts = [p[0] for p in pairs]
-            labels = {p[0]: p[1].strip().rstrip(".,") for p in pairs}
-            if len(set(opts)) == len(opts):
-                return opts, labels
+        pairs = _choice_pairs(line)
+        if len(pairs) < 2:
+            continue
+        used = [line]
+        for more in comments[at + 1:]:
+            extra = _choice_pairs(more) if "=" in more else []
+            if not extra or any(p[0] in {q[0] for q in pairs} for p in extra):
+                break
+            pairs += extra
+            used.append(more)
+        opts = [p[0] for p in pairs]
+        labels = {p[0]: p[1].strip().rstrip(".,") for p in pairs}
+        if len(set(opts)) == len(opts):
+            return opts, labels, used
     return None
 
 
@@ -192,11 +217,12 @@ def infer(key, comments):
     # Numeric choice lists such as LogLevel / UpscalerIndex live in an earlier
     # comment line, so scan the whole block before falling through.
     if choices:
-        opts, labels = choices
+        opts, labels, used = choices
         info["type"] = "enum"
         info["options"] = opts
         info["optionLabels"] = labels
-        keep = [c for c in comments if not NUM_CHOICE_RE.search(c) or len(NUM_CHOICE_RE.findall(c)) < 2]
+        keep = [c for c in comments if c not in used
+                and (not NUM_CHOICE_RE.search(c) or len(NUM_CHOICE_RE.findall(c)) < 2)]
         if default_part and keep and keep[-1] is spec:
             keep = keep[:-1]
         return info, keep

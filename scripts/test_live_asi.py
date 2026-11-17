@@ -87,8 +87,8 @@ def same(kind, got, want):
 # ASI reads the right offset.
 SENTINELS = {
     "FrameGen.Enabled": "true",
-    "OptiFG.HUDFix": "true",
     "FrameGen.DebugView": "true",
+    "XeFG.DebugView": "true",
     "OptiFG.MakeDepthCopy": "true",
     "OptiFG.HUDFixExtended": "true",
     "XeFG.InterpolationCount": "2",
@@ -96,6 +96,7 @@ SENTINELS = {
     "Sharpness.OverrideSharpness": "true",
     "Sharpness.Sharpness": "0.55",
     "Menu.ShowFps": "true",
+    "Menu.FpsOverlayType": "2",
     "FSR.Fsr4Model": "2",
     "InitFlags.AutoExposure": "true",
     "InitFlags.HDR": "true",
@@ -107,6 +108,7 @@ SENTINELS = {
 # Shown from the running game, not set live: enums the ini spells as words,
 # read back through the token tables generated from OptiScaler's headers.
 DISPLAY_SENTINELS = {
+    "OptiFG.HUDFix": "true",  # not live (OptiScaler's menu also rebuilds the generator)
     "Upscalers.Dx12Upscaler": "xess",
     "FrameGen.FGInput": "fsrfg",
     "FrameGen.FGOutput": "xefg",
@@ -114,8 +116,8 @@ DISPLAY_SENTINELS = {
 # What the panel then changes live. Different from every sentinel.
 LIVE_VALUES = {
     "FrameGen.Enabled": "false",
-    "OptiFG.HUDFix": "false",
     "FrameGen.DebugView": "false",
+    "XeFG.DebugView": "false",
     "OptiFG.MakeDepthCopy": "false",
     "OptiFG.HUDFixExtended": "false",
     "XeFG.InterpolationCount": "3",
@@ -123,6 +125,7 @@ LIVE_VALUES = {
     "Sharpness.OverrideSharpness": "false",
     "Sharpness.Sharpness": "0.8125",
     "Menu.ShowFps": "false",
+    "Menu.FpsOverlayType": "6",
     # "auto" for a resettable field: the ASI unsets it, as the overlay's "Auto".
     "FSR.Fsr4Model": "auto",
     "InitFlags.AutoExposure": "false",

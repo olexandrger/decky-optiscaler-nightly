@@ -38,10 +38,14 @@ RAW = "https://raw.githubusercontent.com/" + SOURCE_REPO + "/{commit}/OptiScaler
 #: are read as text only, for the enum token tables ("ffx", "XeFG", ...) the
 #: panel needs to show OptiScaler's live values as ini values. State's memory is
 #: never read or written.
-HEADERS = ("Config.h", "Config.cpp", "OptiTypes.h", "OptiTypes.cpp", "State.h")
+#: menu/menu_common.cpp is OptiScaler's own menu: what it does when it changes
+#: a setting is what scripts/selftest.py holds every live setting to, and its
+#: FPS overlay type names label the panel's overlay button.
+HEADERS = ("Config.h", "Config.cpp", "OptiTypes.h", "OptiTypes.cpp", "State.h", "menu/menu_common.cpp")
 #: A marker each file must contain, so an error page is not taken for a header.
 MARKERS = {"Config.h": b"class Config", "Config.cpp": b"Config::", "OptiTypes.h": b"enum class Upscaler",
-           "OptiTypes.cpp": b"UpscalerToCode", "State.h": b"class State"}
+           "OptiTypes.cpp": b"UpscalerToCode", "State.h": b"class State",
+           "menu/menu_common.cpp": b"MenuCommon::"}
 
 BUILD_RE = re.compile(rb"OptiScaler v([0-9][\w.\-]*) \(([0-9a-f]{7,40})\) \((\d{8}_\d{6})\)")
 
@@ -72,13 +76,13 @@ def sync(dll_bytes, opener=urllib.request.urlopen, sleep=None, regenerate=True):
     """Fetch the headers for this dll's commit into asi/optiscaler_ref/."""
     version, commit, built = build_info(dll_bytes)
     current = (REF / "SOURCE_COMMIT.txt").read_text(encoding="utf-8") if (REF / "SOURCE_COMMIT.txt").exists() else ""
-    if current.startswith(commit) and all((REF / name).is_file() for name in HEADERS):
+    if current.startswith(commit) and all((REF / Path(name).name).is_file() for name in HEADERS):
         print(f"OptiScaler headers already at {commit} ({version}, built {built})")
     else:
         files = {name: fetch(commit, name, opener, sleep) for name in HEADERS}
         REF.mkdir(parents=True, exist_ok=True)
         for name, data in files.items():
-            (REF / name).write_bytes(data)
+            (REF / Path(name).name).write_bytes(data)
         (REF / "SOURCE_COMMIT.txt").write_text(
             f"{commit}\n\n"
             f"Version:  v{version} (built {built})\n"

@@ -885,18 +885,64 @@ class OptiScalerService:
         the key reaches the game rather than Steam's overlay.
         """
         try:
-            def shortcut():
-                ini_path = Path(target_dir) / INI_NAME
-                if not ini_path.is_file():
-                    return None
-                return IniFile(ini_path).get("Menu", "ShortcutKey")
-
-            vk = keys.parse_shortcut(await self._run(shortcut))
+            vk = await self._run(self._shortcut, target_dir, "ShortcutKey")
             result = await self._run(keys.press, vk)
             return {"ok": True, **result}
         except Exception as exc:
             self.log.warning("could not press the OptiScaler menu key: %s", exc)
             return {"ok": False, "error": str(exc)}
+
+    def _shortcut(self, target_dir, name):
+        """One of OptiScaler's [Menu] shortcuts, as the game holds it.
+
+        The running game's value first: the key can be rebound in OptiScaler's
+        menu without saving. Then the ini, then OptiScaler's default.
+        """
+        default = keys.DEFAULT_SHORTCUTS[name]
+        held = running.effective_int(target_dir, f"Menu.{name}")
+        if held is not None:
+            return keys.parse_shortcut(str(held), default)
+        ini_path = Path(target_dir) / INI_NAME
+        value = IniFile(ini_path).get("Menu", name) if ini_path.is_file() else None
+        return keys.parse_shortcut(value, default)
+
+    async def press_live_keys(self, target_dir, actions):
+        """Press OptiScaler's own shortcut for a setting the panel turned on.
+
+        ``actions`` are apply_changes' ``keys``: frame generation on, which
+        takes OptiScaler's FG key (see live.LIVE_FIELDS). The Quick Access menu
+        has to be closed first so the key reaches the game. A key toggles, so
+        it is pressed only when the running game has the setting off, and only
+        with a frame generator configured; anything else waits for a restart.
+        """
+        def work():
+            snap = running.snapshot(target_dir)
+            if not snap.get("ready"):
+                return {"ok": False, "error": "The game is not running with the in-game plugin",
+                        "pressed": [], "deferred": [a["ini_key"] for a in actions]}
+            values = snap["values"]
+            pressed, deferred, already = [], [], []
+            for action in actions or []:
+                ini_key, shortcut = action.get("ini_key"), action.get("shortcut")
+                if shortcut not in keys.DEFAULT_SHORTCUTS or ini_key not in live.LIVE_FIELDS:
+                    deferred.append(ini_key)
+                    continue
+                if values.get(ini_key) == "true":
+                    already.append(ini_key)
+                    continue
+                if "nofg" in (values.get("FrameGen.FGInput", "").lower(), values.get("FrameGen.FGOutput", "").lower()):
+                    deferred.append(ini_key)  # no generator to switch on until a restart
+                    continue
+                keys.press(self._shortcut(target_dir, shortcut))
+                pressed.append(ini_key)
+            return {"ok": True, "pressed": pressed, "already": already, "deferred": deferred}
+
+        try:
+            return await self._run(work)
+        except Exception as exc:
+            self.log.warning("could not press OptiScaler's key: %s", exc)
+            return {"ok": False, "error": str(exc), "pressed": [],
+                    "deferred": [a.get("ini_key") for a in actions or []]}
 
     async def check_update(self, force=False):
         """Whether the fork has a newer release than this build."""
@@ -1086,6 +1132,8 @@ class OptiScalerService:
         report = await self._run(live.status, target_dir, source)
         report["asi_available"] = source is not None
         report["live_keys"] = sorted(live.LIVE_FIELDS)
+        report["fps_overlay_types"] = live.FPS_OVERLAY_TYPES
+        report["fps_overlay_default"] = live.FPS_OVERLAY_DEFAULT
         return report
 
     async def install_live(self, target_dir):

@@ -107,6 +107,25 @@ def created_upscaler(target_dir):
     return (last.group(2), last.group(1)) if last else None
 
 
+def effective_int(target_dir, ini_key):
+    """value_or_default() of an integer setting in the running game, or None."""
+    info = FIELDS.get(ini_key)
+    if not info or not live.status(target_dir).get("ready"):
+        return None
+    try:
+        text = (Path(target_dir) / VALUES_FILE).read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return None
+    for line in text.splitlines():
+        parts = line.split()
+        if len(parts) in (6, 7) and parts[0] == info["member"] and parts[1] in ("i32", "u32", "u8"):
+            try:
+                return int(parts[3] if parts[2] == "1" else parts[4])
+            except ValueError:
+                return None
+    return None
+
+
 def snapshot(target_dir):
     """The running game's settings, for the panel.
 

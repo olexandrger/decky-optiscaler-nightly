@@ -84,6 +84,15 @@ _LETTERS = {"Q": 16, "W": 17, "E": 18, "R": 19, "T": 20, "Y": 21, "U": 22, "I": 
 VK_TO_EVDEV.update({ord(letter): code for letter, code in _LETTERS.items()})
 
 VK_INSERT = 0x2D
+
+# OptiScaler's [Menu] shortcuts and their defaults (Config.h: VK_INSERT, VK_END,
+# VK_PRIOR, VK_NEXT); scripts/selftest.py holds these to the synced Config.h.
+DEFAULT_SHORTCUTS = {
+    "ShortcutKey": 0x2D,          # menu
+    "FGShortcutKey": 0x23,        # frame generation on/off
+    "FpsShortcutKey": 0x21,       # FPS overlay on/off
+    "FpsCycleShortcutKey": 0x22,  # next FPS overlay type
+}
 #: How long the key is held. OptiScaler may poll the key once per frame, so the
 #: press has to outlast a frame even at a low frame rate.
 HOLD_SECONDS = 0.12
@@ -94,19 +103,19 @@ _lock = threading.Lock()
 _fd = None
 
 
-def parse_shortcut(value):
-    """The VK code a [Menu] ShortcutKey value names; Insert for auto/unset/unreadable.
+def parse_shortcut(value, default=VK_INSERT):
+    """The VK code a [Menu] shortcut value names; `default` for auto/unset/unreadable.
 
     OptiScaler writes it as hex ("0x2D") or decimal ("45").
     """
     text = str(value or "").strip().lower()
     if text in ("", "auto"):
-        return VK_INSERT
+        return default
     try:
         code = int(text, 0)
     except ValueError:
-        return VK_INSERT
-    return code if 0 < code < 0x100 else VK_INSERT
+        return default
+    return code if 0 < code < 0x100 else default
 
 
 def _event(fd, ev_type, code, value):
@@ -139,13 +148,13 @@ def press(vk):
     """Press and release one key on the virtual keyboard."""
     code = VK_TO_EVDEV.get(vk)
     if code is None:
-        raise ValueError(f"OptiScaler's menu key (VK 0x{vk:02X}) has no keyboard mapping here")
+        raise ValueError(f"OptiScaler's shortcut (VK 0x{vk:02X}) has no keyboard mapping here")
     with _lock:
         try:
             fd, created = _device()
         except PermissionError as exc:
             raise PermissionError(
-                f"No access to {UINPUT_PATH}, so the plugin cannot press the menu key"
+                f"No access to {UINPUT_PATH}, so the plugin cannot press OptiScaler's keys"
             ) from exc
         except FileNotFoundError as exc:
             raise FileNotFoundError(f"{UINPUT_PATH} does not exist (uinput not loaded)") from exc

@@ -229,9 +229,41 @@ DEFERRED_RE = re.compile(
 )
 
 
+# Local helpers Config.cpp reads through (ReadOverlaySettings):
+#   auto readIndex = [&](const char* key, uint32_t count) { return readUInt("Menu", key)...; };
+#   auto apply = [assign](auto& setting, const auto& value) { ... setting.set_from_config(value); };
+#   apply(FpsOverlayType, readIndex("FpsOverlayType", FpsOverlay_COUNT)...);
+# are expanded in place to the plain spellings the patterns below know:
+#   FpsOverlayType.set_from_config(readUInt("Menu", "FpsOverlayType", FpsOverlay_COUNT)...);
+LAMBDA_RE = re.compile(
+    r"auto\s+(?P<name>\w+)\s*=\s*\[[^\]]*\]\s*\((?P<params>[^)]*)\)\s*\{(?P<body>.*?)\}\s*;", re.S)
+
+
+def _param_names(params):
+    return [p.strip().split()[-1].lstrip("&*") for p in params.split(",") if p.strip()]
+
+
+def expand_local_helpers(text):
+    for helper in list(LAMBDA_RE.finditer(text)):
+        name, params, body = helper.group("name"), _param_names(helper.group("params")), helper.group("body")
+        if not params:
+            continue
+        reader = re.search(r"return\s+read(?P<how>Bool|Int|Float|UInt|String|WString)\s*\(\s*"
+                           r"\"(?P<section>[^\"]+)\"\s*,\s*" + re.escape(params[0]) + r"\b", body)
+        if reader:
+            text = re.sub(r"(?<![\w.])" + re.escape(name) + r"\s*\(\s*(?=\")",
+                          f'read{reader.group("how")}("{reader.group("section")}", ', text)
+            continue
+        if len(params) == 2 and re.search(re.escape(params[0]) + r"\s*\.set_from_config\(\s*"
+                                          + re.escape(params[1]) + r"\s*\)", body):
+            text = re.sub(r"(?<![\w.])" + re.escape(name) + r"\s*\(\s*(?P<member>[A-Za-z_]\w*)\s*,",
+                          r"\g<member>.set_from_config(", text)
+    return text
+
+
 def parse_ini_map(source_text):
     """(section, key) -> member, as spelled in Config::Reload."""
-    text = strip_comments(source_text)
+    text = expand_local_helpers(strip_comments(source_text))
     mapping = {}
     for match in READ_RE.finditer(text):
         how = match.group("how")
@@ -347,7 +379,8 @@ def emit_header(members):
     return "\n".join(lines)
 
 
-ENUM_RE = re.compile(r"enum\s+class\s+(?P<name>\w+)\s*(?::\s*[\w:]+)?\s*\{(?P<body>[^{}]*)\}")
+# `enum class Upscaler {...}` and the older `enum FpsOverlay : uint32_t {...}`.
+ENUM_RE = re.compile(r"enum\s+(?:class\s+)?(?P<name>\w+)\s*(?::\s*[\w:]+)?\s*\{(?P<body>[^{}]*)\}")
 ENUM_CONFIG_RE = re.compile(r"struct\s+EnumConfig\s*<\s*(?P<name>\w+)\s*>\s*\{(?P<body>.*?)\};", re.S)
 PAIR_RE = re.compile(r"\{\s*(?P<enum>\w+)::(?P<value>\w+)\s*,\s*\"(?P<code>[^\"]*)\"\s*\}")
 UPSCALER_CASE_RE = re.compile(r"case\s+Upscaler::(?P<value>\w+)\s*:\s*return\s+\"(?P<code>[^\"]*)\"\s*;")
@@ -403,6 +436,68 @@ STRCMP_CASE_RE = re.compile(
     r"\w+\.set_from_config\(\s*(?P<enum>\w+)::(?P<value>\w+)\s*\)")
 
 
+DEFAULT_DECL_RE = re.compile(
+    r"CustomOptional<\s*(?P<type>[\w:]+)\s*(?:,\s*\w+)?\s*>\s+(?P<name>\w+)\s*\{\s*(?P<value>[^{};]+?)\s*\}\s*;")
+
+
+def literal_defaults(header, fields, enums):
+    """{ini key: ini value} for the members whose Config.h default is a literal.
+
+    What OptiScaler runs with when the ini says "auto": true/false, numbers, and
+    enum constants (FpsOverlay_FullGraph -> 5).
+    """
+    constants = {}
+    for enum in enums.values():
+        for name, value in enum["values"].items():
+            constants[name] = value
+    by_member = {}
+    for match in DEFAULT_DECL_RE.finditer(strip_comments(header)):
+        value = match.group("value").strip()
+        if value in ("true", "false"):
+            by_member[match.group("name")] = value
+        elif re.fullmatch(r"-?(?:0x[0-9a-fA-F]+|\d+)", value):
+            by_member[match.group("name")] = str(int(value, 0))
+        elif re.fullmatch(r"-?\d+\.\d*f?", value):
+            by_member[match.group("name")] = f"{float(value.rstrip('f')):.6g}"
+        else:
+            constant = value.split("::")[-1]
+            if constant in constants:
+                by_member[match.group("name")] = str(constants[constant])
+    result = {}
+    for key, info in fields.items():
+        value = by_member.get(info["member"])
+        if value is None:
+            continue
+        if info["kind"].startswith("enum:") and info["read"] == "String":
+            value = enums.get(info["kind"][5:], {}).get("codes", {}).get(value)  # its ini word
+            if value is None:
+                continue
+        result[key] = value
+    return result
+
+
+def overlay_type_labels(enums):
+    """{"FpsOverlay": [names]}: OptiScaler's own "Overlay Type" names, in enum order.
+
+    Read from its menu (menu_common.cpp, `fpsType[]`, which it static_asserts
+    against FpsOverlay_COUNT), so the panel's overlay button says what
+    OptiScaler's menu says. A list that does not match the enum fails here.
+    """
+    menu = REF / "menu_common.cpp"
+    values = enums.get("FpsOverlay", {}).get("values", {})
+    if not menu.is_file() or not values:
+        return {}
+    found = re.search(r"const\s+char\s*\*\s*fpsType\s*\[\s*\]\s*=\s*\{(?P<body>.*?)\}\s*;",
+                      strip_comments(menu.read_text(encoding="utf-8", errors="replace")), re.S)
+    if not found:
+        raise SystemExit("menu_common.cpp has no fpsType[] (OptiScaler's overlay type names)")
+    names = re.findall(r"\"([^\"]*)\"", found.group("body"))
+    count = values.get("FpsOverlay_COUNT")
+    if count is None or len(names) != count:
+        raise SystemExit(f"fpsType[] has {len(names)} names, FpsOverlay has {count} types")
+    return {"FpsOverlay": names}
+
+
 def main():
     header = (REF / "Config.h").read_text(encoding="utf-8", errors="replace")
     source = (REF / "Config.cpp").read_text(encoding="utf-8", errors="replace")
@@ -447,8 +542,10 @@ def main():
                       and not enums.get(name, {}).get("codes"))
     if wordless:
         raise SystemExit(f"no ini tokens found for enums read as strings: {wordless}")
-    OUT_JSON.write_text(json.dumps({"fields": fields, "enums": enums}, indent=1, sort_keys=True),
-                        encoding="utf-8")
+    labels = overlay_type_labels(enums)
+    defaults = literal_defaults(header, fields, all_enums)
+    OUT_JSON.write_text(json.dumps({"fields": fields, "enums": enums, "labels": labels,
+                                    "defaults": defaults}, indent=1, sort_keys=True), encoding="utf-8")
 
     print(f"members: {len(members)} (skipped {len(skipped)} non-data declarations)")
     print(f"ini keys mapped: {len(fields)}, enums with tokens: {len(enums)}")

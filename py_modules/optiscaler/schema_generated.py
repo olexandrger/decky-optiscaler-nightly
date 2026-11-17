@@ -454,7 +454,7 @@ OPTIONS = [
         "section": "XeFG",
         "key": "RoundingDMFG",
         "label": "Rounding DMFG",
-        "description": "Where FPS may land, as multipliers only come in steps: 0 = at most the target, 1 = around the target, 2 = at least the target",
+        "description": "Where FPS may land, as multipliers only come in steps:",
         "default": "1",
         "type": "enum",
         "options": [
@@ -1300,7 +1300,15 @@ OPTIONS = [
             "4",
             "5",
             "6",
-            "7"
+            "7",
+            "8",
+            "9",
+            "10",
+            "11",
+            "12",
+            "13",
+            "14",
+            "15"
         ],
         "optionLabels": {
             "0": "Default",
@@ -1310,7 +1318,15 @@ OPTIONS = [
             "4": "D",
             "5": "E",
             "6": "F",
-            "7": "G"
+            "7": "G",
+            "8": "H",
+            "9": "I",
+            "10": "J",
+            "11": "K",
+            "12": "L",
+            "13": "M",
+            "14": "N",
+            "15": "O"
         }
     },
     {
@@ -1327,7 +1343,15 @@ OPTIONS = [
             "4",
             "5",
             "6",
-            "7"
+            "7",
+            "8",
+            "9",
+            "10",
+            "11",
+            "12",
+            "13",
+            "14",
+            "15"
         ],
         "optionLabels": {
             "0": "Default",
@@ -1337,7 +1361,15 @@ OPTIONS = [
             "4": "D",
             "5": "E",
             "6": "F",
-            "7": "G"
+            "7": "G",
+            "8": "H",
+            "9": "I",
+            "10": "J",
+            "11": "K",
+            "12": "L",
+            "13": "M",
+            "14": "N",
+            "15": "O"
         },
         "default": "auto",
         "inheritedFrom": "RenderPresetForAll"
@@ -1356,7 +1388,15 @@ OPTIONS = [
             "4",
             "5",
             "6",
-            "7"
+            "7",
+            "8",
+            "9",
+            "10",
+            "11",
+            "12",
+            "13",
+            "14",
+            "15"
         ],
         "optionLabels": {
             "0": "Default",
@@ -1366,7 +1406,15 @@ OPTIONS = [
             "4": "D",
             "5": "E",
             "6": "F",
-            "7": "G"
+            "7": "G",
+            "8": "H",
+            "9": "I",
+            "10": "J",
+            "11": "K",
+            "12": "L",
+            "13": "M",
+            "14": "N",
+            "15": "O"
         },
         "default": "auto",
         "inheritedFrom": "RenderPresetDLAA"
@@ -1385,7 +1433,15 @@ OPTIONS = [
             "4",
             "5",
             "6",
-            "7"
+            "7",
+            "8",
+            "9",
+            "10",
+            "11",
+            "12",
+            "13",
+            "14",
+            "15"
         ],
         "optionLabels": {
             "0": "Default",
@@ -1395,7 +1451,15 @@ OPTIONS = [
             "4": "D",
             "5": "E",
             "6": "F",
-            "7": "G"
+            "7": "G",
+            "8": "H",
+            "9": "I",
+            "10": "J",
+            "11": "K",
+            "12": "L",
+            "13": "M",
+            "14": "N",
+            "15": "O"
         },
         "default": "auto",
         "inheritedFrom": "RenderPresetUltraQuality"
@@ -1414,7 +1478,15 @@ OPTIONS = [
             "4",
             "5",
             "6",
-            "7"
+            "7",
+            "8",
+            "9",
+            "10",
+            "11",
+            "12",
+            "13",
+            "14",
+            "15"
         ],
         "optionLabels": {
             "0": "Default",
@@ -1424,7 +1496,15 @@ OPTIONS = [
             "4": "D",
             "5": "E",
             "6": "F",
-            "7": "G"
+            "7": "G",
+            "8": "H",
+            "9": "I",
+            "10": "J",
+            "11": "K",
+            "12": "L",
+            "13": "M",
+            "14": "N",
+            "15": "O"
         },
         "default": "auto",
         "inheritedFrom": "RenderPresetQuality"
@@ -1443,7 +1523,15 @@ OPTIONS = [
             "4",
             "5",
             "6",
-            "7"
+            "7",
+            "8",
+            "9",
+            "10",
+            "11",
+            "12",
+            "13",
+            "14",
+            "15"
         ],
         "optionLabels": {
             "0": "Default",
@@ -1453,7 +1541,15 @@ OPTIONS = [
             "4": "D",
             "5": "E",
             "6": "F",
-            "7": "G"
+            "7": "G",
+            "8": "H",
+            "9": "I",
+            "10": "J",
+            "11": "K",
+            "12": "L",
+            "13": "M",
+            "14": "N",
+            "15": "O"
         },
         "default": "auto",
         "inheritedFrom": "RenderPresetBalanced"
@@ -1472,7 +1568,15 @@ OPTIONS = [
             "4",
             "5",
             "6",
-            "7"
+            "7",
+            "8",
+            "9",
+            "10",
+            "11",
+            "12",
+            "13",
+            "14",
+            "15"
         ],
         "optionLabels": {
             "0": "Default",
@@ -1482,7 +1586,15 @@ OPTIONS = [
             "4": "D",
             "5": "E",
             "6": "F",
-            "7": "G"
+            "7": "G",
+            "8": "H",
+            "9": "I",
+            "10": "J",
+            "11": "K",
+            "12": "L",
+            "13": "M",
+            "14": "N",
+            "15": "O"
         },
         "default": "auto",
         "inheritedFrom": "RenderPresetPerformance"
@@ -1947,12 +2059,20 @@ OPTIONS = [
         "options": [
             "0",
             "1",
-            "2"
+            "2",
+            "3",
+            "4",
+            "5",
+            "6"
         ],
         "optionLabels": {
             "0": "Top Left",
             "1": "Top Right",
-            "2": "Bottom Left"
+            "2": "Bottom Left",
+            "3": "Bottom Right",
+            "4": "Top Center",
+            "5": "Bottom Center",
+            "6": "Custom (FpsOverlayPosX"
         }
     },
     {
@@ -1980,20 +2100,28 @@ OPTIONS = [
         "section": "Menu",
         "key": "FpsOverlayType",
         "label": "Fps Overlay Type",
-        "description": "FPS overlay type Each type before Custom is a preset of the rows, Custom shows FpsOverlayRows 7 = Custom",
+        "description": "FPS overlay type Each type before Custom is a preset of the rows, Custom shows FpsOverlayRows",
         "default": "5",
         "type": "enum",
         "options": [
             "0",
             "1",
             "2",
-            "3"
+            "3",
+            "4",
+            "5",
+            "6",
+            "7"
         ],
         "optionLabels": {
             "0": "Just FPS",
             "1": "Simple",
             "2": "Detailed",
-            "3": "Detailed + Graph"
+            "3": "Detailed + Graph",
+            "4": "Full",
+            "5": "Full + Graph",
+            "6": "Low latency timings",
+            "7": "Custom"
         }
     },
     {

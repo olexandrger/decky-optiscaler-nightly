@@ -1,5 +1,7 @@
+import { Navigation } from "@decky/ui";
+import { toaster } from "@decky/api";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { readConfig, setFsr4Build, writeConfig } from "../api";
+import { pressLiveKeys, readConfig, setFsr4Build, writeConfig } from "../api";
 import { AUTO } from "../config/values";
 import { optionsInSection } from "../config/tabs";
 import { forgetWrites, overlayWrites, rememberWrites } from "../config/writeRecord";
@@ -31,7 +33,19 @@ const changeId = (change: OptionChange) => `${change.section}.${change.key}`;
  * mid-write — so what was written is also recorded in `config/writeRecord`,
  * which the next instance reads before it trusts the file.
  */
-export function useConfig(targetDir: string | null, enabled: boolean, reloadKey?: unknown) {
+export function useConfig(
+  targetDir: string | null,
+  enabled: boolean,
+  reloadKey?: unknown,
+  /**
+   * Whether this surface can press OptiScaler's own shortcuts in the running
+   * game: the Quick Access panel, which it closes first so the key reaches the
+   * game. On the full page the game is behind Steam, so turning frame
+   * generation on there waits for a restart.
+   */
+  options: { pressKeys?: boolean } = {}
+) {
+  const pressKeys = Boolean(options.pressKeys);
   const [values, setValues] = useState<ConfigValues>({});
   const [fsr4Build, setFsr4BuildId] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -109,10 +123,43 @@ export function useConfig(targetDir: string | null, enabled: boolean, reloadKey?
       // raise the restart flag for the parts that could not be applied live.
       const applied = result.live ?? null;
       setLive(applied);
+      const keyActions = applied?.keys ?? [];
       const fullyLive =
         Boolean(applied?.unchanged) ||
-        (Boolean(applied?.sent) && (applied?.deferred?.length ?? 0) === 0);
+        ((Boolean(applied?.sent) || keyActions.length > 0) && (applied?.deferred?.length ?? 0) === 0);
       if (!fullyLive) setDirty(true);
+
+      // Frame generation on: OptiScaler's own FG key, which runs the rebuild
+      // its menu does (see live.LIVE_FIELDS). Only once Quick Access is closed
+      // does the key reach the game.
+      if (keyActions.length > 0 && targetDir) {
+        if (!pressKeys) {
+          setDirty(true);
+        } else {
+          Navigation.CloseSideMenus();
+          window.setTimeout(() => {
+            void pressLiveKeys(targetDir, keyActions)
+              .then((pressedResult) => {
+                const waits = !pressedResult.ok || (pressedResult.deferred?.length ?? 0) > 0;
+                if (waits) setDirty(true);
+                if (!pressedResult.ok) {
+                  toaster.toast({
+                    title: "Could not press OptiScaler's FG key",
+                    body: pressedResult.error ?? "Frame generation turns on when the game restarts.",
+                  });
+                } else if ((pressedResult.pressed?.length ?? 0) > 0) {
+                  toaster.toast({ title: "Frame generation on", body: "Through OptiScaler's FG key." });
+                } else if (waits) {
+                  toaster.toast({
+                    title: "Frame generation turns on at the next launch",
+                    body: "No frame generator is set up in the running game.",
+                  });
+                }
+              })
+              .catch(() => setDirty(true));
+          }, 450);
+        }
+      }
 
       const rejected = result.rejected ?? [];
       if (rejected.length > 0) {
@@ -140,7 +187,7 @@ export function useConfig(targetDir: string | null, enabled: boolean, reloadKey?
       }
       setSaving(false);
     }
-  }, [targetDir, load]);
+  }, [targetDir, load, pressKeys]);
 
   const queue = useCallback(
     (changes: OptionChange[], immediate = false) => {

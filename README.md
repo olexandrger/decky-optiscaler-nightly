@@ -51,6 +51,14 @@ installs over the regular plugin (same name, same settings and per-game records)
   is not live from the panel; the Quick Access panel's **OptiScaler menu**
   button opens OptiScaler's own overlay for that (it presses the game's
   `[Menu] ShortcutKey`, Insert by default, on a virtual keyboard).
+- **FPS overlay** button in the Quick Access panel: off → Just FPS → Simple →
+  … → Low latency timings → off, OptiScaler's own types and names (Custom too,
+  once rows are chosen). Live: the same two settings OptiScaler's Page Up /
+  Page Down keys change.
+- Turning **frame generation on** from the Quick Access panel closes it and
+  presses OptiScaler's own FG key (End unless changed), because OptiScaler
+  only re-activates a game-fed generator through that path. Off applies
+  directly.
 - **Running now**: while the game runs, the panel shows OptiScaler's settings as
   the game holds them, read through the in-game plugin, including what you
   changed in OptiScaler's own menu (upscaler backend, FG output, ...). Those are

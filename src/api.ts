@@ -18,8 +18,7 @@ import type {
   VerifyResult,
   WikiSearchResult,
   WikiStatus,
-  WriteConfigResult,
-} from "./types";
+  WriteConfigResult, LiveKeyAction } from "./types";
 
 export interface BrowseResult {
   path: string | null;
@@ -187,6 +186,11 @@ export interface RunningConfig {
   created?: { upscaler: string; at: string } | null;
 }
 export const getRunningConfig = callable<[targetDir: string], RunningConfig>("get_running_config");
+/** Press OptiScaler's own shortcut for settings turned on that need it (FG on). */
+export const pressLiveKeys = callable<
+  [targetDir: string, actions: LiveKeyAction[]],
+  ActionResult & { pressed?: string[]; already?: string[]; deferred?: string[] }
+>("press_live_keys");
 export const keepRunningChanges = callable<[targetDir: string, keys: string[]], ActionResult & { kept?: string[] }>(
   "keep_running_changes"
 );

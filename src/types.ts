@@ -430,6 +430,10 @@ export interface OptipatcherStatus {
 export interface LiveStatus {
   asi_installed: boolean;
   asi_available: boolean;
+  /** OptiScaler's FPS overlay type names, in its order (menu_common.cpp fpsType[]). */
+  fps_overlay_types?: string[];
+  /** The type OptiScaler shows for "auto" (Config.h's default). */
+  fps_overlay_default?: number;
   /**
    * Whether the game's copy of the in-game plugin is the one this build ships.
    * Updating the Decky plugin leaves every game on the ASI it was set up with,
@@ -523,6 +527,11 @@ export interface LiveStatus {
 }
 
 /** Outcome of pushing a config write into the running game. */
+export interface LiveKeyAction {
+  ini_key: string;
+  shortcut: string;
+}
+
 export interface LiveApplyResult {
   ok?: boolean;
   sent: boolean;
@@ -536,5 +545,7 @@ export interface LiveApplyResult {
   can_switch_upscaler?: boolean;
   /** The write left every value as it was: nothing to apply or restart for. */
   unchanged?: boolean;
+  /** Settings turned on by OptiScaler's own shortcut (FG on): press_live_keys. */
+  keys?: LiveKeyAction[];
   error?: string;
 }

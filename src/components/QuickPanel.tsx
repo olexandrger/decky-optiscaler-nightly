@@ -7,6 +7,7 @@ import { useConfig } from "../hooks/useConfig";
 import { useLiveStatus } from "../hooks/useLiveStatus";
 import { LiveDiagnostics } from "./LiveDiagnostics";
 import { RunningConfig } from "./RunningConfig";
+import { FpsOverlayButton } from "./FpsOverlayButton";
 import { useRunningConfig } from "../hooks/useRunningConfig";
 import { OutdatedInstall } from "./OutdatedInstall";
 import { restartGame } from "../hooks/useRunningGame";
@@ -127,7 +128,7 @@ function NowPlayingTab({
   const installed = Boolean(detail?.install.installed) && !foreign;
   const targetDir = installed && detail ? detail.install.path : null;
   // Re-read after the game exits so overlay-side Save is not overwritten.
-  const config = useConfig(targetDir, installed, runningGame?.appid ?? null);
+  const config = useConfig(targetDir, installed, runningGame?.appid ?? null, { pressKeys: true });
   // This tab is only ever shown over a running game, so the live channel is
   // always worth polling here.
   const { status: live, refresh: refreshLive } = useLiveStatus(targetDir, Boolean(runningGame));
@@ -257,6 +258,12 @@ function NowPlayingTab({
               Quick Access menu — otherwise the key would go to Steam's overlay
               — and presses it on a virtual keyboard. */}
           <PanelSection>
+            <FpsOverlayButton
+              values={values}
+              live={live}
+              disabled={config.loading}
+              onApply={applyOptions}
+            />
             <PanelSectionRow>
               <ButtonItem
                 layout="below"
@@ -284,7 +291,7 @@ function NowPlayingTab({
               <PanelSectionRow>
                 <Notice tone="info">
                   {live.ready
-                    ? "Frame generation, HUD fix, sharpness, the FPS overlay and the FSR version apply immediately; other changes when the game restarts."
+                    ? "Frame generation, sharpness, the FPS overlay, the FSR version and FSR 4 model apply immediately (turning frame generation on closes this menu to press OptiScaler's FG key); other changes when the game restarts."
                     : "Changes made here apply when the game restarts."}
                 </Notice>
               </PanelSectionRow>

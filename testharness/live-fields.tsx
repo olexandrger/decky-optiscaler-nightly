@@ -17,6 +17,7 @@ import { fixtures } from "@decky/api";
 import { Navigation } from "@decky/ui";
 import { GENERATED_OPTIONS } from "../src/config/generatedSchema";
 import { QuickPanel } from "../src/components/QuickPanel";
+import { nextFpsOverlay } from "../src/components/FpsOverlayButton";
 import { forgetWrites } from "../src/config/writeRecord";
 
 // ---- a backend that keeps state -------------------------------------------
@@ -97,6 +98,7 @@ let liveBaseFps: number | null = 20.2;
 let liveTotalFps: number | null = 40.4;
 let liveCountedFps = 40.4;
 
+const pressedKeys: string[] = [];
 let installedFsr4Build = "bundled";
 let fsr4SetupFails = true;
 Object.assign(fixtures, {
@@ -131,7 +133,10 @@ Object.assign(fixtures, {
       ini[c.section][c.key] = value;
       applied.push({ section: c.section, key: c.key, value });
     }
-    return { ok: true, applied, rejected, live: { sent: true, deferred: [], attached: true } };
+    // As live.apply_changes: frame generation on is OptiScaler's FG key.
+    const keys = applied.filter((c) => c.section === "FrameGen" && c.key === "Enabled" && c.value === "true")
+      .map(() => ({ ini_key: "FrameGen.Enabled", shortcut: "FGShortcutKey" }));
+    return { ok: true, applied, rejected, live: { sent: true, deferred: [], attached: true, keys } };
   },
   get_live_status: () => ({
     asi_installed: true, asi_available: true, asi_current: true,
@@ -151,7 +156,15 @@ Object.assign(fixtures, {
     pending_backend: null, schema: 5, fg_index: liveFgIndex,
     ffx_fg_versions: FFX_VERSIONS,
     ffx_upscaler_versions: FSR_VERSIONS, ffx_upscaler_index: liveUpscalerIndex,
+    // OptiScaler's own names and default (live_fields.json, from its menu and Config.h).
+    fps_overlay_types: ["Just FPS", "Simple", "Detailed", "Detailed + Graph", "Full", "Full + Graph",
+      "Low latency timings", "Custom"],
+    fps_overlay_default: 5,
   }),
+  press_live_keys: (_dir: string, actions: any[]) => {
+    pressedKeys.push(...actions.map((a) => a.shortcut));
+    return { ok: true, pressed: actions.map((a) => a.ini_key), already: [], deferred: [] };
+  },
   switch_upscaler: (_dir: string, code: string) => {
     liveBackend = code;
     return { ok: true, sent: true, backend: code };
@@ -461,6 +474,60 @@ const tile = (host: Element, label: string) => {
   const fgNow = all(host, '[data-mock="ToggleField"][data-label="Frame generation"]')[0];
   check("turns off", all(fgNow, "[data-toggle]")[0].getAttribute("data-checked"), "false");
   check("and the ini agrees", ini.FrameGen.Enabled, "false");
+  check("turning it off presses no key (OptiScaler checks the setting every frame)",
+    pressedKeys.length, 0);
+  let closedForKey = 0;
+  const realCloseForKey = Navigation.CloseSideMenus;
+  Navigation.CloseSideMenus = () => { closedForKey += 1; };
+  await act(async () => {
+    (all(all(host, '[data-mock="ToggleField"][data-label="Frame generation"]')[0], "[data-toggle]")[0] as
+      HTMLElement).click();
+  });
+  await settle(200);
+  check("turning it on closes Quick Access so the key reaches the game", closedForKey, 1);
+  check("and presses OptiScaler's own FG key", pressedKeys.join(","), "FGShortcutKey");
+  check("the ini agrees", ini.FrameGen.Enabled, "true");
+  Navigation.CloseSideMenus = realCloseForKey;
+
+  console.log("=== the FPS overlay button ===");
+  // The button's own text, without its description.
+  const ownText = (b: Element) =>
+    (b.textContent ?? "").replace(b.querySelector("[data-desc]")?.textContent ?? "", "");
+  const overlayFound = () => all(host, '[data-mock="ButtonItem"]')
+    .find((b) => ownText(b).startsWith("FPS overlay:")) as HTMLElement | undefined;
+  const overlayButton = () => {
+    const found = overlayFound();
+    return found ? { click: () => found.click(), textContent: ownText(found) } : undefined;
+  };
+  ini.Menu.ShowFps = "false";
+  ini.Menu.FpsOverlayType = "auto";
+  await act(async () => { overlayButton()?.click(); });
+  await settle(200);
+  // Off -> the first type.
+  check("from off it shows OptiScaler's first type", overlayButton()?.textContent, "FPS overlay: Just FPS");
+  check("and writes what OptiScaler's FPS keys write", `${ini.Menu.ShowFps}/${ini.Menu.FpsOverlayType}`, "true/0");
+  const seen: string[] = [];
+  for (let i = 0; i < 7; i++) {
+    await act(async () => { overlayButton()?.click(); });
+    await settle(200);
+    seen.push((overlayButton()?.textContent ?? "").replace("FPS overlay: ", ""));
+  }
+  check("then every type in OptiScaler's order, Custom skipped without rows, then off",
+    seen.join(" | "), "Simple | Detailed | Detailed + Graph | Full | Full + Graph | Low latency timings | Off");
+  check("off keeps the type for next time", `${ini.Menu.ShowFps}/${ini.Menu.FpsOverlayType}`, "false/6");
+  const liveNow = (fixtures.get_live_status as any)();
+  const after6 = (rows: string) => nextFpsOverlay(
+    { Menu: { ShowFps: "true", FpsOverlayType: "6", FpsOverlayRows: rows } }, liveNow);
+  check("with rows chosen, Custom is a step",
+    JSON.stringify(after6("fps,frametime")), JSON.stringify([
+      { section: "Menu", key: "ShowFps", value: "true" },
+      { section: "Menu", key: "FpsOverlayType", value: "7" }]));
+  check("without, the step after Low latency timings is off",
+    JSON.stringify(after6("auto")), JSON.stringify([{ section: "Menu", key: "ShowFps", value: "false" }]));
+  check("an \"auto\" type is OptiScaler's default (Full + Graph)",
+    JSON.stringify(nextFpsOverlay({ Menu: { ShowFps: "true", FpsOverlayType: "auto" } }, liveNow)),
+    JSON.stringify([{ section: "Menu", key: "ShowFps", value: "true" },
+      { section: "Menu", key: "FpsOverlayType", value: "6" }]));
 
   console.log("=== an ini the presets have no name for ===");
   // The Advanced page and the wiki plan write the same file. A value with no

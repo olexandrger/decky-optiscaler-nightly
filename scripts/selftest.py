@@ -672,7 +672,7 @@ def check_live_control():
               and (target / "plugins" / live.ASI_NAME).is_file())
 
         result = live.apply_changes(str(target), [
-            {"section": "FrameGen", "key": "Enabled", "value": "true"},
+            {"section": "FrameGen", "key": "Enabled", "value": "false"},
             {"section": "Sharpness", "key": "Sharpness", "value": "0.5"},
             {"section": "Upscalers", "key": "Dx12Upscaler", "value": "fsr31"},
             {"section": "Hotfix", "key": "DisableOverlays", "value": "true"},
@@ -684,8 +684,16 @@ def check_live_control():
               result["deferred"] == ["Upscalers.Dx12Upscaler", "Hotfix.DisableOverlays"],
               result["deferred"])
         check("command file is the documented wire format",
-              body[0].startswith("seq ") and body[1:] == ["set FGEnabled bool 1", "set Sharpness f32 0.5"],
+              body[0].startswith("seq ") and body[1:] == ["set FGEnabled bool 0", "set Sharpness f32 0.5"],
               body)
+        # On is OptiScaler's own FG key: its menu pairs the write with State's
+        # fgChanged, which (re)activates a generator fed by the game.
+        fg_on = live.apply_changes(str(target), [{"section": "FrameGen", "key": "Enabled", "value": "true"}])
+        check("frame generation on is left to OptiScaler's FG key, not written",
+              fg_on["keys"] == [{"ini_key": "FrameGen.Enabled", "shortcut": "FGShortcutKey"}]
+              and fg_on["applied"] == [] and not fg_on["deferred"], fg_on)
+        check("HUD fix is not live (OptiScaler's menu also rebuilds the generator for it)",
+              "OptiFG.HUDFix" not in live.LIVE_FIELDS)
         check("a plain setting asks for no upscaler re-init", not result["reinit"])
 
         # The FSR version is read when the upscaler creates its context: written,
@@ -1971,6 +1979,207 @@ def check_running_config():
         shutil.rmtree(root, ignore_errors=True)
 
 
+def check_live_fields_match_optiscalers_menu():
+    """Every live setting is changed the way OptiScaler's own menu changes it.
+
+    For each LIVE_FIELDS member, every place OptiScaler's menu writes it
+    (asi/optiscaler_ref/menu_common.cpp, synced at the bundled dll's commit) is
+    found, with what the menu does next to it: State flags and upscaler
+    rebuilds. The plugin can do a write, an upscaler rebuild on the same
+    backend (ReInitUpscalers), and press OptiScaler's own key; anything else
+    the menu does means the panel's live change would be half of OptiScaler's,
+    so a nightly that adds one fails here, naming the line.
+    """
+    from optiscaler import keys, live
+
+    print("\nLive settings against OptiScaler's own menu")
+    ref = ROOT / "asi" / "optiscaler_ref"
+    menu = (ref / "menu_common.cpp").read_text(encoding="utf-8", errors="replace")
+    lines = menu.splitlines()
+    rebuild = {"newBackend", "MARK_ALL_BACKENDS_CHANGED", "ReInitUpscaler"}
+    # What the menu does next to a write that the panel's write still matches,
+    # read in OptiScaler's own consumers, with why.
+    benign = {
+        # XeFG applies the count per frame (XeFG_Dx12 Dispatch, SetNumInterpolatedFrames);
+        # fgChanged only pauses the generator for a few frames.
+        "FGXeFGInterpolationCount": {"fgChanged"},
+        # FSR FG reads the flag per frame (FSRFG_Dx12 Dispatch, fgConfig.flags);
+        # fgChanged is the same pause.
+        "FGDebugView": {"fgChanged"},
+        # XeFG sets it per frame (XeFG_Dx12 Dispatch, EnableDebugFeature); the same pause.
+        "FGXeFGDebugView": {"fgChanged"},
+    }
+
+    def effects_in(text):
+        found = set(re.findall(r"\b(?:state|State::Instance\(\))\.(\w+)\s*=(?!=)", text))
+        return found | {name for name in ("MARK_ALL_BACKENDS_CHANGED", "ReInitUpscaler") if name + "(" in text}
+
+    def effects_from(site):
+        """What the menu does with the write: the block it sits in, when that is
+        a small one (a checkbox's or a combo entry's), else its own statement."""
+        depth, opener = 0, None
+        for j in range(site, max(-1, site - 40), -1):
+            depth += lines[j].count("}") - lines[j].count("{")
+            if depth < 0:
+                opener = j
+                break
+        if opener is not None:
+            depth, closer = 0, None
+            for k in range(opener, min(len(lines), opener + 41)):
+                depth += lines[k].count("{") - lines[k].count("}")
+                if depth <= 0 and k > opener:
+                    closer = k
+                    break
+            if closer is not None:
+                return effects_in("\n".join(lines[opener:closer + 1]))
+        statement = lines[site]
+        k = site
+        while ";" not in statement and k + 1 < len(lines) and k < site + 6:
+            k += 1
+            statement += lines[k]
+        return effects_in(statement)
+
+    def function_body(name):
+        start = next((i for i, line in enumerate(lines)
+                      if re.match(r"^\S.*\bMenuCommon::" + re.escape(name) + r"\s*\(", line)), None)
+        if start is None:
+            return set()
+        depth, found, opened = 0, set(), False
+        for line in lines[start:start + 400]:
+            found |= set(re.findall(r"\b(?:state|State::Instance\(\))\.(\w+)\s*=(?!=)", line))
+            depth += line.count("{") - line.count("}")
+            opened = opened or "{" in line
+            if opened and depth <= 0:
+                break
+        return found
+
+    for ini_key, field in sorted(live.LIVE_FIELDS.items()):
+        member = re.escape(field.member)
+        sites, effects = [], set()
+        # `auto& selectedModel = config->Fsr4Model;` and its writes, within its scope.
+        alias_at = {}
+        for i, line in enumerate(lines):
+            alias = re.search(r"auto&\s+(\w+)\s*=\s*config->" + member + r"(?:For\([^)]*\))?\s*;", line)
+            if alias:
+                for k in range(i + 1, min(len(lines), i + 80)):
+                    alias_at.setdefault(k, set()).add(alias.group(1))
+        writes = [r"config->" + member + r"\s*=(?!=)", r"config->" + member + r"\.(?:reset|set_volatile_value)\(",
+                  r"Config::Instance\(\)->" + member + r"\s*=(?!=)"]
+        for i, line in enumerate(lines):
+            mine = writes + [r"(?<![\w.>])" + re.escape(a) + r"\s*(?:=(?!=)|\.reset\()" for a in alias_at.get(i, ())]
+            if any(re.search(w, line) for w in mine):
+                sites.append(i + 1)
+                effects |= effects_from(i)
+            call = re.search(r"(\w+)\s*\([^;]*&config->" + member + r"\b", line)
+            if call:
+                sites.append(i + 1)
+                effects |= function_body(call.group(1))
+        allowed = set(benign.get(field.member, ()))
+        if field.needs_reinit:
+            allowed |= rebuild
+        if field.on_by_key:
+            allowed |= {"fgChanged"}  # turned on by OptiScaler's own key, which does it
+        extra = sorted(effects - allowed)
+        check(f"{ini_key}: OptiScaler's menu changes it ({len(sites)} place(s)) with nothing the panel "
+              f"cannot do", sites and not extra,
+              f"no write found in menu_common.cpp" if not sites else f"also {extra}, near line(s) {sites[:6]}")
+
+    # The keys the panel presses are OptiScaler's own, with its defaults.
+    header = (ref / "Config.h").read_text(encoding="utf-8", errors="replace")
+    vk = {"VK_INSERT": 0x2D, "VK_END": 0x23, "VK_PRIOR": 0x21, "VK_NEXT": 0x22, "VK_HOME": 0x24}
+    for name, code in keys.DEFAULT_SHORTCUTS.items():
+        found = re.search(r"CustomOptional<int>\s+" + name + r"\s*\{\s*(\w+)\s*\}", header)
+        check(f"{name} defaults to OptiScaler's own key", found and vk.get(found.group(1)) == code,
+              found.group(1) if found else "not in Config.h")
+    for name in keys.DEFAULT_SHORTCUTS:
+        check(f"OptiScaler's menu reacts to {name} like to its menu key (CheckShortcut)",
+              re.search(r"CheckShortcut\(config->" + name + r"\.value_or_default\(\)", menu) is not None)
+    # The overlay types the panel cycles through are OptiScaler's, in its order.
+    check("the FPS overlay types are OptiScaler's own names, in its order",
+          live.FPS_OVERLAY_TYPES[:2] == ["Just FPS", "Simple"] and "Custom" in live.FPS_OVERLAY_TYPES,
+          live.FPS_OVERLAY_TYPES)
+    check("its cycle key cycles FpsOverlayType, as the panel's button does",
+          re.search(r"config->FpsOverlayType\s*=\s*\(FpsOverlay\)\s*\(\(config->FpsOverlayType", menu)
+          is not None)
+
+
+def check_live_keys():
+    """Frame generation on through OptiScaler's own FG key, and which key that is.
+
+    A key toggles, so it may only be pressed when the running game has frame
+    generation off, and the key is the one the game holds now: it can be
+    rebound in OptiScaler's menu without saving.
+    """
+    import tempfile
+    from unittest import mock
+    from optiscaler import keys, live, running
+    from optiscaler.service import OptiScalerService
+
+    print("\nOptiScaler's own keys")
+    check("an unreadable shortcut falls back to the key it is for",
+          keys.parse_shortcut("auto", keys.DEFAULT_SHORTCUTS["FGShortcutKey"]) == 0x23
+          and keys.parse_shortcut("junk", 0x22) == 0x22 and keys.parse_shortcut("0x24", 0x23) == 0x24)
+    enums = running.ENUMS
+
+    def code(enum, token):
+        return next(int(n) for n, c in enums[enum]["codes"].items() if c.lower() == token)
+
+    root = Path(tempfile.mkdtemp(prefix="optiscaler-keys-"))
+    try:
+        target = root / "game"
+        target.mkdir()
+        (target / INI_NAME).write_text("[Menu]\nShortcutKey=auto\nFGShortcutKey=auto\n")
+        (target / live.STATUS_FILE).write_text(
+            f"schema {live.STATUS_SCHEMA}\nbuilt_for 03b37db7\nstatus ready\napi 3\n"
+            "reinit_available 1\nseq 0\napplied 0\nreinit -1\nconfig 0x1\nfields 380\nerror \n")
+
+        def values(fg_on, output="xefg", fg_key="i32 0 - 35 - 0", menu_key="i32 1 36 45 - 0"):
+            body = {
+                "FGEnabled": f"bool 1 {1 if fg_on else 0} 0 - 0",
+                "FGInput": f"u32 1 {code('FGInput', 'fsrfg')} 0 - 0",
+                "FGOutput": f"u32 1 {code('FGOutput', output)} 0 - 0",
+                "FGShortcutKey": fg_key,
+                "ShortcutKey": menu_key,
+            }
+            text = "fields %d\n" % len(body) + "".join(f"{k} {v}\n" for k, v in body.items())
+            (target / running.VALUES_FILE).write_text(text)
+            (target / running.LOADED_FILE).write_text(text)
+
+        service = OptiScalerService(ROOT, root / "s", root / "r", root / "h", logging.getLogger("t"))
+        action = [{"ini_key": "FrameGen.Enabled", "shortcut": "FGShortcutKey"}]
+        values(fg_on=False)
+        with mock.patch.object(keys, "press", return_value={}) as press:
+            result = asyncio.run(service.press_live_keys(str(target), action))
+        check("FG off in the game: OptiScaler's FG key is pressed (End, its default)",
+              result["pressed"] == ["FrameGen.Enabled"] and press.call_args[0][0] == 0x23, result)
+        values(fg_on=False, fg_key="i32 1 36 35 - 0")
+        with mock.patch.object(keys, "press", return_value={}) as press:
+            asyncio.run(service.press_live_keys(str(target), action))
+        check("a key rebound in OptiScaler's menu is the one pressed",
+              press.call_args[0][0] == 0x24, press.call_args)
+        values(fg_on=True)
+        with mock.patch.object(keys, "press", return_value={}) as press:
+            result = asyncio.run(service.press_live_keys(str(target), action))
+        check("FG already on in the game: nothing is pressed (the key would turn it off)",
+              not press.called and result["already"] == ["FrameGen.Enabled"], result)
+        values(fg_on=False, output="nofg")
+        with mock.patch.object(keys, "press", return_value={}) as press:
+            result = asyncio.run(service.press_live_keys(str(target), action))
+        check("no frame generator set up: nothing is pressed, it waits for a restart",
+              not press.called and result["deferred"] == ["FrameGen.Enabled"], result)
+        values(fg_on=False)
+        with mock.patch.object(keys, "press", return_value={"vk": 36}) as press:
+            asyncio.run(service.toggle_menu(str(target)))
+        check("the menu button presses the menu key the game holds", press.call_args[0][0] == 36,
+              press.call_args)
+        (target / live.STATUS_FILE).write_text(f"schema {live.STATUS_SCHEMA}\nstatus failed\napi 3\n")
+        with mock.patch.object(keys, "press", return_value={}) as press:
+            result = asyncio.run(service.press_live_keys(str(target), action))
+        check("without the in-game plugin nothing is pressed", not press.called and not result["ok"], result)
+    finally:
+        shutil.rmtree(root, ignore_errors=True)
+
+
 def check_optipatcher():
     """OptiPatcher ships alongside and installs into the same plugin folder."""
     import tempfile
@@ -2398,6 +2607,31 @@ def check_reframework():
               for e in seed["entries"] if e["name"] in found))
 
 
+def check_value_lists_that_go_on():
+    """Numbered value lists written across lines, or with an entry missing its "=".
+
+    Menu.FpsOverlayType reads "... | 3 = Detailed + Graph | 4 Full | 5 Full + Graph
+    | 6 Low latency timings" and then "7 = Custom" on the next line; the list
+    ended at 3, so schema.valid() refused the overlay types the panel's FPS
+    overlay button cycles through, and the DLSS render presets stopped at G
+    (K, L, M are DLSS 4's).
+    """
+    from optiscaler.schema import SCHEMA
+
+    print("\nValue lists over several lines")
+    overlay = SCHEMA.get(("Menu", "FpsOverlayType"), {})
+    check("every FPS overlay type is a value", overlay.get("options") == [str(i) for i in range(8)],
+          overlay.get("options"))
+    check("with OptiScaler's names", (overlay.get("optionLabels") or {}).get("4") == "Full"
+          and (overlay.get("optionLabels") or {}).get("7") == "Custom", overlay.get("optionLabels"))
+    position = SCHEMA.get(("Menu", "FpsOverlayPos"), {})
+    check("every FPS overlay position is a value", position.get("options") == [str(i) for i in range(7)],
+          position.get("options"))
+    preset = SCHEMA.get(("DLSS", "RenderPresetForAll"), {})
+    check("the DLSS presets go on past G", "11" in (preset.get("options") or [])
+          and (preset.get("optionLabels") or {}).get("11") == "K", preset.get("options"))
+
+
 def check_prose_is_not_a_specification():
     """Two ways a wiki page says something it is not asking you to do.
 
@@ -2765,6 +2999,8 @@ def main():
     check_debug_report()
     check_live_push_only_what_moved()
     check_running_config()
+    check_live_fields_match_optiscalers_menu()
+    check_live_keys()
     check_remembered_choices()
     check_launch_record()
     check_launch_options_read()
@@ -2784,6 +3020,7 @@ def main():
     check_auto_plan()
     check_reframework()
     check_prose_is_not_a_specification()
+    check_value_lists_that_go_on()
     check_parenthesised_pages()
     check_compat_list_shapes()
     check_option_validation()

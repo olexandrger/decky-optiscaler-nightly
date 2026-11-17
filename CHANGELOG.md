@@ -14,6 +14,20 @@ Newest first. Each release ships `Decky OptiScaler.zip` for Decky Loader's
   dll names). Live: frame generation on/off, HUD fix, debug view, depth copy,
   XeFG multiplier, sharpness, the FPS overlay and the FSR version. Not live:
   switching the upscaler backend or the FFX frame generator.
+- **FPS overlay** button in the Quick Access panel, cycling off and
+  OptiScaler's overlay types in its own order and names (`FpsOverlayType` is
+  live).
+- Live settings checked against OptiScaler's own menu at the bundled commit
+  (`menu_common.cpp` is synced too): frame generation **on** now presses
+  OptiScaler's FG key (its menu also sets State's `fgChanged`, without which a
+  game-fed generator stayed off); `[OptiFG] HUDFix` is restart-only for the
+  same reason; the sharpness override rebuilds the upscaler (DLSS before 3
+  needs it); XeFG's own debug view is live. The menu and FG keys pressed are
+  the ones the game holds now, not only the ini's.
+- The generator maps the overlay settings OptiScaler reads through
+  `ReadOverlaySettings` (29 keys), and emits Config.h's defaults; the schema
+  parser reads value lists that go on over several lines or miss an "=" (FPS
+  overlay type and position, DLSS presets past G).
 - **Running now** in the Quick Access panel and on the game's page: OptiScaler's
   settings as the running game holds them (the in-game plugin writes a
   read-only snapshot whenever one moves). What was changed in OptiScaler's own

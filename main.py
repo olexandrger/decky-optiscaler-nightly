@@ -190,6 +190,9 @@ class Plugin:
     async def get_live_status(self, target_dir: str) -> dict:
         return await self.service.get_live_status(target_dir)
 
+    async def press_live_keys(self, target_dir: str, actions: list) -> dict:
+        return await self.service.press_live_keys(target_dir, actions or [])
+
     async def get_running_config(self, target_dir: str) -> dict:
         return await self.service.get_running_config(target_dir)
 
