@@ -1516,6 +1516,9 @@ def check_version_pin():
             sync_optiscaler_headers.dll_from_archive(archive))
         check("the vendored headers are the commit the bundled OptiScaler.dll was built from",
               text.startswith(commit), f"dll names {commit} ({built}), headers {text.split()[0]}")
+    # The plugin version, release tags and "already released?" all use it.
+    check("the pinned OptiScaler version carries the nightly's date",
+          bool(re.search(r"-20\d{6}$", constants.OPTISCALER_VERSION)), constants.OPTISCALER_VERSION)
     check("the shipped archive matches the pinned version",
           constants.OPTISCALER_VERSION in constants.PAYLOAD_ARCHIVE,
           constants.PAYLOAD_ARCHIVE)

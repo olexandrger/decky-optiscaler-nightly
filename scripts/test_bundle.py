@@ -41,6 +41,34 @@ class Network:
         return io.BytesIO(answer)
 
 
+class NightlyDateTests(unittest.TestCase):
+    """The date every version, tag and "already released?" check hangs off.
+
+    The 17 Nov nightly appended its commit to the archive name, the version
+    lost its date and a release went out as v0.0.7-nightly.10.0.0-pre1.21.
+    """
+
+    def test_every_archive_name_shape(self):
+        for name in ("OptiScaler_v10.0.0-pre1_20261030.7z",
+                     "OptiScaler_v10.0.0-pre1_20261117_03b37db7.7z",
+                     "OptiScaler-10.0.0-pre1-20261030.7z"):
+            self.assertRegex(bundle_nightly.nightly_date(name), r"^2026\d{4}$", name)
+        self.assertEqual(bundle_nightly.nightly_date("OptiScaler_v10.0.0-pre1_20261117_03b37db7.7z"),
+                         "20261117")
+
+    def test_the_tag_wins_over_the_name(self):
+        self.assertEqual(bundle_nightly.nightly_date("OptiScaler_v10.0.0-pre1_20261116.7z",
+                                                     tag="nightly-20261117"), "20261117")
+
+    def test_the_dll_build_stamp_is_the_last_resort(self):
+        self.assertEqual(bundle_nightly.nightly_date("OptiScaler.7z", built="20261117_124833"),
+                         "20261117")
+        self.assertIsNone(bundle_nightly.nightly_date("OptiScaler_v10.0.0-pre1.7z"))
+
+    def test_a_commit_hash_is_not_a_date(self):
+        self.assertIsNone(bundle_nightly.nightly_date("OptiScaler_v10.0.0-pre1_03b37db7.7z"))
+
+
 class DownloadTests(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()

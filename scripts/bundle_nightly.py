@@ -175,13 +175,38 @@ def flatten(extracted):
     return root
 
 
-def version_label(dll, archive_name):
+def nightly_date(archive_name, tag=None, built=None):
+    """The nightly's date (YYYYMMDD), from the best evidence available.
+
+    The release tag says it outright (nightly-20261117). Archive names have
+    changed shape: OptiScaler_v10.0.0-pre1_20261030.7z until 16 Nov, then
+    OptiScaler_v10.0.0-pre1_20261117_03b37db7.7z (commit appended); this repo
+    stores OptiScaler-10.0.0-pre1-20261030.7z. Last, the dll's build stamp.
+    """
+    for text in (tag or "", archive_name or ""):
+        match = re.search(r"(?<!\d)(20\d{6})(?!\d)", text)
+        if match:
+            return match.group(1)
+    if built and re.match(r"20\d{6}", built):
+        return built[:8]
+    return None
+
+
+def version_label(dll, archive_name, tag=None):
     major, minor, hotfix, build = pe_file_version(dll) or (0, 0, 0, 0)
     label = f"{major}.{minor}.{hotfix}-pre{build}"
-    # Upstream names it OptiScaler_v10.0.0-pre1_20261030.7z; this repo stores
-    # OptiScaler-10.0.0-pre1-20261030.7z, which re-bundling after a rebase reads.
-    stamp = re.search(r"[_-](\d{8})\.7z$", archive_name)
-    return f"{label}-{stamp.group(1)}" if stamp else label
+    built = None
+    try:
+        import sync_optiscaler_headers
+        built = sync_optiscaler_headers.build_info(Path(dll).read_bytes())[2]
+    except (ValueError, OSError):
+        pass
+    date = nightly_date(archive_name, tag, built)
+    if not date:
+        # The plugin version, the release tag and "already released?" all
+        # hang off this date: no date is a failed bundle, not a dateless one.
+        sys.exit(f"cannot tell which nightly {archive_name} is: no date in its name, tag or dll")
+    return f"{label}-{date}"
 
 
 def read_list(source, name):
@@ -225,7 +250,7 @@ def main():
         run([seven, "x", "-y", f"-o{extracted}", str(archive)])
         root = flatten(extracted)
 
-        version = version_label(root / "OptiScaler.dll", archive.name)
+        version = version_label(root / "OptiScaler.dll", archive.name, args.tag)
         # The live-control ASI's Config layout comes from the source this dll
         # was built from; fetch it now so the bundle and the ASI never disagree.
         import sync_optiscaler_headers
