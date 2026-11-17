@@ -364,8 +364,15 @@ async def run():
 
         print("\nConfiguration")
         config = await service.read_config(str(target))
-        # 37 sections in OptiScaler 10's ini (34 in 0.9.4).
-        check("ini parsed", config["ok"] and len(config["values"]) == 37, len(config["values"]))
+        # Every section of the bundled nightly's ini (37 on 2026-10-30, 38 with
+        # [FlipMeter] from 2026-11-16; 34 in 0.9.4). Nightlies add sections, and
+        # the Advanced tab shows any section, so compare with the ini actually
+        # bundled rather than a count.
+        reference = ROOT / "defaults" / "OptiScaler.reference.ini"
+        sections = re.findall(r"^\[([^\]]+)\]", reference.read_text(encoding="utf-8"), re.M)
+        check("ini parsed: every section of the bundled ini",
+              config["ok"] and sorted(config["values"]) == sorted(sections) and len(sections) >= 37,
+              f"{len(config['values'])} parsed, {len(sections)} in the bundled ini")
         before = (target / "OptiScaler.ini").read_text(encoding="utf-8")
 
         write = await service.write_config(str(target), [
