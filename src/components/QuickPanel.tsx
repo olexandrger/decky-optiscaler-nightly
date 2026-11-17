@@ -300,6 +300,7 @@ function NowPlayingTab({
           ) : (
             <QuickControls
               values={values}
+              configured={config.values}
               live={live}
               gpu={detail.gpu}
               ffx={detail.install.fsr4?.ffx}

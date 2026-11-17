@@ -164,8 +164,10 @@ export function GameDetail({
   // re-read it whenever this game stops running rather than trusting our copy.
   const config = useConfig(targetDir, installed, isRunning);
   const { status: liveStatus } = useLiveStatus(targetDir, isRunning);
+  // The page edits the configuration, so its controls show the ini; what the
+  // running game holds instead is listed in "Running now" above them.
   const runningCfg = useRunningConfig(targetDir, Boolean(isRunning && liveStatus?.ready));
-  const values = runningCfg.merge(config.values);
+  const values = config.values;
   const applyOptions = (changes: OptionChange[]) => {
     runningCfg.markEdited(changes);
     config.setOptions(changes);

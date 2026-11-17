@@ -68,6 +68,7 @@ function schemaChoices(id: string, withAuto = false): Choice[] {
  */
 export function QuickControls({
   values,
+  configured,
   live,
   gpu,
   ffx,
@@ -77,7 +78,15 @@ export function QuickControls({
   onApply,
   onEnableFsr4,
 }: Readonly<{
+  /** The ini with the running game's live values over it: what the live controls show. */
   values: ConfigValues;
+  /**
+   * The ini alone: which upscaler, and on a Deck which FSR 4 model, is set up.
+   * Those are restart-only, and a running game can hold other values for them
+   * (OptiScaler adjusts some itself); laid over the ini they made the Lite
+   * preset unrecognisable, and the upscaler read as plain "FSR 3.X/4".
+   */
+  configured?: ConfigValues;
   live: LiveStatus | null;
   gpu: GpuInfo | null | undefined;
   ffx?: FfxUpscalerInfo | null;
@@ -110,12 +119,13 @@ export function QuickControls({
       : enableFrameGenChanges(values));
 
   // -- upscaler ----------------------------------------------------------
-  const preset = activeUpscalerPreset(values);
+  const setUp = configured ?? values;
+  const preset = activeUpscalerPreset(setUp);
   const choices = upscalerChoicesFor(gpu, preset);
   const available = new Set(choices.map((choice) => choice.id));
   const families = UPSCALER_FAMILIES.filter((family) => family.presets.some((id) => available.has(id)));
   const family = familyOf(preset?.id);
-  const rawUpscaler = (values.Upscalers?.Dx12Upscaler ?? AUTO).toLowerCase();
+  const rawUpscaler = (setUp.Upscalers?.Dx12Upscaler ?? AUTO).toLowerCase();
   const deckRoute = needsForcedInt8(gpu) && supportsInt8Override(ffx);
 
   const applyPreset = (id: string) => {

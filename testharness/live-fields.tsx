@@ -528,6 +528,30 @@ async function mount(kind: "quick" | "page") {
   setIni({ Upscalers: { Dx12Upscaler: "ffx", Dx11Upscaler: "ffx_12", VulkanUpscaler: "ffx_12" },
     FSR: { Fsr4GpuSupport: "auto", Fsr4Model: "auto", UpscalerIndex: "0" }, DLSS: { RenderPresetOverride: "auto" } });
 
+  console.log("=== a running game whose FSR 4 model differs from the ini ===");
+  // The ini holds the Deck's Lite preset; the running game has the model at
+  // Auto (OptiScaler adjusts it itself, or it was changed in its menu). The
+  // panel used to lay that over the ini, Lite stopped matching, and the
+  // upscaler read as plain "FSR 3.X/4" with no model to pick.
+  setIni({ Upscalers: { Dx12Upscaler: "ffx", Dx11Upscaler: "ffx_12", VulkanUpscaler: "ffx_12" },
+    FSR: { Fsr4GpuSupport: "4", Fsr4Model: "3", UpscalerIndex: "0" } });
+  const runningSnapshot = { ok: true, ready: true, created: null, unsaved: ["FSR.Fsr4Model"],
+    values: { "Upscalers.Dx12Upscaler": "ffx", "FSR.Fsr4Model": "auto", "FSR.Fsr4GpuSupport": "4",
+      "FSR.UpscalerIndex": "0", "FrameGen.Enabled": "true" } };
+  fixtures.get_running_config = () => runningSnapshot;
+  quick = await mount("quick");
+  await settle(100);
+  check("the upscaler still reads as the configured FSR 4", selected(quick.node, "Upscaler"), "fsr4");
+  check("with its Deck model", selected(quick.node, "FSR 4 model"), "fsr4-lite");
+  await pick(quick.node, "Upscaler", "fsr3");
+  check("FSR 3 can be picked", selected(quick.node, "Upscaler"), "fsr3");
+  await pick(quick.node, "Upscaler", "fsr4");
+  check("and FSR 4 again comes back as FSR 4 with its model, not as plain FFX",
+    `${selected(quick.node, "Upscaler")}/${selected(quick.node, "FSR 4 model")}`, "fsr4/fsr4-lite");
+  await act(async () => quick.root.unmount());
+  delete (fixtures as any).get_running_config;
+  setIni({ FSR: { Fsr4GpuSupport: "auto", Fsr4Model: "auto", UpscalerIndex: "0" } });
+
   console.log("=== explanations live behind the ⓘ ===");
   quick = await mount("quick");
   check("no control carries a description", all(quick.node, "[data-desc]").length, 0);

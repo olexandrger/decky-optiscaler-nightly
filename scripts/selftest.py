@@ -1969,6 +1969,19 @@ def check_running_config():
               kept["ok"] and sorted(kept["kept"]) == ["FrameGen.FGOutput", "Menu.ShowFps",
                                                        "Upscalers.Dx12Upscaler"], kept)
         check("and nothing is marked any more", running.snapshot(str(target))["unsaved"] == [])
+        # The ini rewritten since the game loaded it (a restart-only change from
+        # the panel): the ini is the newer intent, nothing is marked.
+        (target / running.VALUES_FILE).write_text(fields(ShowFps="bool 1 1 0 0 0"))
+        (target / INI_NAME).write_text((target / INI_NAME).read_text().replace("ShowFps=true", "ShowFps=false")
+                                       .replace("FGOutput=xefg", "FGOutput=dlssg"))
+        snap = running.snapshot(str(target))
+        check("a value the ini was rewritten for since the game loaded it is not marked",
+              "FrameGen.FGOutput" not in snap["unsaved"], snap["unsaved"])
+        rows = {row[0]: row for row in running.differences(str(target))}
+        check("the debug report lists what the game holds other than the ini, with what it loaded",
+              rows.get("FrameGen.FGOutput", ())[1:4] == ("dlssg", "fsrfg", "fsrfg")
+              and rows.get("FSR.Fsr4Model", ())[2:4] == ("3", "3"),
+              {k: rows.get(k) for k in ("FrameGen.FGOutput", "FSR.Fsr4Model")})
         check("keeping pushes nothing back into the game",
               not (target / live.CMD_FILE).exists())
 

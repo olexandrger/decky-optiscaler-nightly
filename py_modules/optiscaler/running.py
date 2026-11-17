@@ -126,6 +126,37 @@ def effective_int(target_dir, ini_key):
     return None
 
 
+def differences(target_dir):
+    """[(ini key, in the ini, as loaded, now, volatile)] where the running game differs.
+
+    For the debug report: which settings OptiScaler holds other than the ini,
+    whether it already loaded them so (it resolved them itself) or they moved
+    later (its menu, or OptiScaler adjusting them while running).
+    """
+    target = Path(target_dir)
+    now = read_fields(target / VALUES_FILE)
+    loaded = read_fields(target / LOADED_FILE) or {}
+    if not now:
+        return []
+    try:
+        ini = IniFile(target / INI_NAME).to_dict()
+    except OSError:
+        ini = {}
+    rows = []
+    for ini_key, info in sorted(FIELDS.items()):
+        member = info["member"]
+        current = to_ini(ini_key, now.get(member))
+        if current is None:
+            continue
+        section, key = ini_key.split(".", 1)
+        on_disk = ini.get(section, {}).get(key, "auto")
+        at_load = to_ini(ini_key, loaded.get(member))
+        if not same(current, on_disk) or (at_load is not None and not same(current, at_load)):
+            rows.append((ini_key, on_disk, at_load if at_load is not None else "?", current,
+                         bool(now[member][3])))
+    return rows
+
+
 def snapshot(target_dir):
     """The running game's settings, for the panel.
 
@@ -162,7 +193,12 @@ def snapshot(target_dir):
         section, key = ini_key.split(".", 1)
         on_disk = ini.get(section, {}).get(key, "auto")
         at_load = to_ini(ini_key, loaded.get(member))
-        if not same(current, on_disk) and (at_load is None or not same(current, at_load)):
+        # Changed in the running game: not what the ini says, not what it
+        # loaded, and the ini still what it loaded. Once the ini has been
+        # rewritten since (a restart-only change from the panel), the ini is
+        # the newer intent and the difference is just waiting for a restart.
+        if (not same(current, on_disk) and (at_load is None or not same(current, at_load))
+                and (at_load is None or same(on_disk, at_load))):
             unsaved.append(ini_key)
     created = created_upscaler(target_dir)
     return {

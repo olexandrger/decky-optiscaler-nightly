@@ -1165,6 +1165,11 @@ class OptiScalerService:
         """What decides live editing in this game, for the panel's diagnostics."""
         install = await self._run(installer.detect, target_dir)
         result = await self._run(live.diagnostics, target_dir, self.live_asi_path(), install)
+        rows = await self._run(running.differences, target_dir)
+        table = "\n".join(f"{key}: ini {ini} | loaded {loaded} | now {now}{' (volatile)' if volatile else ''}"
+                          for key, ini, loaded, now, volatile in rows)
+        result["report"] += ("\n===== Running settings that differ from the ini "
+                             f"({len(rows)}) =====\n{table or '(none)'}\n")
         result["logging"] = (await self._run(live.running_build, target_dir)) is not None \
             or (Path(target_dir) / LOG_NAME).is_file()
         return {"ok": True, **result}
