@@ -92,6 +92,13 @@ class Game:
             if encoded is not None:
                 self.config[info["member"]] = encoded
         self.running = True
+        # As asi/live.cpp: a command written before the game started is an
+        # earlier session's and is not applied.
+        cmd = self.dir / live.CMD_FILE
+        if cmd.is_file():
+            seq = re.search(r"^seq (\d+)", cmd.read_text(encoding="utf-8"), re.M)
+            if seq:
+                self.seq = int(seq.group(1))
         self._write(running.LOADED_FILE)
         self.tick()
 
@@ -192,11 +199,18 @@ class Backend:
 
     def set_fsr4_build(self, target_dir, build_id):
         # The real one also checks and swaps the bundled DLL; its ini half is
-        # installer.deck_preset_changes, written here the same way.
+        # installer.deck_preset_changes, written here the same way, and its
+        # live half is the service's own.
         ini = IniFile(Path(target_dir) / "OptiScaler.ini")
         ini.update(installer.deck_preset_changes(build_id))
         ini.save()
-        return {"ok": True, "model": build_id}
+        outcome = self.service._push_preset(target_dir, installer.deck_preset_changes(build_id))
+        return {"ok": True, "model": build_id, "live": outcome}
+
+    def leftover(self, lines):
+        """An earlier session's last command, left in the folder before this game starts."""
+        seq = time.time_ns() // 1_000_000 - 60_000
+        (self.game_dir / live.CMD_FILE).write_text("\n".join([f"seq {seq}", *lines, ""]), encoding="utf-8")
 
     def call(self, method, args):
         if method.startswith("game."):
@@ -213,6 +227,8 @@ class Backend:
             raise ValueError(f"no game method {name}")
         if method == "reset":
             return self.reset(*args)
+        if method == "leftover":
+            return self.leftover(*args)
         if method == "ini":
             return self.ini()
         if method == "pressed":

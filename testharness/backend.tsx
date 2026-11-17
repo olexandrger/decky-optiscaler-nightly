@@ -131,6 +131,10 @@ interface Case {
   overlay?: string;
   ini_has?: [string, string][];
   game_has?: [string, string][];
+  /** An earlier session's last command, in the folder before the game starts. */
+  leftover?: string[];
+  /** [text, whether the panel shows it]. */
+  text?: [string, boolean][];
 }
 
 const iniValue = (ini: Ini, key: string) => {
@@ -143,6 +147,7 @@ async function run(c: Case) {
   current = c.name;
   gameDir = (await call("reset", c.ini)).dir;
   forgetWrites(gameDir);
+  if (c.leftover) await call("leftover", c.leftover);
   await call("game.start");
   for (const [key, value, vol] of c.game ?? []) await call("game.set", key, value, Boolean(vol));
   const node = document.createElement("div");
@@ -166,6 +171,7 @@ async function run(c: Case) {
   for (const [key, value] of c.ini_has ?? []) check(`ini ${key} = ${value}`, iniValue(ini, key), value);
   const game = await call("game.values");
   for (const [key, value] of c.game_has ?? []) check(`game ${key} = ${value}`, game[key], value);
+  for (const [text, present] of c.text ?? []) check(`says "${text}"`, (node.textContent ?? "").includes(text), present);
   await act(async () => root.unmount());
   await call("game.stop");
 }
@@ -209,6 +215,37 @@ const DRIFTS: [string, [string, string, boolean?][]][] = [
 ];
 
 const cases: Case[] = [];
+// Seen on a Deck: the last panel command of one session (FSR 3) replayed at the
+// next launch over the ini's FSR 4 Lite, and again inside the next live push.
+const FSR3_COMMAND = ["unset Fsr4Model", "set FfxUpscalerIndex i32 1", "reinit"];
+cases.push(
+  {
+    name: "Deck FSR 4 Lite, an earlier session's FSR 3 command left over: the game runs the ini",
+    ini: { ...DECK_LITE, ...XEFG_ON }, leftover: FSR3_COMMAND,
+    act: (node) => press(node, "fps-overlay"),
+    shows: [["Upscaler", "fsr4"], ["FSR 4 model", "fsr4-lite"]],
+    game_has: [["FSR.Fsr4Model", "3"], ["FSR.UpscalerIndex", "0"]],
+  },
+  {
+    name: "Deck FSR 4 Lite, FSR 3 from OptiScaler's menu: RDNA2 needs its GPU support, so a restart",
+    ini: { ...DECK_LITE, ...XEFG_ON }, game: [["FSR.Fsr4Model", "auto"], ["FSR.UpscalerIndex", "1"]],
+    act: (node) => pick(node, "FSR 4 model", "fsr4-rdna2"),
+    shows: [["FSR 4 model", "fsr4-rdna2"]],
+    ini_has: [["FSR.Fsr4Model", "2"], ["FSR.Fsr4GpuSupport", "3"]],
+    game_has: [["FSR.Fsr4Model", "auto"], ["FSR.UpscalerIndex", "1"]],
+    text: [["Restart game to apply", true]],
+  },
+  {
+    name: "Deck: back to the model whose GPU support the game runs: applies live",
+    ini: { ...DECK_LITE, ...XEFG_ON },
+    game: [["FSR.Fsr4GpuSupport", "3"], ["FSR.Fsr4Model", "auto"], ["FSR.UpscalerIndex", "1"]],
+    act: (node) => pick(node, "FSR 4 model", "fsr4-rdna2"),
+    shows: [["FSR 4 model", "fsr4-rdna2"]],
+    ini_has: [["FSR.Fsr4Model", "2"], ["FSR.Fsr4GpuSupport", "3"], ["FSR.UpscalerIndex", "0"]],
+    game_has: [["FSR.Fsr4Model", "2"], ["FSR.UpscalerIndex", "0"]],
+    text: [["Restart game to apply", false]],
+  },
+);
 for (const [drift, game] of DRIFTS) {
   for (const [start, ini] of [["Deck FSR 4 Lite", DECK_LITE], ["FSR 3", FSR3]] as [string, Ini][]) {
     cases.push({

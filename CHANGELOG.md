@@ -20,6 +20,16 @@ Newest first. Each release ships `Decky OptiScaler.zip` for Decky Loader's
   menu) never reached the game and flipped back; turning FG on rewrote the FG
   pair from an output OptiScaler had reset at runtime; the upscaler read as
   plain FFX when the game held another FSR 4 model than the ini.
+- Fixed, from two Deck debug reports: the in-game plugin applied the last
+  command of the previous session at every launch, overriding the ini
+  OptiScaler had just loaded (an FSR 4 Lite pick came back as the earlier
+  FSR 3; FG turned off at launch). Commands written before the game started
+  are now ignored, and an unapplied one is carried into the next only while
+  seconds old.
+- Steam Deck FSR 4 Lite / RDNA2 apply live when the running game already has
+  the preset's backend and GPU support (the model and FSR version, rebuilt as
+  OptiScaler's menu does); otherwise at the next launch, as before.
+- The debug report names the plugin build that wrote it.
 - Ported from upstream's audit (upstream is no longer rebased on; fixes are
   ported, see AGENTS.md): two live edits inside one 100 ms poll no longer lose
   the first (an unapplied command is carried into the next, seqs strictly

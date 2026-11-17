@@ -18,7 +18,7 @@ import type {
   VerifyResult,
   WikiSearchResult,
   WikiStatus,
-  WriteConfigResult, LiveKeyAction } from "./types";
+  WriteConfigResult, LiveKeyAction, LiveApplyResult } from "./types";
 
 export interface BrowseResult {
   path: string | null;
@@ -61,7 +61,7 @@ export const importFsr4Files = callable<
   ActionResult
 >("import_fsr4_files");
 /** Download a pinned FSR 4 upscaler build and put it in the game folder. */
-export const setFsr4Build = callable<[targetDir: string, buildId: string], ActionResult>(
+export const setFsr4Build = callable<[targetDir: string, buildId: string], ActionResult & { live?: LiveApplyResult | null }>(
   "set_fsr4_build"
 );
 /** Put the build that ships inside the OptiScaler release back. */

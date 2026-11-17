@@ -504,6 +504,11 @@ def _same_dir(windows_path, target_dir):
     return theirs[-depth:] == ours[-depth:]
 
 
+# A ready ASI applies a command within its 100 ms poll. One still unapplied
+# after this long is not waiting for this game: it is an earlier session's, and
+# carrying it into a new command would replay it over what the ini says now.
+PENDING_MAX_AGE_MS = 5000
+
 _SEND_LOCKS = {}
 _SEND_LOCKS_GUARD = threading.Lock()
 
@@ -525,6 +530,8 @@ def _unconsumed(path, target_dir):
     seq = int(head.group(1))
     applied = _read_status_seq(target_dir)
     if applied is not None and applied == seq:
+        return seq, []
+    if time.time_ns() // 1_000_000 - seq > PENDING_MAX_AGE_MS:
         return seq, []
     return seq, [line.strip() for line in text.splitlines()[1:] if line.strip()]
 

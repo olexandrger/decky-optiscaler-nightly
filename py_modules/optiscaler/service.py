@@ -483,7 +483,9 @@ class OptiScalerService:
                     result = await self._run(
                         installer.enable_fsr4_deck, target_dir, payload_root, build_id, self.log
                     )
-                return {"ok": True, **result}
+                live_outcome = await self._run(
+                    self._push_preset, target_dir, installer.deck_preset_changes(build_id))
+                return {"ok": True, **result, "live": live_outcome}
             except Exception as exc:
                 self.log.exception("FSR 4 setup failed for %s", target_dir)
                 return {"ok": False, "error": str(exc)}
@@ -502,6 +504,40 @@ class OptiScalerService:
         except Exception as exc:
             self.log.exception("FSR 4 setup failed for %s", target_dir)
             return {"ok": False, "error": str(exc)}
+
+    def _push_preset(self, target_dir, preset):
+        """A Steam Deck FSR 4 preset into the running game, the way OptiScaler's menu would.
+
+        OptiScaler's menu changes the FSR 4 model and the FSR version live: it
+        writes them and rebuilds the upscaler on the same backend (live.py's
+        LIVE_FIELDS). The rest of the preset, the backend and Fsr4GpuSupport,
+        OptiScaler reads at startup. So the live part goes in only when the
+        running game already holds the rest; otherwise the whole preset waits
+        for the next launch, rather than one model running under the GPU
+        support another was set up with.
+        """
+        state = live.status(target_dir)
+        if not state.get("ready"):
+            return {"ok": True, "sent": False, "reason": state.get("state"),
+                    "attached": bool(state.get("attached"))}
+        held = running.snapshot(target_dir).get("values", {})
+        entries = [{"section": section, "key": key, "value": value}
+                   for section, values in preset.items() for key, value in values.items()]
+
+        def ini_key(entry):
+            return f"{entry['section']}.{entry['key']}"
+
+        waits = sorted(ini_key(entry) for entry in entries if ini_key(entry) not in live.LIVE_FIELDS
+                       and not running.same(held.get(ini_key(entry)), entry["value"]))
+        if waits:
+            return {"ok": True, "sent": False, "attached": True, "deferred": waits}
+        moved = [entry for entry in entries if ini_key(entry) in live.LIVE_FIELDS
+                 and not running.same(held.get(ini_key(entry)), entry["value"])]
+        if not moved:
+            return {"ok": True, "sent": False, "unchanged": True}
+        outcome = live.apply_changes(target_dir, moved, can_reinit=state.get("can_reinit", False))
+        outcome["attached"] = True
+        return outcome
 
     async def restore_fsr4_build(self, target_dir):
         try:
@@ -1164,6 +1200,11 @@ class OptiScalerService:
         rows = await self._run(running.differences, target_dir)
         table = "\n".join(f"{key}: ini {ini} | loaded {loaded} | now {now}{' (volatile)' if volatile else ''}"
                           for key, ini, loaded, now, volatile in rows)
+        # Which build of this plugin wrote the report: a report from an older
+        # one describes bugs already fixed.
+        header, _, rest = result["report"].partition("\n")
+        version = update.installed_version(self.plugin_dir) or "unknown"
+        result["report"] = f"{header}\nPlugin: Decky OptiScaler Nightly {version}\n{rest}"
         result["report"] += ("\n===== Running settings that differ from the ini "
                              f"({len(rows)}) =====\n{table or '(none)'}\n")
         result["logging"] = (await self._run(live.running_build, target_dir)) is not None \

@@ -254,7 +254,13 @@ export function useConfig(
       if (!result.ok) throw new Error(result.error ?? "Could not set up FSR 4");
       forgetWrites(targetDir);
       await load();
-      setDirty(true);
+      // The model and FSR version go live when the running game already has
+      // the preset's backend and GPU support; anything else waits for a restart.
+      const applied = result.live ?? null;
+      setLive(applied);
+      const fullyLive = Boolean(applied?.unchanged) ||
+        (Boolean(applied?.sent) && (applied?.deferred?.length ?? 0) === 0);
+      if (!fullyLive) setDirty(true);
     } finally {
       setSaving(false);
     }

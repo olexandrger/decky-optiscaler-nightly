@@ -61,7 +61,16 @@ live ones go through `asi/live.cpp`, an ASI OptiScaler loads from the game's
   (the overlay's "Auto").
   `py_modules/optiscaler/live.py` sends them as `set`/`unset`/`reinit` commands through
   `decky_optiscaler_live.cmd`/`.status`; the panel claims an edit took effect
-  only when the ASI is `ready` and the key was sent.
+  only when the ASI is `ready` and the key was sent. A command is for the
+  session it was sent to: the ASI ignores one written before the game started
+  (the file outlives the game, and replaying it overrode the ini OptiScaler had
+  just loaded), and `live._send` carries an unapplied command into the next only
+  while it is seconds old (`PENDING_MAX_AGE_MS`).
+- A Steam Deck FSR 4 preset (`set_fsr4_build`) goes live the way OptiScaler's
+  menu switches the model: its FSR 4 model and FSR version are written and the
+  upscaler rebuilt, but only when the running game already holds the rest of
+  the preset (backend, `Fsr4GpuSupport`, read at startup); otherwise the whole
+  preset waits for the next launch (`OptiScalerService._push_preset`).
 - OptiScaler's own menu (`asi/optiscaler_ref/menu_common.cpp`, synced at the
   dll's commit) is the reference for each live key: the panel does what the
   menu does when it changes that setting, or the key is not live.

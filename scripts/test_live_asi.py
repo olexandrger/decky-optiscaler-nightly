@@ -247,6 +247,14 @@ def run(wine, scratch):
     game = install(scratch, asi)
     prefix = scratch / "prefix"
 
+    # The last command of an earlier session, left in the folder: the panel's
+    # FSR version from before the game was closed. Seen on a Deck: applied at
+    # every launch, it overrode the ini OptiScaler had just loaded.
+    stale_seq = time.time_ns() // 1_000_000 - 60_000
+    (game / live.CMD_FILE).write_text(
+        f"seq {stale_seq}\nset FfxUpscalerIndex i32 {LIVE_VALUES['FSR.UpscalerIndex']}\n"
+        f"set Sharpness f32 {LIVE_VALUES['Sharpness.Sharpness']}\nreinit\n", encoding="utf-8")
+
     print("\nThe ASI inside OptiScaler")
     host = Host(wine, game, prefix, host_exe)
     try:
@@ -270,6 +278,12 @@ def run(wine, scratch):
               facts.get("In-game plugin status") == "ok"
               and facts.get("In-game plugin built for", "ok") == "ok", facts)
         check("OptiScaler's log names the ASI as loaded", live.loaded_by_optiscaler(str(game)) is True)
+        check("a command left from before the game started is not applied",
+              status(game)["seq"] == str(stale_seq)
+              and not any(line.startswith(("set FfxUpscalerIndex", "set Sharpness"))
+                          for line in live.log_tail(str(game), 50))
+              and any("ignored" in line for line in live.log_tail(str(game), 50)),
+              live.log_tail(str(game), 6))
         api = st["api"] or 0
         print(f"  (OptiScaler plugin API {api}, upscaler re-init {'available' if st['can_reinit'] else 'not available'})")
         check("the plugin API offers ReInitUpscalers from version 2", st["can_reinit"] == (api >= 2), api)

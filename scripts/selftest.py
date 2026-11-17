@@ -771,6 +771,16 @@ def check_live_control():
         live.apply_changes(str(target), [{"section": "Menu", "key": "ShowFps", "value": "false"}])
         check("once the game has applied it, the next command holds only its own change",
               (target / live.CMD_FILE).read_text().splitlines()[1:] == ["set ShowFps bool 0"])
+        # An unapplied command from a game that has since quit (seen on a Deck:
+        # the last FSR 3 pick of one session replayed over the next session's
+        # FSR 4 Lite ini) is not carried into a new session's command.
+        consume()
+        old_seq = time.time_ns() // 1_000_000 - live.PENDING_MAX_AGE_MS - 1000
+        (target / live.CMD_FILE).write_text(f"seq {old_seq}\nset FfxUpscalerIndex i32 1\nreinit\n")
+        live.apply_changes(str(target), [{"section": "Menu", "key": "ShowFps", "value": "true"}])
+        check("an unapplied command from an earlier session is not replayed",
+              (target / live.CMD_FILE).read_text().splitlines()[1:] == ["set ShowFps bool 1"],
+              (target / live.CMD_FILE).read_text().splitlines())
         consume()
         with mock.patch.object(live.time, "time_ns", return_value=5_000_000_000_000):
             a = live._send(str(target), ["set Sharpness f32 0.1"])
@@ -1920,6 +1930,9 @@ def check_debug_report():
         check("the report carries OptiScaler's frame-generation lines", "XeFG context created" in fg)
         check("Streamline's own plugin chatter stays out of the plugin lines",
               "Looking for plugins in S:/sl" not in text.split("plugin lines")[-1].split("=====")[1])
+        version = json.loads((ROOT / "package.json").read_text())["version"]
+        check("the report names the plugin build that wrote it",
+              text.splitlines()[1:2] == [f"Plugin: Decky OptiScaler Nightly {version}"], text.splitlines()[:3])
         for needle in (str(target), "built_for e7e3872d", "OptiScaler v10.0.0-dev (1e568bb3)",
                        "LoadAsiPlugins=false", "seq 9\nset Menu.ShowFps", live.ASI_NAME,
                        "[ bad] In-game plugin built for"):

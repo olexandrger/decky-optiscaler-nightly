@@ -100,6 +100,10 @@ static wchar_t g_loadedPath[MAX_PATH];
 static char g_status[32] = "loaded";
 static char g_error[256] = "";
 static long long g_seq = -1;
+// When this game started, in the panel's clock (Unix milliseconds; Wine's
+// system time is the host's). A command older than that is one an earlier
+// session left behind.
+static long long g_startMs = 0;
 static int g_applied = 0;
 static int g_reinit = -1;  // -1 never asked, 0 refused, 1 accepted
 
@@ -635,13 +639,31 @@ static int ApplyCommands(char* text, long long* seqOut) {
 }
 
 /** Read the command file if it carries a sequence number not seen yet. */
+static long long UnixMillisNow() {
+    FILETIME ft;
+    GetSystemTimeAsFileTime(&ft);
+    ULARGE_INTEGER t;
+    t.LowPart = ft.dwLowDateTime;
+    t.HighPart = ft.dwHighDateTime;
+    return (long long) ((t.QuadPart - 116444736000000000ULL) / 10000ULL);
+}
+
 static void PollCommands() {
     char* text = ReadWholeFile(g_cmdPath);
     if (!text) return;
     long long seq = -1;
     // The seq line comes first; peek at it before applying anything.
     sscanf(text, "seq %lld", &seq);
-    if (seq >= 0 && seq != g_seq) {
+    if (seq >= 0 && seq != g_seq && seq < g_startMs) {
+        // Written before this game started: the last command of an earlier
+        // session. Applying it would override the ini OptiScaler just loaded
+        // (a model or FG state picked since, for the next launch). The panel
+        // only sends to a ready plugin, so nothing meant for this session can
+        // be older than its start.
+        g_seq = seq;
+        LogLine("command %lld ignored: written before this game started", seq);
+        WriteStatus();
+    } else if (seq >= 0 && seq != g_seq) {
         g_applied = ApplyCommands(text, &seq);
         g_seq = seq;
         LogLine("command %lld: %d applied%s%s", seq, g_applied, g_error[0] ? ", " : "", g_error);
@@ -736,6 +758,7 @@ extern "C" __declspec(dllexport) void InitializeASI() {}
 BOOL WINAPI DllMain(HINSTANCE instance, DWORD reason, LPVOID) {
     if (reason == DLL_PROCESS_ATTACH) {
         g_self = instance;
+        g_startMs = UnixMillisNow();
         DisableThreadLibraryCalls(instance);
         HANDLE thread = CreateThread(NULL, 0, Worker, NULL, 0, NULL);
         if (thread) CloseHandle(thread);
