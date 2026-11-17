@@ -330,9 +330,16 @@ def main():
     try:
         run(wine, scratch)
     finally:
-        wineserver = shutil.which("wineserver") or str(Path(wine).with_name("wineserver"))
-        subprocess.run([wineserver, "-k"], env=dict(os.environ, WINEPREFIX=str(scratch / "prefix")),
-                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=False)
+        # Stop Wine's server for the test prefix. Distributions keep it in
+        # different places (Ubuntu's wine package: /usr/lib/wine/), and a
+        # cleanup that cannot find it must not fail the checks above.
+        wineserver = next((str(c) for c in (
+            shutil.which("wineserver"), Path(wine).with_name("wineserver"),
+            "/usr/lib/wine/wineserver", "/usr/lib/wine/wineserver64",
+        ) if c and Path(c).is_file()), None)
+        if wineserver:
+            subprocess.run([wineserver, "-k"], env=dict(os.environ, WINEPREFIX=str(scratch / "prefix")),
+                           stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=False)
         shutil.rmtree(scratch, ignore_errors=True)
     print(f"\n{len(PASSED)} passed, {len(FAILED)} failed")
     if FAILED:
