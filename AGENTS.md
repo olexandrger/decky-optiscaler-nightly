@@ -171,6 +171,18 @@ None of these run OptiScaler in a game. Whether it loads under Proton, which FSR
 4 model it creates, and whether the menu key reaches the game can only be
 checked on a Deck: `OptiScaler.log` in the game folder is the source of truth.
 
+## Automatic fixes
+
+A daily Claude scheduled task (21:23 Vilnius, after the nightly usually runs)
+checks the latest "Bundle OptiScaler nightly" and "Build" runs. When one failed
+for a non-transient reason, it reproduces the failure against the nightly that
+run used, fixes the root cause under the rules of this file, runs every check
+above, pushes the fix to `main` as a commit starting `autofix: `, and reverts it
+if its Build run fails. It never force-pushes or touches tags and releases,
+makes at most one autofix a day, and stops with a report instead of pushing when
+an autofix did not help or the fix needs a decision. Transient failures (GitHub
+5xx, DNS, apt mirrors) only get a report.
+
 ## Releases
 
 `nightly.yml` publishes when the newest nightly has no release yet (no
