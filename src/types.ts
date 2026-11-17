@@ -444,6 +444,10 @@ export interface LiveStatus {
   attached: boolean;
   /** Attached *and* finished finding what it needs. */
   ready?: boolean;
+  /** The running OptiScaler can re-create its upscaler (plugin API 2+): the FSR version is live. */
+  can_reinit?: boolean;
+  /** OptiScaler's plugin API version, 0 when it never called OptiPluginInit. */
+  api?: number | null;
   state: string;
   error: string | null;
   seq: string | null;

@@ -93,8 +93,21 @@ function Tile({
  * there and says that instead, because a pair of counters that silently becomes
  * one counter reads as the feature not being there.
  */
+/**
+ * Whether the in-game plugin reports any frame data at all. The plugin-API ASI
+ * does not: frame rates, the frame-generation state and the active upscaler
+ * lived in OptiScaler's State, which it no longer reads, and the plugin API
+ * offers none of them. Nothing is better than a row of dashes; Steam's
+ * performance overlay and OptiScaler's own FPS overlay show the frame rate.
+ */
+export function hasLiveData(live: LiveStatus | null | undefined): boolean {
+  if (!live?.attached) return false;
+  return (typeof live.fps === "number" && live.fps > 0) || typeof live.fg_enabled === "boolean"
+    || typeof live.upscaler === "string";
+}
+
 export function LiveTiles({ live, fgSub }: { live: LiveStatus | null; fgSub?: string }) {
-  if (!live?.attached) return null;
+  if (!live || !hasLiveData(live)) return null;
   const rate = (value: number | null | undefined) =>
     typeof value === "number" && value > 0 ? value.toFixed(0) : "—";
   const fg = typeof live.fg_enabled === "boolean" ? (live.fg_enabled ? "ON" : "OFF") : "—";
@@ -140,7 +153,7 @@ export function LiveTiles({ live, fgSub }: { live: LiveStatus | null; fgSub?: st
 }
 
 export function LiveStats({ live }: { live: LiveStatus | null }) {
-  if (!live?.attached) return null;
+  if (!live || !hasLiveData(live)) return null;
 
   const upscalerName = liveUpscalerLabel(live) ?? "unknown";
   // A status file written by an older build of the in-game plugin has none of

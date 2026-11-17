@@ -1,6 +1,7 @@
 import { ButtonItem, Field, PanelSection, PanelSectionRow } from "@decky/ui";
 import { useState } from "react";
 import { getLiveLog, installLive } from "../api";
+import { hasLiveData } from "./LiveStats";
 import { liveFrameRates } from "../config/basic";
 import type { LiveStatus } from "../types";
 import { KeyValue, Mono, Notice } from "./Common";
@@ -18,20 +19,6 @@ interface Props {
  * .asi that OptiScaler loads into the game, letting frame generation and the
  * upscaler change while playing instead of on the next launch.
  */
-/**
- * Why the upscaler cannot be switched, when everything else is working.
- *
- * The two causes need different words: OptiScaler registers a backend only
- * once the game has created an upscaler, which is a matter of waiting, whereas
- * a map this plugin could not locate at all is a build mismatch and waiting
- * will not fix it.
- */
-function upscalerBlockedReason(status: LiveStatus) {
-  if (status.backend_entries === 0) {
-    return "Upscaler switching turns on once the game has drawn its first upscaled frame.";
-  }
-  return "Upscaler switching is unavailable: OptiScaler's backend list could not be read.";
-}
 
 /**
  * What the in-game plugin is actually measuring, when it is attached.
@@ -44,7 +31,7 @@ function upscalerBlockedReason(status: LiveStatus) {
  * the other is a generator that is not running.
  */
 function Measurements({ status }: Readonly<{ status: LiveStatus }>) {
-  if (!status.attached) return null;
+  if (!hasLiveData(status)) return null;
   const ms = (value: number | null | undefined) =>
     typeof value === "number" && value > 0 ? `${value.toFixed(2)} ms` : "—";
   const fps = (value: number | null | undefined) =>
@@ -125,11 +112,18 @@ export function LivePanel({ targetDir, status, onChanged }: Props) {
 
   const body = chain ? (
     chain
-  ) : status.attached ? (
+  ) : status.ready ? (
     <Notice tone="success" title="Connected to the running game">
-      Frame generation
-      {status.can_switch_upscaler ? " and the upscaler apply" : " applies"} immediately.
-      {status.can_switch_upscaler ? "" : ` ${upscalerBlockedReason(status)}`}
+      Frame generation on/off, HUD fix, debug view, depth copy, the XeFG multiplier, sharpness,
+      the FPS overlay{status.can_reinit ? " and the FSR version" : ""} apply immediately.
+      Switching the upscaler or the frame generator is done in OptiScaler&apos;s own overlay
+      (<b>OptiScaler menu</b>); here it applies at the next launch.
+    </Notice>
+  ) : status.attached ? (
+    <Notice tone="info" title="Loaded, looking for OptiScaler's settings">
+      The in-game plugin is running and checking OptiScaler&apos;s settings in memory. This takes
+      a second or two; if it stays here, the game is running another OptiScaler build than this
+      plugin was built for.
     </Notice>
   ) : status.state === "failed" ? (
     <Notice tone="warn" title="Loaded, but could not attach">
