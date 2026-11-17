@@ -3187,7 +3187,7 @@ def check_upstream_review_file():
     malformed = [item for item in items if not re.match(r"[\w-]+( [\w-]+)? \([0-9a-f]{7,40}\): \S", item)]
     check("every open item names its finding and upstream commit", not malformed, malformed)
     done = re.findall(r"^- \[x\] (.+)$", text, re.M)
-    unexplained = [item for item in done if not re.search(r"Ported in [0-9a-f]{7,40}|Already covered|Not applicable", item)]
+    unexplained = [item for item in done if not re.search(r"Ported in ([0-9a-f]{7,40}|this commit)|Already covered|Not applicable", item)]
     check("every closed item says how it was closed", not unexplained, unexplained)
 
 

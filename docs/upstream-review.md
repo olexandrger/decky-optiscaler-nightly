@@ -21,7 +21,8 @@ Open items, oldest first. One port a day at most (the daily task, AGENTS.md
 An item is checked against the fork's code before anything is written: many
 were found in code the fork has since changed. One that needs a decision says
 so, and once reported says "Reported <date>, awaiting a decision"; the task
-skips it until the line changes.
+skips it until the line changes. A port ticks its item in the port's own
+commit as "Ported in this commit" (`git log -S "<id> ("` finds it).
 
 - [ ] UI-02 (886d5f0): switching games while a page is open keeps the previous game's detail and writable controls, so an edit can go to the wrong game folder; async loads have no target check, and an older reply can overwrite a newer one.
 - [ ] PD-02 (886d5f0): setup writes Steam's launch options as only this plugin's override and the wiki's flags, dropping the player's own wrappers and arguments.
