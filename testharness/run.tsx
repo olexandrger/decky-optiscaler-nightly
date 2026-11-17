@@ -1004,6 +1004,44 @@ async function render(name: string, element: React.ReactElement) {
   // it used to leave that behind, and when it did clear it, it cleared whatever
   // else the game had too. Both halves are decided from what was recorded at
   // install time, so the rules are worth asserting on their own.
+  console.log("\n=== going back to the OptiScaler from before the last update ===");
+  {
+    const { InstallPanel } = await import("../src/components/InstallPanel");
+    const withPrevious = { ...detail, install: { ...detail.install,
+      previous: { version: "10.0.0-pre1-20261116", replaced_by: "10.0.0-pre1-20261117", taken_at: 1, files: ["dxgi.dll"] } } };
+    let reloaded = 0;
+    fixtures.restore_previous_install = { ok: true, version: "10.0.0-pre1-20261116" };
+    const panel = await render("InstallPanel (restore point)",
+      <InstallPanel detail={withPrevious as any} status={fixtures.get_status} appid="1091500" live={null}
+        onChanged={() => { reloaded += 1; }} />);
+    const back = Array.from(panel.host.querySelectorAll('[data-mock="ButtonItem"]'))
+      .find((node) => (node.textContent ?? "").includes("Go back to OptiScaler")) as HTMLElement | undefined;
+    console.log(`  the version before the update is shown: ${
+      (panel.host.textContent ?? "").includes("Before the last update10.0.0-pre1-20261116")}`);
+    console.log(`  going back is offered, naming that version: ${
+      Boolean(back) && (back!.textContent ?? "").includes("Go back to OptiScaler 10.0.0-pre1-20261116")}`);
+    console.log(`  and says the ini stays: ${(back?.textContent ?? "").includes("OptiScaler.ini stays as it is")}`);
+    const before = calls.length;
+    await act(async () => { back?.click(); });
+    await settle();
+    console.log(`  pressing it asks the backend and reloads: ${
+      calls.slice(before).includes("restore_previous_install") && reloaded === 1}`);
+    await act(async () => panel.root.unmount());
+    const running = await render("InstallPanel (restore point, game running)",
+      <InstallPanel detail={withPrevious as any} status={fixtures.get_status} appid="1091500"
+        live={{ ...fixtures.get_live_status, attached: true } as any} onChanged={() => {}} />);
+    const blocked = Array.from(running.host.querySelectorAll('[data-mock="ButtonItem"]'))
+      .find((node) => (node.textContent ?? "").includes("Go back to OptiScaler"));
+    console.log(`  over a running game it waits for the game to close: ${
+      blocked?.getAttribute("data-disabled") === "true" && (blocked.textContent ?? "").includes("Close the game first")}`);
+    await act(async () => running.root.unmount());
+    const none = await render("InstallPanel (no restore point)",
+      <InstallPanel detail={detail as any} status={fixtures.get_status} appid="1091500" live={null} onChanged={() => {}} />);
+    console.log(`  without a restore point there is nothing to go back to: ${
+      !(none.host.textContent ?? "").includes("Go back to OptiScaler")}`);
+    await act(async () => none.root.unmount());
+  }
+
   console.log("\n=== launch options on removal ===");
   {
     const lo = await import("../src/launchOptions");

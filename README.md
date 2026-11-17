@@ -83,7 +83,9 @@ a separate Decky plugin from the original (see below for installing both).
   The upstream sections below still describe the old readout.
 - A game set up by an earlier build shows **Update OptiScaler in this game**,
   which reapplies the bundled OptiScaler with the game's choices and its
-  OptiScaler.ini kept.
+  OptiScaler.ini kept. The update keeps the previous OptiScaler's changed
+  files: **Go back to OptiScaler <version>** (Manual setup → Installation, game
+  closed) undoes it for that game if the new nightly misbehaves.
 - FSR presets write 10.0's keys (`ffx` backend, `Fsr4GpuSupport`, `Fsr4Model`).
 - On the Steam Deck, **FSR 4 Lite** and **FSR 4 RDNA2** replace the community
   4.1.1b download: both are AMD models inside the bundled FidelityFX 4.1.2.

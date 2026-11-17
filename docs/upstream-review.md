@@ -43,14 +43,14 @@ commit as "Ported in this commit" (`git log -S "<id> ("` finds it).
 - [ ] PD-06 (886d5f0): automatic mode refreshes the wiki plan but does not write the new settings to the installed game.
 - [ ] TS-04 (886d5f0): the automatic-install orchestration has no integration test tying "done" to the written config.
 - [ ] TS-01b (886d5f0): all-options.tsx computes ungrouped sections, empty enums and inverted ranges but exits on React errors only.
-- [ ] IDEA restore-point (886d5f0): a restore point of the game's files and ini before an upgrade, with a rollback on the game's page (upstream restorepoint.py); candidate for "Update OptiScaler in this game". A feature: needs a decision. Reported 2026-11-17, awaiting a decision.
-- [ ] IDEA game-profiles (886d5f0): per-game requirements surfaced in setup (upstream gameprofiles.py: Phantom Blade Zero's executable folder and 100% output scale). A feature: needs a decision. Reported 2026-11-17, awaiting a decision.
+- [ ] IDEA running-exe-folder (886d5f0): install next to the executable the game actually runs (the process OptiScaler's log names, or the running game's), not the scored guess that favours Unreal's Binaries/Win64; the general form of upstream's Phantom Blade Zero folder rule. A feature: needs a decision. Reported 2026-11-18, awaiting a decision.
 
 ## Done
 
 - [x] CD-03 (886d5f0): live commands lost between two pushes. Ported in c8515e3.
 - [x] CD-07 (886d5f0): IPv4 fallback patching the resolver for every thread. Ported in 1f6c3c1.
 - [x] PD-07 (886d5f0): removing our override deleted other DLLs in the same WINEDLLOVERRIDES. Ported in 6807916.
+- [x] IDEA restore-point (886d5f0): keep the previous OptiScaler on update, with "Go back to OptiScaler <version>" on the game's page. Ported in this commit, the fork's way: on top of the install journal, one step back, only the files the update changed, ini untouched (not upstream's restorepoint.py).
 - [x] CD-01 (886d5f0): half installs that cannot be undone. Already covered: transactional installs (installer `_Journal`).
 - [x] TS-01 (886d5f0): run.tsx printing false without failing. Already covered: CI fails on a line ending ": false".
 
@@ -60,4 +60,5 @@ commit as "Ported in this commit" (`git log -S "<id> ("` finds it).
 - 886d5f0, 2369d02: the community FSR 4.1.1b / 4.1.2 Lite Exact downloads (the fork uses the bundled upscaler's Lite / RDNA2 models).
 - 886d5f0, 2369d02: archives committed to `bin/`.
 - 405deac, 6a24359: upstream's own repository metadata, docs and release notes.
+- IDEA game-profiles (886d5f0): upstream's hand-written per-game table (Phantom Blade Zero's folder, notes and 0.9.5 requirement). A table per game goes stale; the fork shows the wiki's own notes, ships 10.x, and the folder problem is queued in its general form (running-exe-folder). Decided 2026-11-18.
 - CD-09, CD-10 (886d5f0): security findings whose details upstream keeps private; nothing to port from.

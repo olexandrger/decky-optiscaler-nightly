@@ -160,6 +160,8 @@ def detect(target_dir):
         # REF", and re-installing over somebody's own working REF would be a
         # worse answer than leaving it alone.
         "reframework": {"installed": False, "revision": None, "managed": False},
+        # The OptiScaler this game had before its last update, to go back to.
+        "previous": None,
     }
     if not target.is_dir():
         return result
@@ -205,6 +207,7 @@ def detect(target_dir):
             result["reframework"]["revision"] = manifest.get("reframework_revision")
             result["extra_proxies"] = [p for p in present if p != name
                                        and _looks_like_optiscaler(target / p)]
+            result["previous"] = read_previous(target)
             return result
 
     # Installed by another plugin, by hand or by another tool.
@@ -338,14 +341,14 @@ def import_fsr4_files(target_dir, source_dir, logger=None):
     return {"path": str(target), "imported": names, "source": str(source)}
 
 
-def require_stopped_install(target_dir):
+def require_stopped_install(target_dir, action="changing the FSR 4 build"):
     """Require a managed install and reject DLL replacement while it is in use."""
     target = Path(target_dir).resolve()
     manifest = read_manifest(target)
     if not manifest or manifest.get("plugin") != PLUGIN_ID:
         raise ValueError("Install OptiScaler with this plugin first.")
     if live.status(target).get("attached"):
-        raise RuntimeError("Close the game before changing the FSR 4 build.")
+        raise RuntimeError(f"Close the game before {action}.")
     # A game can be running without our ASI. Wine maps the DLL/executable into
     # its process; check mappings too, including paths containing spaces.
     for maps in Path("/proc").glob("[0-9]*/maps"):
@@ -353,7 +356,7 @@ def require_stopped_install(target_dir):
             for line in maps.read_text(errors="replace").splitlines():
                 fields = line.split(maxsplit=5)
                 if len(fields) == 6 and fields[5].startswith(str(target) + "/"):
-                    raise RuntimeError("Close the game before changing the FSR 4 build.")
+                    raise RuntimeError(f"Close the game before {action}.")
         except (FileNotFoundError, PermissionError, ProcessLookupError):
             continue
     return manifest
@@ -704,12 +707,16 @@ class _Journal:
         (shutil.copytree if original.is_dir() else shutil.copy2)(original, path)
         return True
 
-    def commit(self):
+    def commit(self, keep=None):
         # Removing the journal is the commit point: from here on a crash leaves
         # staging without a journal, which recover_interrupted only cleans up.
         # Deleting staging first could leave a journal pointing at saved files
         # that are already gone, and "undoing" that would lose the originals.
         (self.dir / _JOURNAL).unlink()
+        # What the install replaced is still in staging: `keep` may move some of
+        # it out (the previous OptiScaler, for going back) before it goes.
+        if keep is not None:
+            keep(self.dir, self.ops)
         shutil.rmtree(self.dir, ignore_errors=True)
 
     def rollback(self):
@@ -743,6 +750,8 @@ def recover_interrupted(target_dir, logger=None):
     Returns True when there was one to roll back.
     """
     target = Path(target_dir)
+    # A restore point that was being put together when the plugin stopped.
+    shutil.rmtree(target / (PREVIOUS_DIR + ".new"), ignore_errors=True)
     staging = target / INSTALL_STAGING
     if not staging.is_dir():
         return False
@@ -792,6 +801,7 @@ def install(target_dir, payload_root, filename=DEFAULT_PROXY, preserve_ini=True,
 
     recover_interrupted(target, logger)
     require_not_foreign(target)
+    old_manifest = read_manifest(target) or {}
     journal = _Journal(target)
     try:
         result = _install(target, payload, filename, preserve_ini, logger, live_asi,
@@ -799,9 +809,171 @@ def install(target_dir, payload_root, filename=DEFAULT_PROXY, preserve_ini=True,
     except BaseException:
         journal.rollback()
         raise
-    journal.commit()
+
+    def keep(staging, ops):
+        try:
+            _keep_previous(target, staging, ops, old_manifest, logger)
+        except Exception:  # a convenience: the install itself has committed
+            shutil.rmtree(target / (PREVIOUS_DIR + ".new"), ignore_errors=True)
+            if logger:
+                logger.exception("could not keep the previous OptiScaler in %s", target)
+
+    journal.commit(keep=keep)
     result["fsr4"] = fsr4_status(target)
+    result["previous"] = read_previous(target)
     return result
+
+
+#: The OptiScaler this game had before its last update, for going back to it.
+#: One step: each update that changes anything replaces it, uninstall removes it.
+PREVIOUS_DIR = ".decky-optiscaler-nightly-previous"
+_PREVIOUS_RECORD = "previous.json"
+
+
+def _same_file(a, b):
+    a, b = Path(a), Path(b)
+    if a.is_dir() or b.is_dir():
+        if not (a.is_dir() and b.is_dir()):
+            return False
+        left = sorted(p.relative_to(a).as_posix() for p in a.rglob("*"))
+        right = sorted(p.relative_to(b).as_posix() for p in b.rglob("*"))
+        return left == right and all(_same_file(a / name, b / name) for name in left
+                                     if (a / name).is_file())
+    if not (a.is_file() and b.is_file()) or a.stat().st_size != b.stat().st_size:
+        return False
+    with a.open("rb") as left, b.open("rb") as right:
+        while True:
+            chunk = left.read(1 << 20)
+            if chunk != right.read(1 << 20):
+                return False
+            if not chunk:
+                return True
+
+
+def _keep_previous(target, staging, ops, old_manifest, logger=None):
+    """After an update: keep the previous OptiScaler's files the update replaced.
+
+    Only this plugin's own earlier install counts (its manifest), never the
+    ini (it is the user's settings, kept by the update anyway) and never a
+    file the update left byte-identical: most of a nightly's DLLs do not change
+    from one to the next, and a whole copy is about 300 MB. An update that
+    changed nothing keeps the restore point it already had.
+    """
+    if old_manifest.get("plugin") != PLUGIN_ID:
+        return
+    new_manifest = read_manifest(target) or {}
+    first = {}
+    for op in ops:
+        if op["op"] == "restore":
+            first.setdefault(Path(op["path"]).as_posix(), op["saved"])
+    old_names = [name for name in (old_manifest.get("files") or []) + (old_manifest.get("dirs") or [])
+                 if name != INI_NAME]
+    new_names = set((new_manifest.get("files") or []) + (new_manifest.get("dirs") or []))
+    kept = {name: first[name] for name in old_names
+            if name in first and not _same_file(staging / first[name], target / name)}
+    added = sorted(name for name in new_names - set(old_names) if name != INI_NAME)
+    if not kept and not added:
+        return
+    building = target / (PREVIOUS_DIR + ".new")
+    shutil.rmtree(building, ignore_errors=True)
+    (building / "files").mkdir(parents=True)
+    for name, saved in kept.items():
+        destination = building / "files" / name
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        shutil.move(str(staging / saved), str(destination))
+    record = {
+        "version": old_manifest.get("optiscaler_version"),
+        "replaced_by": new_manifest.get("optiscaler_version"),
+        "taken_at": time.time(),
+        "files": sorted(kept),
+        "manifest": old_manifest,
+    }
+    (building / _PREVIOUS_RECORD).write_text(json.dumps(record, indent=2), encoding="utf-8")
+    shutil.rmtree(target / PREVIOUS_DIR, ignore_errors=True)
+    os.replace(building, target / PREVIOUS_DIR)
+    if logger:
+        logger.info("kept OptiScaler %s (%d changed files) to go back to", record["version"], len(kept))
+
+
+def read_previous(target_dir):
+    """{version, replaced_by, taken_at, files} of the restore point, or None.
+
+    Only one that belongs to the install in the folder now: a later update or
+    a reinstall under another version replaced or invalidated it.
+    """
+    target = Path(target_dir)
+    try:
+        record = json.loads((target / PREVIOUS_DIR / _PREVIOUS_RECORD).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    manifest = read_manifest(target) or {}
+    if manifest.get("plugin") != PLUGIN_ID or manifest.get("optiscaler_version") != record.get("replaced_by"):
+        return None
+    return {key: record.get(key) for key in ("version", "replaced_by", "taken_at", "files")}
+
+
+def restore_previous(target_dir, logger=None):
+    """Put back the OptiScaler this game had before its last update.
+
+    The game must be closed. Goes through the same journal as an install, so a
+    failure part way leaves the folder as it was. OptiScaler.ini is not touched:
+    it is the user's settings, and the update kept it. The restore point is
+    used up; "Update OptiScaler in this game" takes the bundled one again.
+    """
+    target = Path(target_dir).resolve()
+    recover_interrupted(target, logger)
+    require_not_foreign(target)
+    manifest = require_stopped_install(target, "going back to the previous OptiScaler")
+    try:
+        record = json.loads((target / PREVIOUS_DIR / _PREVIOUS_RECORD).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        raise ValueError("There is no earlier OptiScaler to go back to in this game.")
+    if read_previous(target) is None:
+        raise ValueError("OptiScaler in this game has changed since its last update; "
+                         "there is nothing to go back to.")
+    old = record["manifest"]
+    kept = target / PREVIOUS_DIR / "files"
+    old_names = set((old.get("files") or []) + (old.get("dirs") or []))
+    old_backups = dict(old.get("backups") or {})
+    backups = dict(manifest.get("backups") or {})
+    journal = _Journal(target)
+    try:
+        # What the update added: ours (the current manifest says so), so it
+        # goes, and a game file it had set aside comes back.
+        for name in (manifest.get("files") or []) + (manifest.get("dirs") or []):
+            if name == INI_NAME or name in old_names:
+                continue
+            path = target / name
+            if path.exists() or path.is_symlink():
+                journal.remove(path)
+            if name in backups and name not in old_backups:
+                backups.pop(name)
+                journal.unstash(name)
+        # What it replaced comes back. A file the update retired had the
+        # game's own original put back in its place: that goes aside again.
+        for name in record.get("files") or []:
+            source = kept / name
+            destination = target / name
+            if name in old_backups and name not in backups and destination.exists():
+                backups[name] = journal.stash(name)
+            journal.ensure_dir(destination.parent)
+            if source.is_dir():
+                journal.prepare(destination)
+                shutil.copytree(source, destination)
+            else:
+                journal.write_file(source, destination)
+        restored = dict(old)
+        restored["backups"] = backups
+        journal.write_text(target / MANIFEST_NAME, json.dumps(restored, indent=2))
+    except BaseException:
+        journal.rollback()
+        raise
+    journal.commit()
+    shutil.rmtree(target / PREVIOUS_DIR, ignore_errors=True)
+    if logger:
+        logger.info("went back to OptiScaler %s in %s", old.get("optiscaler_version"), target)
+    return {"path": str(target), "version": old.get("optiscaler_version"),
+            "restored": record.get("files") or []}
 
 
 def _install(target, payload, filename, preserve_ini, logger, live_asi, optipatcher,
@@ -1043,6 +1215,10 @@ def uninstall(target_dir, remove_ini=True, logger=None):
     manifest_path = target / MANIFEST_NAME
     if manifest_path.is_file():
         manifest_path.unlink()
+    for name in (PREVIOUS_DIR, PREVIOUS_DIR + ".new"):
+        if (target / name).is_dir():
+            shutil.rmtree(target / name, ignore_errors=True)
+            removed.append(name + "/")
 
     if logger:
         logger.info(

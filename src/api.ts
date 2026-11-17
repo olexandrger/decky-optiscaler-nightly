@@ -140,6 +140,10 @@ export const install = callable<
 >("install");
 /** Reapply the bundled OptiScaler with the game's existing choices (ini kept). */
 export const updateInstall = callable<[targetDir: string], ActionResult>("update_install");
+/** Put back the OptiScaler this game had before its last update (game closed). */
+export const restorePreviousInstall = callable<[targetDir: string], ActionResult & { version?: string }>(
+  "restore_previous_install"
+);
 export const uninstall = callable<[targetDir: string, removeIni: boolean], ActionResult>(
   "uninstall"
 );

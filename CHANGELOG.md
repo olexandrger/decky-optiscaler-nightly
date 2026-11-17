@@ -20,6 +20,13 @@ Newest first. Each release ships `Decky OptiScaler.zip` for Decky Loader's
   menu) never reached the game and flipped back; turning FG on rewrote the FG
   pair from an output OptiScaler had reset at runtime; the upscaler read as
   plain FFX when the game held another FSR 4 model than the ini.
+- **Go back to OptiScaler <version>** (game page → Manual setup →
+  Installation, game closed): an update now keeps the previous OptiScaler's
+  files it changed, so a nightly that breaks one game can be undone there
+  without downgrading the plugin. One step back, ini untouched, only changed
+  files kept (most DLLs do not change between nightlies); uninstall removes it.
+  The idea is upstream's (restore points); the implementation is the fork's,
+  on the install journal.
 - Fixed, from two Deck debug reports: the in-game plugin applied the last
   command of the previous session at every launch, overriding the ini
   OptiScaler had just loaded (an FSR 4 Lite pick came back as the earlier

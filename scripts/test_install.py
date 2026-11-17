@@ -219,6 +219,160 @@ class InstallSafetyTests(unittest.TestCase):
 
 
 
+class PreviousInstallTests(unittest.TestCase):
+    """Going back to the OptiScaler a game had before its last update.
+
+    Nightlies regress, one game at a time: the update keeps the previous
+    OptiScaler's files it replaced (only those that changed) and "Go back"
+    puts them back through the same journal, so it is as safe as an install.
+    """
+
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
+        self.root = Path(self.temp.name)
+        self.payload = make_payload(self.root)
+        self.game = self.root / "game"
+        self.game.mkdir()
+        (self.game / "Game.exe").write_bytes(b"MZ game")
+        (self.game / "dxgi.dll").write_bytes(b"the game's own dxgi")
+        (self.game / "libxess.dll").write_bytes(b"the game's own XeSS")
+        self.original = snapshot(self.game)
+
+    def install(self, version):
+        with mock.patch.object(installer, "OPTISCALER_VERSION", version):
+            return installer.install(self.game, self.payload, "dxgi.dll", logger=LOG)
+
+    def newer_nightly(self):
+        (self.payload / "OptiScaler.dll").write_bytes(b"OptiScaler B" + b"\0" * (5 * 1024 * 1024))
+        (self.payload / "libxess.dll").write_bytes(b"XeSS B")
+
+    def updated(self):
+        """Nightly A installed, then nightly B over it; returns the folder under A."""
+        self.install("A")
+        under_a = snapshot(self.game)
+        self.newer_nightly()
+        self.install("B")
+        return under_a
+
+    def without(self, folder_snapshot, *prefixes):
+        return {k: v for k, v in folder_snapshot.items() if not k.startswith(prefixes)}
+
+    def test_a_first_install_has_nothing_to_go_back_to(self):
+        self.install("A")
+        self.assertIsNone(installer.read_previous(self.game))
+        self.assertIsNone(installer.detect(self.game)["previous"])
+        with self.assertRaises(ValueError):
+            installer.restore_previous(self.game, LOG)
+
+    def test_an_update_keeps_only_the_files_it_changed(self):
+        self.updated()
+        previous = installer.read_previous(self.game)
+        self.assertEqual((previous["version"], previous["replaced_by"]), ("A", "B"))
+        self.assertEqual(previous["files"], ["dxgi.dll", "libxess.dll"])
+        kept = self.game / installer.PREVIOUS_DIR / "files"
+        self.assertEqual(sorted(p.name for p in kept.iterdir()), ["dxgi.dll", "libxess.dll"])
+        self.assertEqual((kept / "libxess.dll").read_bytes(), b"payload libxess.dll")
+        self.assertEqual(installer.detect(self.game)["previous"]["version"], "A")
+
+    def test_going_back_restores_the_previous_install_byte_for_byte(self):
+        under_a = self.updated()
+        # Settings changed since the update are the user's: they stay.
+        (self.game / INI_NAME).write_text("[Menu]\nShortcutKey=0x24\n", encoding="utf-8")
+        result = installer.restore_previous(self.game, LOG)
+        self.assertEqual(result["version"], "A")
+        self.assertEqual(self.without(snapshot(self.game), INI_NAME), self.without(under_a, INI_NAME))
+        self.assertEqual((self.game / INI_NAME).read_text(), "[Menu]\nShortcutKey=0x24\n")
+        self.assertIsNone(installer.read_previous(self.game))
+        self.assertEqual(installer.detect(self.game)["version"], "A")
+        installer.uninstall(self.game, logger=LOG)
+        self.assertEqual(snapshot(self.game), self.original)
+
+    def test_a_failure_at_any_write_while_going_back_leaves_the_folder_as_it_was(self):
+        self.updated()
+        before = snapshot(self.game)
+        clone = self.root / "count"
+        shutil.copytree(self.game, clone)
+        with FailingCopies(fail_at=10**9) as counter:
+            installer.restore_previous(clone, LOG)
+        shutil.rmtree(clone)
+        self.assertGreater(counter.count, 1)
+        for fail_at in range(1, counter.count + 1):
+            with self.subTest(fail_at=fail_at):
+                with FailingCopies(fail_at), self.assertRaises(OSError):
+                    installer.restore_previous(self.game, LOG)
+                self.assertEqual(snapshot(self.game), before)
+
+    def test_an_update_that_changes_nothing_keeps_the_restore_point(self):
+        self.updated()
+        self.install("B")
+        self.assertEqual(installer.read_previous(self.game)["version"], "A")
+
+    def test_the_next_update_replaces_it(self):
+        self.updated()
+        (self.payload / "libxess.dll").write_bytes(b"XeSS C")
+        self.install("C")
+        previous = installer.read_previous(self.game)
+        self.assertEqual((previous["version"], previous["replaced_by"], previous["files"]),
+                         ("B", "C", ["libxess.dll"]))
+
+    def test_a_file_the_update_added_goes_and_the_game_file_it_displaced_comes_back(self):
+        added = PAYLOAD_FILES[0]
+        (self.game / added).write_bytes(b"the game's own copy")
+        self.original = snapshot(self.game)
+        shipped = (self.payload / added).read_bytes()
+        (self.payload / added).unlink()
+        under_a = self.install("A") and snapshot(self.game)
+        (self.payload / added).write_bytes(shipped)
+        self.install("B")
+        self.assertEqual((self.game / added).read_bytes(), shipped)
+        installer.restore_previous(self.game, LOG)
+        self.assertEqual((self.game / added).read_bytes(), b"the game's own copy")
+        self.assertEqual(snapshot(self.game), under_a)
+        installer.uninstall(self.game, logger=LOG)
+        self.assertEqual(snapshot(self.game), self.original)
+
+    def test_a_file_the_update_retired_comes_back_and_the_game_file_goes_aside_again(self):
+        retired = "nvngx-retired.dll"
+        (self.game / retired).write_bytes(b"the game's own retired-name dll")
+        self.original = snapshot(self.game)
+        with mock.patch.object(installer, "PAYLOAD_FILES", [*PAYLOAD_FILES, retired]):
+            (self.payload / retired).write_bytes(b"ours, from nightly A")
+            under_a = self.install("A") and snapshot(self.game)
+        (self.payload / retired).unlink()
+        with mock.patch.object(installer, "RETIRED_PAYLOAD_FILES", [retired]):
+            self.install("B")
+        self.assertEqual((self.game / retired).read_bytes(), b"the game's own retired-name dll")
+        installer.restore_previous(self.game, LOG)
+        self.assertEqual(snapshot(self.game), under_a)
+        installer.uninstall(self.game, logger=LOG)
+        self.assertEqual(snapshot(self.game), self.original)
+
+    def test_a_running_game_is_refused_untouched(self):
+        self.updated()
+        before = snapshot(self.game)
+        with mock.patch.object(installer.live, "status", return_value={"attached": True}), \
+                self.assertRaises(RuntimeError) as refused:
+            installer.restore_previous(self.game, LOG)
+        self.assertIn("Close the game", str(refused.exception))
+        self.assertEqual(snapshot(self.game), before)
+
+    def test_uninstall_takes_the_restore_point_too(self):
+        self.updated()
+        installer.uninstall(self.game, logger=LOG)
+        self.assertEqual(snapshot(self.game), self.original)
+
+    def test_a_restore_point_left_half_built_is_cleared(self):
+        self.updated()
+        (self.game / (installer.PREVIOUS_DIR + ".new")).mkdir()
+        installer.recover_interrupted(self.game, LOG)
+        self.assertFalse((self.game / (installer.PREVIOUS_DIR + ".new")).exists())
+        self.assertEqual(installer.read_previous(self.game)["version"], "A")
+
+    def test_it_is_named_as_this_fork_names_everything(self):
+        self.assertIn("nightly", installer.PREVIOUS_DIR)
+
+
 class ExclusiveWithOtherInstallsTests(unittest.TestCase):
     """Decky OptiScaler Nightly and upstream's Decky OptiScaler never share a game.
 

@@ -144,6 +144,17 @@ export interface InstallInfo {
    * somebody's own working copy counts.
    */
   reframework: { installed: boolean; revision: string | null; managed: boolean };
+  /** The OptiScaler this game had before its last update, to go back to. */
+  previous?: PreviousInstall | null;
+}
+
+export interface PreviousInstall {
+  version: string | null;
+  /** The version the update installed: the restore point belongs to it. */
+  replaced_by: string | null;
+  taken_at: number;
+  /** Only the files the update changed are kept. */
+  files: string[];
 }
 
 export interface IniInfo {

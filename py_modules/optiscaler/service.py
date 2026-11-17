@@ -815,6 +815,19 @@ class OptiScalerService:
         return await self.install(target_dir, manifest["filename"], preserve_ini=True,
                                   optipatcher=bool(manifest.get("optipatcher")))
 
+    async def restore_previous(self, target_dir):
+        """Go back to the OptiScaler this game had before its last update (game closed)."""
+        refused = self._foreign(target_dir)
+        if refused:
+            return refused
+        try:
+            async with self._mutation_lock:
+                result = await self._run(installer.restore_previous, target_dir, self.log)
+            return {"ok": True, **result}
+        except Exception as exc:  # surfaced verbatim in the UI
+            self.log.exception("going back failed for %s", target_dir)
+            return {"ok": False, "error": str(exc)}
+
     async def uninstall(self, target_dir, remove_ini=True):
         try:
             async with self._mutation_lock:

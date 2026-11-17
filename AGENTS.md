@@ -199,6 +199,17 @@ every write in turn and will catch one that does not. Uninstall only removes
 this plugin's own installs (its manifest lists them); anything else is foreign
 and refused (see "Exclusive with upstream's plugin").
 
+An update keeps one step back: when it replaces this plugin's own earlier
+install, the files the journal set aside that the update actually changed
+(never the ini, never a byte-identical DLL) move into
+`.decky-optiscaler-nightly-previous/` at commit (`_keep_previous`). An update
+that changed nothing keeps the restore point it had. `restore_previous` (the
+game page's **Go back to OptiScaler <version>**, game closed) puts them back
+through a journal of its own, removes what the update added, puts a game file
+the update had uncovered aside again, and uses the restore point up; uninstall
+removes it. `scripts/test_install.py` (PreviousInstallTests) fails every write
+of the way back in turn.
+
 ## The OptiScaler archive is not committed
 
 `bin/` holds no OptiScaler archive and no built ASI in git (`bin/.gitignore`);

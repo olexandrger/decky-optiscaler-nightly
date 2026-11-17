@@ -10,7 +10,7 @@ import {
 } from "@decky/ui";
 import { toaster } from "@decky/api";
 import { useEffect, useState } from "react";
-import { install, setGameTarget, setWikiEntry } from "../api";
+import { install, restorePreviousInstall, setGameTarget, setWikiEntry } from "../api";
 import { setLaunchOptions } from "../hooks/useRunningGame";
 import {
   currentLaunchOptions,
@@ -284,6 +284,9 @@ export function InstallPanel({ detail, status, appid, live, onChanged }: Props) 
             <div style={{ padding: "2px 0" }}>
               <KeyValue label="Installed as" value={<Mono>{detail.install.filename}</Mono>} />
               <KeyValue label="Version" value={detail.install.version ?? "unknown build"} />
+              {detail.install.previous ? (
+                <KeyValue label="Before the last update" value={detail.install.previous.version ?? "unknown build"} />
+              ) : null}
               <KeyValue
                 label="Managed by"
                 value={detail.install.managed ? "this plugin" : "installed externally"}
@@ -413,6 +416,35 @@ export function InstallPanel({ detail, status, appid, live, onChanged }: Props) 
                 : `Install as ${filename}`}
           </ButtonItem>
         </PanelSectionRow>
+
+        {detail.install.previous ? (
+          <PanelSectionRow>
+            <ButtonItem
+              layout="below"
+              disabled={busy || !detail.writable || Boolean(live?.attached)}
+              description={live?.attached
+                ? "Close the game first."
+                : `Puts back the OptiScaler files ${detail.install.previous.replaced_by ?? "the update"} replaced; ` +
+                  "OptiScaler.ini stays as it is. Update OptiScaler in this game brings the new one back."}
+              onClick={async () => {
+                setBusy(true);
+                try {
+                  const result = await restorePreviousInstall(detail.install.path);
+                  if (result.ok) {
+                    toaster.toast({ title: "OptiScaler restored", body: `Back on ${result.version ?? "the previous build"}.` });
+                    await onChanged();
+                  } else {
+                    toaster.toast({ title: "Could not go back", body: result.error ?? "Unknown error" });
+                  }
+                } finally {
+                  setBusy(false);
+                }
+              }}
+            >
+              {`Go back to OptiScaler ${detail.install.previous.version ?? "before the update"}`}
+            </ButtonItem>
+          </PanelSectionRow>
+        ) : null}
 
       </PanelSection>
 
