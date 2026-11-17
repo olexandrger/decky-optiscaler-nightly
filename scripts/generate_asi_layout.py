@@ -249,7 +249,41 @@ def parse_ini_map(source_text):
             "member": _member_fed_by_local(text, match) or match.group("member"),
             "read": "Enum" if how.startswith("Enum") else how,
         }
+    _map_helper_calls(text, mapping)
     return mapping
+
+
+# A local helper that reads a key it is handed into a member it is handed:
+#   auto readUpscaler = [&](const char* key, auto codeToUpscaler, auto& upscaler, auto& custom)
+#   { auto value = readString("Upscalers", key, true)...; upscaler.set_from_config(value); };
+#   readUpscaler("Dx12Upscaler", CodeToUpscalerFfx, Dx12Upscaler, CustomUpscaler);
+# Each call maps Section.Key to the argument in the member parameter's place.
+HELPER_RE = re.compile(
+    r"auto\s+(?P<name>\w+)\s*=\s*\[[^\]]*\]\s*\((?P<params>[^)]*)\)\s*\{(?P<body>.*?)\n\s*\};", re.S)
+
+
+def _map_helper_calls(text, mapping):
+    for helper in HELPER_RE.finditer(text):
+        params = [p.strip().split()[-1].lstrip("&*") for p in helper.group("params").split(",") if p.strip()]
+        body = helper.group("body")
+        read = re.search(r"read(?P<how>Bool|Int|Float|UInt|String|WString|Enum\s*<[^>]*>)\s*\(\s*"
+                         r"\"(?P<section>[^\"]+)\"\s*,\s*(?P<key>\w+)\s*[,)]", body)
+        if not read or read.group("key") not in params:
+            continue
+        fed = [i for i, name in enumerate(params)
+               if re.search(r"\b" + re.escape(name) + r"\s*\.set_from_config\(\s*(?!std::string)", body)]
+        if not fed:
+            continue
+        key_at, member_at = params.index(read.group("key")), fed[0]
+        how = read.group("how")
+        call_re = re.compile(re.escape(helper.group("name")) + r"\s*\((?P<args>[^;]*?)\)\s*;")
+        for call in call_re.finditer(text, helper.end()):
+            args = [a.strip() for a in call.group("args").split(",")]
+            if len(args) != len(params) or not args[key_at].startswith('"'):
+                continue
+            ini_key = f"{read.group('section')}.{args[key_at].strip(chr(34))}"
+            mapping[ini_key] = {"member": args[member_at],
+                                "read": "Enum" if how.startswith("Enum") else how}
 
 
 # `auto v = readX(...)` / `if (auto v = readX(...))`: the member is the one
@@ -392,6 +426,14 @@ def main():
             "kind": member["kind"],
             "read": info["read"],
         }
+    # What the panel shows from a running game and sends live: a nightly that
+    # reads one of these some new way must fail here, not show an empty field.
+    required = ("Upscalers.Dx11Upscaler", "Upscalers.Dx12Upscaler", "Upscalers.VulkanUpscaler",
+                "FrameGen.Enabled", "FrameGen.FGInput", "FrameGen.FGOutput", "FSR.UpscalerIndex",
+                "FSR.Fsr4Model", "FSR.Fsr4GpuSupport", "Menu.ShowFps", "Sharpness.Sharpness")
+    unmapped = [key for key in required if key not in fields]
+    if unmapped:
+        raise SystemExit(f"Config.cpp reads these ini keys in a way this generator does not know: {unmapped}")
     enum_sources = [header, source] + [
         (REF / name).read_text(encoding="utf-8", errors="replace")
         for name in ("OptiTypes.h", "OptiTypes.cpp", "State.h") if (REF / name).is_file()]
