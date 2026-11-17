@@ -75,9 +75,12 @@ After that, updates come to you: when a newer release exists, the Quick Access
 panel shows **Update to …**. It hands the release to Decky's own installer,
 which asks before replacing the plugin and checks the zip's SHA-256. No URL to
 paste again. Releases
-come from the **Bundle OptiScaler nightly** workflow: daily after upstream's nightly, or by hand from the Actions tab ("Run workflow", tick *Release the
-current build* to publish without waiting for anything new). Only the 10 newest
-releases are kept.
+come from the **Bundle OptiScaler nightly** workflow, which has no GitHub
+schedule: a daily Claude scheduled task starts it, and when a new nightly breaks
+the checks it fixes the plugin and releases that same nightly once they pass
+(see "Automatic fixes" in AGENTS.md). Run it by hand from the Actions tab too
+("Run workflow"; *Release the current build* publishes without anything new, and
+*Nightly to bundle* pins one). Only the 10 newest releases are kept.
 
 The OptiScaler archive is not in the repository. CI downloads the newest nightly
 before testing and packaging (a push is tested against the build the next

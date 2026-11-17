@@ -122,8 +122,10 @@ def with_retries(action, what, delays=RETRY_DELAYS, sleep=time.sleep):
             sleep(delay)
 
 
-def download_latest(dest_dir, opener=urllib.request.urlopen, sleep=time.sleep):
-    api = f"https://api.github.com/repos/{NIGHTLY_REPO}/releases?per_page=1"
+def download_latest(dest_dir, opener=urllib.request.urlopen, sleep=time.sleep, tag=None):
+    """Download the newest nightly, or the one tagged ``tag`` (nightly-YYYYMMDD)."""
+    api = (f"https://api.github.com/repos/{NIGHTLY_REPO}/releases/tags/{tag}" if tag
+           else f"https://api.github.com/repos/{NIGHTLY_REPO}/releases?per_page=1")
     request = urllib.request.Request(api, headers={"Accept": "application/vnd.github+json"})
     # CI downloads on every push; anonymous API calls share a 60/hour limit per runner IP.
     token = os.environ.get("GITHUB_TOKEN") or os.environ.get("GH_TOKEN")
@@ -132,7 +134,8 @@ def download_latest(dest_dir, opener=urllib.request.urlopen, sleep=time.sleep):
 
     def read_release():
         with opener(request, timeout=60) as response:
-            return json.load(response)[0]
+            body = json.load(response)
+            return body if tag else body[0]
 
     release = with_retries(read_release, "reading the newest nightly", sleep=sleep)
     asset = next((a for a in release["assets"] if a["name"].endswith(".7z")), None)
@@ -207,14 +210,17 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     parser.add_argument("archive", nargs="?", help="nightly .7z to bundle")
     parser.add_argument("--latest", action="store_true", help=f"download the newest {NIGHTLY_REPO} build")
+    parser.add_argument("--tag", help=f"download this {NIGHTLY_REPO} release (nightly-YYYYMMDD) instead")
     args = parser.parse_args()
+    if args.tag:
+        args.latest = True
     if bool(args.archive) == args.latest:
         parser.error("give an archive path or --latest, not both")
 
     seven = archiver()
     with tempfile.TemporaryDirectory() as scratch:
         scratch = Path(scratch)
-        archive = download_latest(scratch) if args.latest else Path(args.archive).resolve()
+        archive = download_latest(scratch, tag=args.tag) if args.latest else Path(args.archive).resolve()
         extracted = scratch / "x"
         run([seven, "x", "-y", f"-o{extracted}", str(archive)])
         root = flatten(extracted)

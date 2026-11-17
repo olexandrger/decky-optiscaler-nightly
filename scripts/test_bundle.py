@@ -71,6 +71,23 @@ class DownloadTests(unittest.TestCase):
         self.download(net)
         self.assertEqual(net.calls["api"], 2)
 
+    def test_a_pinned_nightly_is_fetched_by_its_tag(self):
+        asked = []
+
+        class Pinned(Network):
+            def __call__(self, request, timeout=None):
+                if request != ASSET["browser_download_url"]:
+                    asked.append(request.full_url)
+                return super().__call__(request, timeout)
+
+        # /releases/tags/<tag> answers one release, not a list.
+        net = Pinned(release=[json.dumps(RELEASE[0]).encode()], asset=[b"12345678"])
+        target = bundle_nightly.download_latest(self.temp.name, opener=net, sleep=self.slept.append,
+                                                tag="nightly-20261108")
+        self.assertEqual(asked, ["https://api.github.com/repos/optiscaler/OptiScaler-nightly/"
+                                 "releases/tags/nightly-20261108"])
+        self.assertEqual(target.name, ASSET["name"])
+
     def test_it_gives_up_after_the_last_delay(self):
         attempts = len(bundle_nightly.RETRY_DELAYS) + 1
         net = Network(release=[json.dumps(RELEASE).encode()],

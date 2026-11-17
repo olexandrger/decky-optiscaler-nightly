@@ -18,6 +18,9 @@ Newest first. Each release ships `Decky OptiScaler.zip` for Decky Loader's
   Wine, run by CI on every push and before every release.
 - **Update OptiScaler in this game**, in the Quick Access panel and on the game's
   page, for a game that holds another OptiScaler than the bundled one.
+- Releases are started by the daily Claude task instead of a GitHub schedule; a
+  nightly that breaks the checks is fixed and then released pinned to that same
+  nightly (`nightly.yml` input `nightly`, `bundle_nightly.py --tag`).
 
 ## [0.0.7-nightly.20261030] - 2026-10-30 (nightly fork)
 

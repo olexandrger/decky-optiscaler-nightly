@@ -1,40 +1,36 @@
 name: Bundle OptiScaler nightly
 
-# optiscaler/OptiScaler-nightly publishes daily at 04:00 UTC; this runs daily
-# after it, and by hand. Each run
-# publishes when there is a nightly no release carries yet, when main has
-# commits since the last release, or when forced; it then downloads and bundles
-# the newest nightly (no OptiScaler archive is committed to the repo). Versions are <base>-nightly.<date>.<run number>, so
-# every published build is its own release. It runs the
-# same checks as build.yml and publishes a release with the plugin zip (nothing
-# is committed back to the branch). A nightly that breaks the checks is not
-# released -- the run fails and the previous build stays current. Only the
-# newest KEEP_RELEASES nightly releases are kept; older ones and their tags are
-# deleted after each publish.
+# Bundles an OptiScaler nightly (the newest, or the one given), runs the same
+# checks as build.yml and publishes a release with the plugin zip. Nothing is
+# committed back. Versions are <base>-nightly.<date>.<run number>, so every
+# published build is its own release; only the newest KEEP_RELEASES are kept.
+#
+# It has no schedule of its own: the daily Claude scheduled task starts it
+# (AGENTS.md "Automatic fixes"), and when a nightly breaks the checks, fixes
+# the plugin and starts it again pinned to that same nightly (`nightly`), so a
+# newer nightly published in between cannot undo the fix. Run it by hand from
+# the Actions tab too; "Release the current build" publishes even with nothing
+# new.
+#
+# It publishes when the nightly has no release yet, when main has commits
+# since the last release, or when forced. A nightly that breaks the checks is
+# not released -- the run fails and the previous build stays current.
 #
 # Releases are full releases (not prereleases) under a fixed asset name, so the
 # newest one is always at
 #   https://github.com/<owner>/<repo>/releases/latest/download/decky-optiscaler-nightly.zip
 # which is what Decky's "Install Plugin from URL" wants.
-#
-# Run it by hand with "Release the current build" ticked to publish the current
-# main with the newest nightly without waiting for anything new.
 on:
-  schedule:
-    # Daily, 06:19 UTC, after upstream's 04:00 nightly. GitHub starts
-    # scheduled runs late (5-6.5 h here since Nov 2026, community reports
-    # since Oct 2026) and sometimes not at all; that is harmless: a later run
-    # releases any nightly that has no tag yet. For on-time builds, call
-    # workflow_dispatch from an outside cron; this schedule stays a fallback
-    # and finds nothing to do. A day with no new nightly and no fork changes
-    # publishes nothing.
-    - cron: "19 6 * * *"
   workflow_dispatch:
     inputs:
       force:
         description: "Release the current build even if no newer nightly exists"
         type: boolean
         default: false
+      nightly:
+        description: "Nightly to bundle, e.g. nightly-20261116 (empty: the newest)"
+        type: string
+        default: ""
 
 permissions:
   contents: write
@@ -82,7 +78,7 @@ jobs:
           done
           pnpm install --frozen-lockfile
 
-      - name: Decide, and bundle the newest nightly
+      - name: Decide, and bundle the nightly
         id: bundle
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -90,7 +86,12 @@ jobs:
         run: |
           # Release when there is a nightly no release carries yet, when main
           # has commits the last release does not, or when forced.
-          nightly=$(gh api 'repos/optiscaler/OptiScaler-nightly/releases?per_page=1' --jq '.[0].tag_name')
+          pinned="${{ inputs.nightly }}"
+          if [ -n "$pinned" ]; then
+            nightly="$pinned"
+          else
+            nightly=$(gh api 'repos/optiscaler/OptiScaler-nightly/releases?per_page=1' --jq '.[0].tag_name')
+          fi
           date="${nightly##*-}"
           released=$(git tag --list "v*-nightly.${date}*" | head -1)
           last=$(git tag --list 'v*-nightly.*' --sort=-creatordate | head -1)
@@ -98,7 +99,9 @@ jobs:
           if [ -z "$last" ] || [ "$(git rev-list -n1 "$last")" != "$(git rev-parse HEAD)" ]; then
             changed=true
           fi
-          echo "newest nightly: $nightly (released as: ${released:-not yet})"
+          echo "nightly: $nightly${pinned:+ (pinned)} (released as: ${released:-not yet})"
+          echo "nightly=$nightly" >> "$GITHUB_OUTPUT"
+          echo "### Nightly: \`$nightly\`" >> "$GITHUB_STEP_SUMMARY"
           echo "last release: ${last:-none}, fork changed since: $changed"
           if [ -n "$released" ] && [ "$changed" = "false" ] && [ "${{ inputs.force }}" != "true" ]; then
             echo "nothing new to release"
@@ -106,8 +109,8 @@ jobs:
             exit 0
           fi
           echo "release=true" >> "$GITHUB_OUTPUT"
-          # No archive is committed: every release bundles the newest nightly.
-          python3 scripts/bundle_nightly.py --latest
+          # No archive is committed: every release bundles the nightly decided above.
+          python3 scripts/bundle_nightly.py --tag "$nightly"
           python3 scripts/generate_schema.py
           # The live-control ASI, against that nightly's own Config.h.
           bash asi/build.sh
@@ -164,7 +167,8 @@ jobs:
           fi
           echo "moved=true" >> "$GITHUB_OUTPUT"
           echo "::warning::main moved during this run (${built:0:7} -> ${head:0:7}); not releasing the outdated commit, starting a new run on main"
-          gh workflow run nightly.yml --ref main -f force=${{ inputs.force == true }}
+          gh workflow run nightly.yml --ref main -f force=${{ inputs.force == true }} \
+            -f nightly="${{ steps.bundle.outputs.nightly }}"
 
       - name: Release
         if: steps.bundle.outputs.release == 'true' && steps.current.outputs.moved == 'false'

@@ -26,7 +26,9 @@ What the fork adds on top of upstream:
   built and tested against each bundled nightly (see below);
 - the panel offers **Update OptiScaler in this game** when a game holds another
   OptiScaler than the bundled one;
-- `.github/workflows/nightly.yml` builds, tests and releases daily, keeping the 10 newest releases.
+- `.github/workflows/nightly.yml` builds, tests and releases, started daily by a
+  Claude scheduled task that also fixes what a new nightly breaks; the 10 newest
+  releases are kept.
 
 ## Live editing (keep it on the plugin API)
 
@@ -192,30 +194,42 @@ host). Whether it renders under Proton, which FSR 4 model it creates, whether a
 live change shows on screen and whether the menu key reaches the game can only
 be checked on a Deck: `OptiScaler.log` in the game folder is the source of truth.
 
-## Automatic fixes
+## Automatic fixes (and the daily release)
 
-A daily Claude scheduled task (21:23 Vilnius, after the nightly usually runs)
-checks the latest "Bundle OptiScaler nightly" and "Build" runs. When one failed
-for a non-transient reason, it reproduces the failure against the nightly that
-run used, fixes the root cause under the rules of this file, runs every check
-above, pushes the fix to `main` as a commit starting `autofix: `, and reverts it
-if its Build run fails. A failure of `test_live_asi.py` is maintained like any
-other (usually `generate_asi_layout.py` meeting a new kind of Config member),
-under the "Live editing" rules: never by reaching into `State`, never by
-weakening the layout checks. It never force-pushes or touches tags and releases,
-makes at most one autofix a day, and stops with a report instead of pushing when
-an autofix did not help or the fix needs a decision. Transient failures (GitHub
-5xx, DNS, apt mirrors) only get a report.
+GitHub has no schedule for this repo. A daily Claude scheduled task (07:23
+Vilnius, after OptiScaler-nightly's 04:00 UTC build) is what releases:
+
+1. It starts "Bundle OptiScaler nightly" (`nightly.yml`, newest nightly) through
+   the API and waits for it. Released, or nothing new: done, silently.
+2. If the run failed for a non-transient reason, it reproduces the failure
+   against the nightly that run bundled (its log and summary name it), fixes
+   the root cause under the rules of this file, runs every check above, and
+   pushes the fix to `main` as a commit starting `autofix: `.
+3. It starts `nightly.yml` again **pinned to the same nightly** (`nightly`
+   input). That run re-runs every check on exactly the build the fix was made
+   for and releases it; a newer nightly published meanwhile waits for the next
+   day. If that run fails too, it reverts its commit and reports.
+
+A failure of `test_live_asi.py` is maintained like any other (usually
+`generate_asi_layout.py` meeting a new kind of Config member), under the "Live
+editing" rules: never by reaching into `State`, never by weakening the layout
+checks. It never force-pushes or touches tags and releases itself, makes at most
+one autofix a day, and stops with a report instead of pushing when an autofix
+did not help or the fix needs a decision. A transient failure (GitHub 5xx, DNS,
+apt mirrors) gets one retry of the same run; it only reports when that keeps
+happening. It messages only when a human is needed.
 
 ## Releases
 
-`nightly.yml` publishes when the newest nightly has no release yet (no
-`v*-nightly.<its date>*` tag), when `main` has commits since the last release, or
-when run by hand with "Release the current build". It then downloads and bundles
-the newest nightly; a run with nothing to release downloads nothing. A failed run
-creates no tag, so the next day retries.
+`nightly.yml` runs only when started: by the Claude task (above) or by hand
+from the Actions tab. It bundles the newest nightly, or the one in its
+`nightly` input (`nightly-YYYYMMDD`, `bundle_nightly.py --tag`), and publishes
+when that nightly has no release yet (no `v*-nightly.<its date>*` tag), when
+`main` has commits since the last release, or with "Release the current build".
+A run with nothing to release downloads nothing; a failed run creates no tag.
 A run that finds `main` moved on before it releases (a push mid-run) does not
-release the outdated commit: it starts a fresh run on `main` and stops. GitHub
+release the outdated commit: it starts a fresh run on `main`, pinned to the same
+nightly, and stops. GitHub
 would refuse the tag anyway when the push changed a workflow file, since that
 needs the `workflows` permission `GITHUB_TOKEN` cannot have.
 After each publish, releases beyond the newest 10 (`KEEP_RELEASES`) are deleted
