@@ -157,21 +157,13 @@ Object.assign(fixtures, {
   get_live_status: {
     asi_installed: true, asi_available: true, attached: true, ready: true, state: "ready",
     load_enabled: true, loaded_by_optiscaler: true,
-    error: null, seq: "1", can_switch_upscaler: true, age: 1.0,
-    live_keys: ["FrameGen.Enabled", "Upscalers.Dx12Upscaler"],
+    error: null, seq: "1", age: 1.0, can_reinit: true, can_change_ffx_upscaler: true, api: 3,
+    live_keys: ["FrameGen.Enabled", "FSR.UpscalerIndex"],
     fps_overlay_types: ["Just FPS", "Simple", "Detailed", "Detailed + Graph", "Full", "Full + Graph",
       "Low latency timings", "Custom"],
     fps_overlay_default: 5,
-    fps: 40.4, fg_enabled: true, frames: 12000, backend_entries: 1,
-    upscaler: { dx12: "fsr31", dx11: null, vulkan: null },
-    pending_backend: null,
-    // What the in-game plugin read out of State: the frame generators the FFX
-    // SDK offered *this* game, which is what the FFX FG control lists when
-    // there is a game to ask.
-    schema: 4, can_change_fg: true, fg_index: 1,
-    ffx_fg_versions: ["4.0.0", "3.1.6"],
+    schema: 8, dir: "/x", dir_matches: true,
   },
-  switch_upscaler: { ok: true, sent: true, backend: "xess" },
   // Answered per key: the Settings tab reads each remembered question in turn,
   // and a single fixture would make every one of them look answered.
   get_pref: (key: string, fallback?: unknown) =>
@@ -966,7 +958,7 @@ async function render(name: string, element: React.ReactElement) {
 
   fixtures.get_live_status = {
     ...fixtures.get_live_status, attached: false, state: "failed",
-    error: "could not locate OptiScaler's config object", can_switch_upscaler: false,
+    error: "could not locate OptiScaler's config object", can_reinit: false,
   };
   const gdOffline = await render("GameDetailLiveOffline",
     <GameDetail gamePath="/games/Cyberpunk 2077" gameName="Cyberpunk 2077" appid="1091500"
@@ -975,9 +967,7 @@ async function render(name: string, element: React.ReactElement) {
       onBack={() => {}} />);
   const offlineText = gdOffline.host.textContent!;
   console.log(`  live failure explained: ${offlineText.includes("could not attach")}`);
-  console.log(`  live frame rate shown: ${gd.host.textContent!.includes("40.4 fps")}`);
   console.log(`  frame generation state shown: ${gd.host.textContent!.includes("Frame generation")}`);
-  console.log(`  live upscaler named as OptiScaler names it: ${gd.host.textContent!.includes("FSR 3.X/4")}`);
   console.log(`  live readout stays read-only here: ${!gd.host.textContent!.includes("Switch now")}`);
   console.log(`  FidelityFX version surfaced: ${gd.host.textContent!.includes("4.1.1.2740")}`);
   // Nothing to say about live control when it is not connected and the game is

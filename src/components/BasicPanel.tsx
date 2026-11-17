@@ -1,6 +1,5 @@
-import { ButtonItem, DropdownItem, PanelSection, PanelSectionRow, ToggleField } from "@decky/ui";
+import { DropdownItem, PanelSection, PanelSectionRow, ToggleField } from "@decky/ui";
 import { useState } from "react";
-import { switchUpscaler } from "../api";
 import {
   FFX_FG_ID,
   FFX_UPSCALER_ID,
@@ -16,11 +15,9 @@ import {
   ffxFgChanges,
   ffxUpscalerChanges,
   frameGenEnabled,
-  isFfxBackend,
   needsForcedInt8,
   DECK_FSR4_PRESETS,
   isDeckFsr4Preset,
-  runningBackend,
   supportsInt8Override,
   supportsMultiplier,
   upscalerChoicesFor,
@@ -41,7 +38,7 @@ import type {
   OptionChange,
   OptionMeta,
 } from "../types";
-import { Mono, Notice, Pill } from "./Common";
+import { Mono, Notice } from "./Common";
 
 interface Props {
   values: ConfigValues;
@@ -69,7 +66,6 @@ interface Props {
   /** Whether the wiki is currently driving everything but the three choices. */
   auto?: boolean;
   onAutoChange?: (enabled: boolean) => void;
-  onLiveChanged?: () => void;
   /** Which upscaler build the folder holds; kept for callers, not read since 4.1.1b retired. */
   fsr4Build?: string | null;
   /** Apply a Steam Deck FSR 4 preset; takes its model ("lite", "rdna2"). */
@@ -96,23 +92,8 @@ const MULTIPLIER_ID = `${MULTIPLIER_SECTION}.${MULTIPLIER_KEY}`;
  * be read, `newest` names entry 0 from the file rather than from the comment,
  * and only the older compatibility providers below it stay as documented.
  */
-export function ffxVersionOptions(
-  reported: string[] | undefined,
-  option: OptionMeta | undefined,
-  newest?: string | null
-) {
-  if (reported && reported.length > 0) {
-    return {
-      fromGame: true,
-      options: reported.map((name, index) => ({
-        data: String(index),
-        label: `FSR ${name}`,
-        version: name,
-      })),
-    };
-  }
+export function ffxVersionOptions(option: OptionMeta | undefined, newest?: string | null) {
   return {
-    fromGame: false,
     options: (option?.options ?? []).map((value) => {
       const label =
         value === "0" && newest ? `FSR ${newest}` : labelFor(option as OptionMeta, value);
@@ -219,7 +200,6 @@ export function BasicPanel({
   plan,
   auto,
   onAutoChange,
-  onLiveChanged,
   onApply,
   onEnableFsr4,
 }: Readonly<Props>) {
@@ -235,8 +215,6 @@ export function BasicPanel({
   const [ffxUpscalerChanged, setFfxUpscalerChanged] = useState(false);
   // The last pick moves to another backend, which no live path can do.
   const [backendSwitched, setBackendSwitched] = useState(false);
-  const [switching, setSwitching] = useState(false);
-  const [switchError, setSwitchError] = useState<string | null>(null);
 
   const hint = (text: string | undefined) => text;
 
@@ -288,91 +266,39 @@ export function BasicPanel({
   // setting that would is the setting this device must not have written.
   const ffxUpsNeedsInt8 = ffxUpscalerChanged && int8Route && !deckSelected;
 
-  // The FFX frame generator, which only the FSR FG output runs. When the game
-  // is attached its own reported list wins; otherwise the shipped INI's.
+  // The FFX frame generator, which only the FSR FG output runs, from the
+  // reference INI's list (the running game's own list is in OptiScaler's State).
   const ffxOption = optionById(FFX_FG_ID);
-  const ffxChoices = ffxVersionOptions(live?.ffx_fg_versions, ffxOption);
-  // A game that reports a generator list has OptiScaler's FidelityFX FG built
-  // for it, which is a firmer answer than the ini can give — FGOutput "auto"
-  // resolves at runtime and the file cannot say which way it went. Either is
-  // reason enough to show the control.
-  const ffxUsable = usesFfxFrameGen(values) || ffxChoices.fromGame;
+  const ffxChoices = ffxVersionOptions(ffxOption);
+  const ffxUsable = usesFfxFrameGen(values);
   // Nothing to pick when the runtime offers one generator, but which one the
   // game got is still worth seeing, so the control stays and goes quiet
   // instead of disappearing — it used to vanish on exactly those games.
   const ffxFixed = ffxChoices.options.length < 2;
   const ffxSelected = ffxOption ? effectiveValue(values, ffxOption) : "0";
-  // Attached, the user has moved it, and there is no way to act on it: the
-  // in-game plugin did not find State's two FG change flags, so this was an ini
-  // write only. Only worth saying once it has actually been asked for.
-  const ffxNotLive = ffxFgChanged && Boolean(live?.attached) && !live?.can_change_fg;
+  // Not live (OptiScaler rebuilds the generator for it through State), so over
+  // a running game a change is said to wait for the restart.
+  const ffxNotLive = ffxFgChanged && Boolean(live?.attached);
 
   // Which version of FSR the FidelityFX backend runs — the overlay's "FFX
   // Upscaler" combo, and the only place the exact version is written down.
   const ffxUpsOption = optionById(FFX_UPSCALER_ID);
-  const ffxUpsChoices = ffxVersionOptions(
-    live?.ffx_upscaler_versions, ffxUpsOption, ffxVersionName(ffx));
+  const ffxUpsChoices = ffxVersionOptions(ffxUpsOption, ffxVersionName(ffx));
   const ffxUpsSelected = ffxUpsOption ? effectiveValue(values, ffxUpsOption) : "0";
   const ffxUpsFixed = ffxUpsChoices.options.length < 2;
 
-  const liveFg = typeof live?.fg_enabled === "boolean" ? live.fg_enabled : null;
-  // The same order the live tiles read it in — a DX11 game reports its backend
-  // under dx11 and nowhere else, and leaving that out made the switch compare
-  // the pick against nothing at all.
-  const liveBackend = runningBackend(live);
-  // Only the FidelityFX backend has versions to choose between. The ini answers
-  // for a game that is not running; a game that *is* running has already picked
-  // one, which settles it for the "auto" the ini can only leave open.
-  // The in-game plugin cannot read which backend OptiScaler created (that is
-  // State), so a running game is judged by the ini like a stopped one.
-  const ffxUpsUsable =
-    live?.attached && liveBackend ? isFfxBackend(liveBackend) : usesFfxUpscaler(values);
+  // Only the FidelityFX backend has versions to choose between.
+  const ffxUpsUsable = usesFfxUpscaler(values);
   // Attached, the user has moved it, and there was nothing to act on: no
   // upscaler is registered yet, so this was an ini write only.
   const ffxUpsNotLive =
     ffxUpscalerChanged && Boolean(live?.attached) && !live?.can_change_ffx_upscaler;
   const wanted = backendCode(UPSCALER_PRESETS.find((preset) => preset.id === picked));
-  // The backend switch is live; the INT8 override is not, and it is read where
-  // the upscaler is created. Offering the switch under that preset would move
-  // the backend now and leave the thing the user actually asked for waiting for
-  // a restart, so that preset says so and this stays out of it.
-  const int8RestartOnly = deckSelected;
-  // Nothing to apply once the game is already on it, or if the choice cannot be
-  // pushed at all — the plugin has to be attached with an upscaler registered.
-  const canSwitchNow =
-    Boolean(targetDir) &&
-    Boolean(wanted) &&
-    wanted !== liveBackend &&
-    Boolean(live?.attached) &&
-    Boolean(live?.can_switch_upscaler) &&
-    !int8RestartOnly;
-  // Attached, a different upscaler picked, and still no switch on offer. The
-  // one thing that causes this is a game that has not built an upscaler yet, so
-  // say so rather than leaving the button mysteriously absent.
+  // A different upscaler picked over a running game: saved for the next launch
+  // (OptiScaler switches backends at startup, or from its own menu). Not under a
+  // Deck FSR 4 preset, which says so itself.
   const switchNotReady =
-    Boolean(targetDir) &&
-    Boolean(wanted) &&
-    backendSwitched &&
-    wanted !== liveBackend &&
-    Boolean(live?.attached) &&
-    !live?.can_switch_upscaler &&
-    !int8RestartOnly;
-
-  const applyUpscalerNow = async () => {
-    if (!targetDir || !wanted) return;
-    setSwitching(true);
-    setSwitchError(null);
-    try {
-      const result = await switchUpscaler(targetDir, wanted);
-      if (result.ok) setPicked(null);
-      else setSwitchError(result.error ?? "Could not switch the upscaler");
-      onLiveChanged?.();
-    } catch (error_) {
-      setSwitchError(String(error_));
-    } finally {
-      setSwitching(false);
-    }
-  };
+    Boolean(targetDir) && Boolean(wanted) && backendSwitched && Boolean(live?.attached) && !deckSelected;
 
   const turnFrameGenOn = () =>
     onApply(
@@ -511,44 +437,26 @@ export function BasicPanel({
             )}
             checked={fgOn}
             disabled={busy || fgUnavailable}
-            bottomSeparator={liveFg === null ? "standard" : "none"}
+            bottomSeparator="standard"
             onChange={(checked) =>
               checked ? turnFrameGenOn() : onApply(disableFrameGenChanges())
             }
           />
         </PanelSectionRow>
 
-        {/* Directly under the toggle, so flipping it and seeing the game agree
-            is one glance rather than a scroll. */}
-        {liveFg !== null ? (
-          <PanelSectionRow>
-            <div style={{ padding: "0 0 6px", fontSize: "12px", opacity: 0.85 }}>
-              In game:{" "}
-              {liveFg ? <Pill color="#2f6b3f">ON</Pill> : <Pill color="#6b2f2f">OFF</Pill>}
-              {typeof live?.fps === "number" && live.fps > 0 ? (
-                <span style={{ opacity: 0.75 }}>{live.fps.toFixed(0)} fps</span>
-              ) : null}
-            </div>
-          </PanelSectionRow>
-        ) : null}
-
         {methodControls}
 
-        {/* Which FidelityFX frame generator the FSR FG output runs — the
-            overlay's "FFX FG" combo and its "Change FG" button. Unlike the
-            method above it this one really does change mid-game: OptiScaler
-            rebuilds the FG context when both of its change flags are raised,
-            which is what the in-game plugin does alongside the write. */}
+        {/* Which FidelityFX frame generator the FSR FG output runs: the
+            overlay's "FFX FG" combo. It applies at the next launch from here;
+            OptiScaler's own menu switches it live. */}
         {ffxUsable && ffxChoices.options.length > 0 ? (
           <PanelSectionRow>
             <ValueDropdown
               label="FFX FG version"
               description={hint(
                 ffxFixed
-                  ? "The only frame generator this game's FidelityFX runtime offers."
-                  : ffxChoices.fromGame
-                    ? "The frame generators this game's FidelityFX runtime reports."
-                    : "Which FidelityFX frame generator the FSR FG output runs."
+                  ? "The only frame generator this FidelityFX runtime offers."
+                  : "Which FidelityFX frame generator the FSR FG output runs."
               )}
               disabled={busy || !fgOn || ffxFixed}
               bottomSeparator={ffxNotLive ? "none" : "standard"}
@@ -650,7 +558,6 @@ export function BasicPanel({
               const next = backendCode(preset);
               setBackendSwitched(!next || !sameBackend(String(rawUpscaler ?? "").toLowerCase(), next));
               setPicked(preset.id);
-              setSwitchError(null);
               onApply(preset.changes);
             }}
           />
@@ -668,10 +575,8 @@ export function BasicPanel({
               label="FSR version"
               description={hint(
                 ffxUpsFixed
-                  ? "The only FSR version this game's FidelityFX runtime offers."
-                  : ffxUpsChoices.fromGame
-                    ? "The FSR versions this game's FidelityFX runtime reports."
-                    : "Which version of FSR the FidelityFX backend runs."
+                  ? "The only FSR version this FidelityFX runtime offers."
+                  : "Which version of FSR the FidelityFX backend runs."
               )}
               disabled={busy || ffxUpsFixed}
               bottomSeparator={ffxUpsNotLive ? "none" : "standard"}
@@ -707,34 +612,12 @@ export function BasicPanel({
           </PanelSectionRow>
         ) : null}
 
-        {/* Immediately below the dropdown it belongs to, and only once a
-            different upscaler has been picked: OptiScaler rebuilds the feature
-            when this runs, which costs a frame, so it is not something to offer
-            for its own sake. */}
-        {canSwitchNow ? (
-          <PanelSectionRow>
-            <ButtonItem
-              layout="below"
-              disabled={switching}
-              onClick={() => void applyUpscalerNow()}
-            >
-              {switching ? "Switching…" : "Switch now, without restarting"}
-            </ButtonItem>
-          </PanelSectionRow>
-        ) : null}
-
         {switchNotReady ? (
           <PanelSectionRow>
             <Notice tone="info">
               Saved for the next launch. OptiScaler only switches to another upscaler at
               startup, or from its own menu (the <b>OptiScaler menu</b> button).
             </Notice>
-          </PanelSectionRow>
-        ) : null}
-
-        {switchError ? (
-          <PanelSectionRow>
-            <Notice tone="error">{switchError}</Notice>
           </PanelSectionRow>
         ) : null}
 

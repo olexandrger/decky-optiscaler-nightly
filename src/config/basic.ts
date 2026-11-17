@@ -6,8 +6,7 @@
  * generation is an input plus an output. Basic mode presents the combination.
  */
 
-import type { ConfigValues, GpuInfo, LiveStatus, OptionChange } from "../types";
-import { UPSCALER_LABELS } from "./labels";
+import type { ConfigValues, GpuInfo, OptionChange } from "../types";
 import { AUTO, isAuto } from "./values";
 
 export interface Preset {
@@ -302,10 +301,9 @@ export function ffxFgChanges(index: string): OptionChange[] {
  * "Upscalers" picks fsr31 / xess / dlss, and the "FFX Upscaler" combo under
  * "FFX Settings" picks 4.1.1 / 3.1.5 / 2.3.4 within it. Only the FidelityFX
  * backend has versions to choose between — every other upscaler ignores the
- * index — and, as with the frame generator, the list belongs to the running
- * game rather than to the shipped INI: the FidelityFX SDK reports what it can
- * offer and OptiScaler stores the answer, which is what
- * `LiveStatus.ffx_upscaler_versions` carries.
+ * index. The list is the reference INI's, named after the FidelityFX library
+ * in the game folder for its newest entry; the running game's own list lives
+ * in OptiScaler's State, which the plugin does not read.
  *
  * OptiScaler changes it with the same rebuild the upscaler switch uses, so it
  * applies without a restart wherever an upscaler switch would.
@@ -405,68 +403,6 @@ export function ffxUpscalerChanges(
   void version;
   void int8Route;
   return [change(FFX_UPSCALER_SECTION, FFX_UPSCALER_KEY, index)];
-}
-
-/**
- * The running game's two frame rates, when frame generation means there are two.
- *
- * `total` is what reaches the screen and `base` what the game renders. Both are
- * shown whenever frame generation is switched on, because "how much is frame
- * generation buying me" is the question it is turned on to answer and one
- * number can only ever be half of it.
- *
- * `base` is null when the rendered interval has not been read — an in-game
- * plugin older than this one does not report it, and a generator that was
- * created but has never presented leaves its slot at zero. The second tile
- * still appears, showing nothing: the pair is the feature, and a tile that
- * quietly fails to exist is indistinguishable from one that was never built.
- * `LivePanel` prints both intervals, which is where the difference is visible.
- *
- * `generating` is the separate question of whether the generator is actually
- * running. The setting being on does not mean it is: OptiScaler reports FSR-FG
- * as off until the game selects frame generation in its own options, and the
- * two rates then measure the same frames and come out equal. That is worth
- * saying rather than hiding — equal numbers with nothing to explain them read
- * as a broken readout.
- */
-export function liveFrameRates(live: LiveStatus | null | undefined) {
-  if (!live?.fg_enabled) return null;
-  const number = (value: number | null | undefined) =>
-    typeof value === "number" && value > 0 ? value : null;
-  // The counter alone does not say which of the two rates it counted, so the
-  // total comes from the derived pair when there is one and only falls back to
-  // the raw count when there is not — where nothing has been generated and the
-  // two are the same number anyway.
-  const total = number(live.total_fps) ?? number(live.fps);
-  const base = number(live.base_fps);
-  if (total === null) return null;
-  return { total, base, generating: base !== null && base < total * 0.95 };
-}
-
-/** The backend the running game ended up with, in the order it reports them. */
-export function runningBackend(live: LiveStatus | null | undefined): string | null {
-  return live?.upscaler?.dx12 ?? live?.upscaler?.vulkan ?? live?.upscaler?.dx11 ?? null;
-}
-
-/**
- * What to call the upscaler the running game ended up with.
- *
- * The backend id alone cannot be specific — "fsr31" is FSR 2.3.4 through 4.1.1
- * and OptiScaler names it "FSR 3.X/4" for exactly that reason. The version the
- * game actually built is in its own reported list, at the index Config holds,
- * and OptiScaler's overlay prints it the same way: "FSR " and the SDK's own
- * name. Falls back to the backend's name when there is no list to read, which
- * is every non-FidelityFX upscaler and any game that has not queried the SDK.
- */
-export function liveUpscalerLabel(live: LiveStatus | null | undefined): string | null {
-  const backend = runningBackend(live);
-  if (!backend) return null;
-  const versions = live?.ffx_upscaler_versions ?? [];
-  const index = live?.ffx_upscaler_index;
-  if (isFfxBackend(backend) && typeof index === "number" && versions[index]) {
-    return `FSR ${versions[index]}`;
-  }
-  return UPSCALER_LABELS[backend] ?? backend;
 }
 
 /** The multiplier control only does anything on the XeSS FG output. */

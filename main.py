@@ -202,8 +202,6 @@ class Plugin:
     async def install_live(self, target_dir: str) -> dict:
         return await self.service.install_live(target_dir)
 
-    async def switch_upscaler(self, target_dir: str, code: str) -> dict:
-        return await self.service.switch_upscaler(target_dir, code)
 
     async def live_diagnostics(self, target_dir: str) -> dict:
         return await self.service.live_diagnostics(target_dir)

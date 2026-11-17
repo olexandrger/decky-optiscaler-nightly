@@ -86,21 +86,6 @@ const detail = {
   wiki_entry: null,
 };
 
-// Three generators, which is one more than the shipped ini documents — the
-// running game is the authority on this list and a real one can be longer.
-const FFX_VERSIONS: string[] = ["4.0.0", "3.1.6", "3.1.4"];
-// The same again for the FSR versions the FidelityFX runtime reports, one
-// longer than the ini's three, and with the trailing marker the SDK's own name
-// carries — OptiScaler prints those names verbatim and so does this.
-const FSR_VERSIONS: string[] = ["4.1.1 *", "4.0.2", "3.1.5", "2.3.4"];
-let liveFgIndex = 0;
-let liveUpscalerIndex = 0;
-let liveBackend = "fsr31";
-let liveFgEnabled = true;
-let liveBaseFps: number | null = 20.2;
-let liveTotalFps: number | null = 40.4;
-let liveCountedFps = 40.4;
-
 const pressedKeys: string[] = [];
 let installedFsr4Build = "bundled";
 let fsr4SetupFails = true;
@@ -145,20 +130,10 @@ Object.assign(fixtures, {
     asi_installed: true, asi_available: true, asi_current: true,
     attached: true, ready: true, state: "ready",
     load_enabled: true, loaded_by_optiscaler: true, error: null, seq: "1",
-    can_switch_upscaler: true, can_change_fg: true, can_change_ffx_upscaler: true,
-    age: 1.0,
-    live_keys: [
-      "FrameGen.Enabled", "Upscalers.Dx12Upscaler", "FSR.FGIndex", "FSR.UpscalerIndex",
-    ],
-    // Frame generation is on and doubling, so there are two frame rates: what
-    // the game renders and what reaches the screen.
-    fps: liveCountedFps, base_fps: liveBaseFps, total_fps: liveTotalFps,
-    rendered_ms: 49.5, presented_ms: 24.8,
-    fg_enabled: liveFgEnabled, frames: 12000, backend_entries: 1,
-    upscaler: { dx12: liveBackend, dx11: null, vulkan: null },
-    pending_backend: null, schema: 5, fg_index: liveFgIndex,
-    ffx_fg_versions: FFX_VERSIONS,
-    ffx_upscaler_versions: FSR_VERSIONS, ffx_upscaler_index: liveUpscalerIndex,
+    can_reinit: true, can_change_ffx_upscaler: true, api: 3,
+    age: 1.0, dir: "/x", dir_matches: true,
+    live_keys: ["FrameGen.Enabled", "FSR.UpscalerIndex", "FSR.Fsr4Model", "Menu.ShowFps"],
+    schema: 8,
     // OptiScaler's own names and default (live_fields.json, from its menu and Config.h).
     fps_overlay_types: ["Just FPS", "Simple", "Detailed", "Detailed + Graph", "Full", "Full + Graph",
       "Low latency timings", "Custom"],
@@ -167,10 +142,6 @@ Object.assign(fixtures, {
   press_live_keys: (_dir: string, actions: any[]) => {
     pressedKeys.push(...actions.map((a) => a.shortcut));
     return { ok: true, pressed: actions.map((a) => a.ini_key), already: [], deferred: [] };
-  },
-  switch_upscaler: (_dir: string, code: string) => {
-    liveBackend = code;
-    return { ok: true, sent: true, backend: code };
   },
 });
 
@@ -228,21 +199,6 @@ const selected = (host: Element, label: string) =>
   control(host, label)?.getAttribute("data-selected");
 
 /**
- * The value shown in one of the live tiles, found by the label above it.
- *
- * The tiles are plain markup rather than Steam controls, so there is no mock
- * marker to look for — a tile is a div whose first child is the label and whose
- * second is the number.
- */
-const tile = (host: Element, label: string) => {
-  for (const node of all(host, "div")) {
-    const [head, body] = Array.from(node.children);
-    if (head?.textContent === label && body) return body.textContent;
-  }
-  return null;
-};
-
-/**
  * The game page's settings (BasicPanel, wired as NowPlaying and GameDetail wire
  * it). The Quick Access panel no longer shows the FG pair, the FFX FG version or
  * the full upscaler preset list; this is where those are, and tested.
@@ -253,7 +209,7 @@ function FullPage() {
   if (config.loading) return <div>loading</div>;
   return (
     <BasicPanel values={config.values} gpu={detail.gpu} live={live} ffx={detail.install.fsr4?.ffx}
-      targetDir={detail.install.path} onLiveChanged={() => {}} fsr4Build={config.fsr4Build}
+      targetDir={detail.install.path} fsr4Build={config.fsr4Build}
       onEnableFsr4={config.enableFsr4} onApply={config.setOptions} />
   );
 }
@@ -303,36 +259,40 @@ async function mount(kind: "quick" | "page") {
   console.log("=== the FFX FG version dropdown ===");
   const ffx = control(page, "FFX FG version");
   console.log(`  options: ${all(ffx, "[data-opt]").map((n) => n.textContent).join(", ")}`);
+  check("the generators are the reference ini's", all(ffx, "[data-opt]").length,
+    (SCHEMA.get("FSR.FGIndex")?.options ?? []).length);
   await act(async () => {
-    (all(ffx, '[data-opt-value="2"]')[0] as HTMLElement).click();
+    (all(ffx, '[data-opt-value="1"]')[0] as HTMLElement).click();
   });
   await settle(200);
-  check("shows the third generator", selected(page, "FFX FG version"), "2");
-  // The shipped ini documents two generators because that is what the
-  // reference build offered; the running game is the authority on the list.
-  check("and the ini records it", ini.FSR.FGIndex, "2");
+  check("shows the second generator", selected(page, "FFX FG version"), "1");
+  check("and the ini records it", ini.FSR.FGIndex, "1");
 
   console.log("=== the FSR version dropdown ===");
-  // The second half of the upscaler question. "fsr31" is every FSR from 2.3.4
-  // to 4.1.1, so which one is running is a separate choice, and the running
-  // game is the authority on what the choices are.
+  // The second half of the upscaler question: the FidelityFX backend runs
+  // every FSR from 2.3 to 4, so which one is a separate choice. The list is
+  // the reference ini's, with the newest named after the library in the folder.
+  // Only the FidelityFX backend has versions, so back to it first.
+  check("XeSS has no FSR version", Boolean(control(page, "FSR version")), false);
+  await act(async () => {
+    (all(control(page, "Override upscaler with"), '[data-opt-value="fsr31"]')[0] as HTMLElement).click();
+  });
+  await settle(200);
   const fsrVersion = control(page, "FSR version");
-  check("the versions are the ones the game reports, named as OptiScaler names them",
-    all(fsrVersion, "[data-opt]").map((n) => n.textContent).join(", "),
-    "FSR 4.1.1 *, FSR 4.0.2, FSR 3.1.5, FSR 2.3.4");
+  check("the versions are the reference ini's, the newest named after the library",
+    all(fsrVersion, "[data-opt]").map((n) => n.getAttribute("data-opt-value")).join(",")
+      + " " + all(fsrVersion, "[data-opt]")[0]?.textContent,
+    "0,1,2 FSR 4.1.1");
   // Start from the FSR 3.X preset's position, where the FSR 4 upgrade path is
   // off -- asking for FSR 4 from here has to switch it back on, or OptiScaler
   // falls back to FSR 3 without saying so.
   setIni({ FSR: { Fsr4Update: "false" } });
   await act(async () => {
-    (all(fsrVersion, '[data-opt-value="3"]')[0] as HTMLElement).click();
+    (all(fsrVersion, '[data-opt-value="2"]')[0] as HTMLElement).click();
   });
   await settle(200);
-  check("shows the version picked", selected(page, "FSR version"), "3");
-  // The shipped ini documents three versions because that is what the
-  // reference build offered; a fourth has to be writable all the same.
-  check("and the ini records it past the end of the ini's own list",
-    ini.FSR.UpscalerIndex, "3");
+  check("shows the version picked", selected(page, "FSR version"), "2");
+  check("and the ini records it", ini.FSR.UpscalerIndex, "2");
   check("an older version leaves the FSR 4 upgrade path alone",
     ini.FSR.Fsr4Update, "false");
 
@@ -355,7 +315,7 @@ async function mount(kind: "quick" | "page") {
   setGpu(RDNA4_GPU);
   const onAmd = control(page, "FSR version");
   await act(async () => {
-    (all(onAmd, '[data-opt-value="3"]')[0] as HTMLElement).click();
+    (all(onAmd, '[data-opt-value="2"]')[0] as HTMLElement).click();
   });
   await settle(200);
   await act(async () => {
@@ -380,8 +340,6 @@ async function mount(kind: "quick" | "page") {
     Upscalers: { Dx12Upscaler: "ffx" },
     FSR: { Fsr4GpuSupport: "4", Fsr4Model: "3", UpscalerIndex: "0" },
   });
-  // A backend the game is not on, so a switch would otherwise be on offer.
-  liveBackend = "xess";
   const host5 = document.createElement("div");
   document.body.appendChild(host5);
   const root5 = createRoot(host5);
@@ -428,7 +386,6 @@ async function mount(kind: "quick" | "page") {
   check("and the panel shows what was picked", selected(host5, "Override upscaler with"), "fsr4");
 
   await act(async () => root5.unmount());
-  liveBackend = "ffx";
   setIni({ FSR: { Fsr4GpuSupport: "auto", Fsr4Model: "auto" } });
   await settle(200);
 
@@ -486,12 +443,12 @@ async function mount(kind: "quick" | "page") {
   check("and says the game needs a restart for it",
     (quick.node.textContent ?? "").includes("Restart game to apply"), true);
   await pick(quick.node, "Upscaler", "fsr3");
-  // The game reports 4.1.1, 4.0.2, 3.1.5, 2.3.4: its first FSR 3 is index 2.
-  check("FSR 3 is the FidelityFX backend on the game's first FSR 3 version",
-    `${ini.Upscalers.Dx12Upscaler}/${ini.FSR.UpscalerIndex}`, "ffx/2");
-  check("its versions are the game's FSR 3 and older ones", opts(quick.node, "FSR version"), "2,3");
-  await pick(quick.node, "FSR version", "3");
-  check("a version pick is the FidelityFX index", ini.FSR.UpscalerIndex, "3");
+  // The reference ini's versions are FSR 4, 3.1 and 2.3: the first FSR 3 is index 1.
+  check("FSR 3 is the FidelityFX backend on the first FSR 3 version",
+    `${ini.Upscalers.Dx12Upscaler}/${ini.FSR.UpscalerIndex}`, "ffx/1");
+  check("its versions are FSR 3 and older ones", opts(quick.node, "FSR version"), "1,2");
+  await pick(quick.node, "FSR version", "2");
+  check("a version pick is the FidelityFX index", ini.FSR.UpscalerIndex, "2");
   check("and stays FSR 3", selected(quick.node, "Upscaler"), "fsr3");
   await pick(quick.node, "Upscaler", "xess");
   check("XeSS is XeSS", ini.Upscalers.Dx12Upscaler, "xess");
@@ -570,15 +527,6 @@ async function mount(kind: "quick" | "page") {
     all(quick.node, "[data-button]").slice(0, 2).map((n) => n.getAttribute("data-button")).join(","),
     "optiscaler-menu,fps-overlay");
   await act(async () => quick.root.unmount());
-
-  console.log("=== the live tiles ===");
-  // The backend id cannot say which FSR is running and OptiScaler's own name
-  // for it — "FSR 3.X/4" — says so out loud. The version list can, and the game
-  // is still on the one it built, not the one just written to the file.
-  check("the upscaler tile names the exact version the game is running",
-    tile(host, "upscaler"), "FSR 4.1.1 *");
-  check("frame generation splits the frame rate in two",
-    `${tile(host, "base fps")} / ${tile(host, "with fg")}`, "20 / 40");
 
   console.log("=== the frame multiplier ===");
   // Only the XeSS FG output can do more than 2X; the output is chosen on the
@@ -814,78 +762,10 @@ async function mount(kind: "quick" | "page") {
   // OptiScaler 10's name for the FidelityFX backend.
   check("the file has it", ini.Upscalers.Dx12Upscaler, "ffx");
 
-  console.log("=== the FFX FG control on a game with one generator ===");
-  FFX_VERSIONS.length = 0;
-  FFX_VERSIONS.push("3.1.6");
-  await act(async () => panel.root.unmount());
-  panel = await mount("page");
-  const single = control(panel.node, "FFX FG version");
-  check("the control is still there", Boolean(single), true);
-  check("but there is nothing to pick", single?.getAttribute("data-disabled"), "true");
-  await act(async () => panel.root.unmount());
-
-  console.log("=== frame generation on, but not generating ===");
-  // OptiScaler can have the setting on and not have engaged the generator --
-  // it reports FSR-FG as off until the game selects frame generation in its
-  // own options -- and the two rates then measure the same frames. Both are
-  // still shown, because both were asked for; what stops two identical numbers
-  // reading as a fault is the frame-generation tile saying why.
-  liveBaseFps = 40.4;
-  liveTotalFps = 40.4;
-  panel = await open();
-  check("both rates are still shown",
-        `${tile(panel.node, "base fps")} / ${tile(panel.node, "with fg")}`, "40 / 40");
-  // The tile reads "ON idle": still on, and saying why the two match.
-  check("and the frame generation tile says the generator is not running",
-        tile(panel.node, "frame gen"), "ON idle");
-  await act(async () => panel.root.unmount());
-
-  // An in-game plugin older than this one reports no frame intervals at all,
-  // and so does a generator that was created but has never presented: the
-  // rendered slot stays at zero and the host withholds the derived rate. The
-  // pair is what was asked for, so the second tile is still there saying it has
-  // no reading -- a pair of counters that quietly becomes one counter is
-  // indistinguishable from the feature never having shipped.
-  liveBaseFps = null;
-  liveTotalFps = null;
-  panel = await open();
-  check("an unmeasured base rate still gets its tile",
-        `${tile(panel.node, "base fps")} / ${tile(panel.node, "with fg")}`, "— / 40");
-  check("and the frame generation tile says there is no reading",
-        tile(panel.node, "frame gen"), "ON no reading");
-  await act(async () => panel.root.unmount());
-
-  // The frame counter does not always count the frames that reach the screen.
-  // When it counts the rendered ones instead, the total is the derived number
-  // and the raw count is the *base* -- showing the count as the total is what
-  // put the rendered rate under a "with fg" label while the base stayed blank.
-  liveBaseFps = 30.0;
-  liveTotalFps = 60.0;
-  liveCountedFps = 30.0;
-  panel = await open();
-  check("a counter on the rendered side does not become the total",
-        `${tile(panel.node, "base fps")} / ${tile(panel.node, "with fg")}`, "30 / 60");
-  await act(async () => panel.root.unmount());
-  liveCountedFps = 40.4;
-
-  // With frame generation off there is only ever one rate to show.
-  liveFgEnabled = false;
-  liveBaseFps = 20.2;
-  liveTotalFps = 40.4;
-  panel = await open();
-  check("with frame generation off there is one rate",
-        tile(panel.node, "fps"), "40");
-  check("and no second tile", tile(panel.node, "base fps"), "null");
-  await act(async () => panel.root.unmount());
-
-  console.log("=== a version list that arrives after the control does ===");
-  // The full page mounts its settings before the first live poll lands, so the
-  // FidelityFX lists start as the shipped ini's snapshot and are replaced under
-  // an index that does not move: 0 goes from "FSR 4.0.2", which is what the
-  // reference ini documents, to what the game actually has. Steam's dropdown
-  // builds its label once, so a control keyed on the value alone kept showing
-  // the ini's name for ever -- which is why the page and the Quick Access
-  // panel disagreed about the same install.
+  console.log("=== the FSR version before the game answers ===");
+  // The full page mounts its settings before the first live poll lands. The
+  // newest FSR is named after the library sitting next to the game, which is
+  // readable without the game running at all, not the reference ini's "4.0.2".
   setIni({ FSR: { UpscalerIndex: "0" } });
   const promptly = fixtures.get_live_status;
   fixtures.get_live_status = async (...args: any[]) => {
@@ -899,8 +779,8 @@ async function mount(kind: "quick" | "page") {
   check("the installed library names the newest one before the game answers",
         versionControl?.getAttribute("data-shown"), "FSR 4.1.1");
   await settle(30);
-  check("and the game's own name replaces it once it does",
-        control(panel.node, "FSR version")?.getAttribute("data-shown"), "FSR 4.1.1 *");
+  check("and keeps it once it does",
+        control(panel.node, "FSR version")?.getAttribute("data-shown"), "FSR 4.1.1");
   fixtures.get_live_status = promptly;
   await act(async () => panel.root.unmount());
 
@@ -912,10 +792,8 @@ async function mount(kind: "quick" | "page") {
     asi_installed: false, asi_available: false, asi_current: null,
     attached: false, ready: false, state: "not_installed",
     load_enabled: false, loaded_by_optiscaler: false, error: null, seq: null,
-    can_switch_upscaler: false, can_change_fg: false, can_change_ffx_upscaler: false,
-    age: null, live_keys: [], fps: null, base_fps: null, total_fps: null,
-    fg_enabled: null, frames: null, backend_entries: null,
-    upscaler: { dx12: null, dx11: null, vulkan: null }, pending_backend: null,
+    can_reinit: false, can_change_ffx_upscaler: false, api: null,
+    age: null, live_keys: [], schema: null, dir: null, dir_matches: null,
   });
   const menuCalls: string[] = [];
   fixtures.toggle_menu = (dir: string) => {

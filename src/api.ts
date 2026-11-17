@@ -195,9 +195,6 @@ export const keepRunningChanges = callable<[targetDir: string, keys: string[]], 
   "keep_running_changes"
 );
 export const installLive = callable<[targetDir: string], ActionResult>("install_live");
-export const switchUpscaler = callable<[targetDir: string, code: string], ActionResult>(
-  "switch_upscaler"
-);
 export const getLiveLog = callable<[targetDir: string, lines?: number], { lines: string[] }>(
   "get_live_log"
 );

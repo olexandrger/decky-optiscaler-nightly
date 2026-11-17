@@ -20,6 +20,12 @@ Newest first. Each release ships `Decky OptiScaler.zip` for Decky Loader's
   menu) never reached the game and flipped back; turning FG on rewrote the FG
   pair from an output OptiScaler had reset at runtime; the upscaler read as
   plain FFX when the game held another FSR 4 model than the ini.
+- Removed the frame-rate tiles, the "in game" backend line, the game-reported
+  FSR/FFX FG version lists and the panel's upscaler switch: all read
+  OptiScaler's State, so the backend always sent them empty and only harness
+  fixtures ever filled them. Version lists come from the reference INI. A
+  selftest now fails when the frontend's `LiveStatus`/`RunningConfig` types
+  declare a field the backend does not send.
 - `testharness/backend.tsx` + `scripts/harness_backend.py`: the panel against
   the real backend and a simulated running game, 43 cases, in CI.
 - Condensed Quick Access panel (QuickControls): OptiScaler menu and overlay

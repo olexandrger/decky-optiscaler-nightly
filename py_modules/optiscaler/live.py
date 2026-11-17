@@ -437,16 +437,8 @@ def status(target_dir, source=None):
         # reading, which is exactly how it used to fail.
         "dir": None,
         "dir_matches": None,
-        # Not available from the ASI (they lived in OptiScaler's State, which it
-        # no longer reads). Kept so the panel can treat them as "unknown".
-        "can_switch_upscaler": False,
-        "can_change_fg": False,
+        # The FSR version is rebuilt through ReInitUpscalers, like can_reinit.
         "can_change_ffx_upscaler": False,
-        "fps": None, "base_fps": None, "total_fps": None, "frames": None,
-        "rendered_ms": None, "presented_ms": None,
-        "backend_entries": None, "fg_enabled": None, "upscaler": None,
-        "pending_backend": None, "fg_index": None, "ffx_fg_versions": [],
-        "ffx_upscaler_index": None, "ffx_upscaler_versions": [],
     }
     if not path.is_file():
         return report
@@ -594,17 +586,6 @@ def read_dump(target_dir):
         elif len(parts) == 2 and parts[0] != "fields":
             fields[parts[0]] = (parts[1], None, None, None, None)
     return fields
-
-
-def switch_backend(target_dir, code):
-    """Switching to another upscaler backend live is not supported.
-
-    It takes OptiScaler's State internals, which the ASI no longer touches; the
-    choice is recorded in the INI for the next launch, and OptiScaler's own
-    overlay (the Quick Access "OptiScaler menu" button) switches it live.
-    """
-    return {"ok": False, "error": "switching the upscaler live is done in OptiScaler's own "
-                                  "overlay; the panel applies it at the next launch"}
 
 
 def log_tail(target_dir, lines=40):

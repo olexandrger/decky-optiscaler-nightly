@@ -1,10 +1,8 @@
 import { ButtonItem, Field, PanelSection, PanelSectionRow } from "@decky/ui";
 import { useState } from "react";
 import { getLiveLog, installLive } from "../api";
-import { hasLiveData } from "./LiveStats";
-import { liveFrameRates } from "../config/basic";
 import type { LiveStatus } from "../types";
-import { KeyValue, Mono, Notice } from "./Common";
+import { Mono, Notice } from "./Common";
 
 interface Props {
   targetDir: string;
@@ -20,65 +18,6 @@ interface Props {
  * upscaler change while playing instead of on the next launch.
  */
 
-/**
- * What the in-game plugin is actually measuring, when it is attached.
- *
- * The two frame rates come from three separate readings — a frame counter and
- * two frame intervals — and when one of them is missing the panel above simply
- * shows fewer numbers, which is indistinguishable from a game that is not
- * generating any frames. This is where the difference is visible: an interval
- * of "—" is a reading the plugin could not take, and an interval that matches
- * the other is a generator that is not running.
- */
-function Measurements({ status }: Readonly<{ status: LiveStatus }>) {
-  if (!hasLiveData(status)) return null;
-  const ms = (value: number | null | undefined) =>
-    typeof value === "number" && value > 0 ? `${value.toFixed(2)} ms` : "—";
-  const fps = (value: number | null | undefined) =>
-    typeof value === "number" && value > 0 ? `${value.toFixed(1)} fps` : "—";
-  const rates = liveFrameRates(status);
-  return (
-    <PanelSectionRow>
-      <div style={{ padding: "2px 0" }}>
-        <KeyValue label="Presented" value={fps(status.total_fps)} />
-        <KeyValue label="Rendered" value={fps(status.base_fps)} />
-        {/* The raw slots, named after where in State they came from rather than
-            after a role: which one is the presented interval is decided from
-            the numbers above, and seeing both is how a slot that was never
-            written tells itself apart from a generator that is idle. */}
-        <KeyValue
-          label="Intervals"
-          value={`${ms(status.presented_ms)} present · ${ms(status.rendered_ms)} fg · ${fps(status.fps)} counted`}
-        />
-        {/* Which build of the in-game plugin produced the line above. An older
-            one does not report the intervals at all, and the two rates are then
-            missing for a reason that has nothing to do with how they are
-            derived — so the version belongs next to the numbers, not somewhere
-            else on the page. */}
-        <KeyValue
-          label="In-game plugin"
-          value={
-            status.schema === null || status.schema === undefined
-              ? "did not report a version"
-              : `format ${status.schema}${
-                  status.asi_current === false
-                    ? " · older than the one shipped here"
-                    : status.asi_current
-                      ? " · current"
-                      : ""
-                }`
-          }
-        />
-        {rates && !rates.generating ? (
-          <KeyValue
-            label="Frame generation"
-            value="on, but no frames are being generated"
-          />
-        ) : null}
-      </div>
-    </PanelSectionRow>
-  );
-}
 
 export function LivePanel({ targetDir, status, onChanged }: Props) {
   const [busy, setBusy] = useState(false);
@@ -142,8 +81,6 @@ export function LivePanel({ targetDir, status, onChanged }: Props) {
   return (
     <PanelSection title="Live in-game control">
       <PanelSectionRow>{body}</PanelSectionRow>
-
-      <Measurements status={status} />
 
       {/* The plugin derives its own folder from where OptiScaler loaded it. If
           that ever disagrees with the folder being managed, it is writing where

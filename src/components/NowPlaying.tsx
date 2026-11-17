@@ -7,7 +7,6 @@ import { useLiveStatus } from "../hooks/useLiveStatus";
 import type { Game, GameDetail, RunningGame } from "../types";
 import { BasicPanel } from "./BasicPanel";
 import { Centered, KeyValue, Notice, Pill } from "./Common";
-import { LiveStats } from "./LiveStats";
 
 /**
  * The running game's controls, first thing on the page.
@@ -50,7 +49,7 @@ export function NowPlaying({
   const installed = Boolean(detail?.install.installed);
   const targetDir = installed && detail ? detail.install.path : null;
   const config = useConfig(targetDir, installed, runningGame?.appid ?? null);
-  const { status: live, refresh } = useLiveStatus(targetDir, Boolean(runningGame));
+  const { status: live } = useLiveStatus(targetDir, Boolean(runningGame));
   // Read-only here: whether a game is in automatic mode is decided where it is
   // set up, not mid-session over a running game.
   const { plan, auto } = useAutoPlan(detail?.path ?? null, detail?.name ?? null, installed);
@@ -60,7 +59,7 @@ export function NowPlaying({
       <PanelSection title="Nothing running">
         <PanelSectionRow>
           <Notice tone="info">
-            Start a game and its frame generation, upscaler and frame rate appear here. Until
+            Start a game and its frame generation and upscaler settings appear here. Until
             then, pick a game to set up.
           </Notice>
         </PanelSectionRow>
@@ -123,8 +122,6 @@ export function NowPlaying({
         </PanelSectionRow>
       </PanelSection>
 
-      <LiveStats live={live} />
-
       {config.loading ? (
         <Centered>Reading config…</Centered>
       ) : (
@@ -135,7 +132,6 @@ export function NowPlaying({
           targetDir={detail!.install.path}
           plan={plan}
           auto={auto}
-          onLiveChanged={() => void refresh()}
           fsr4Build={config.fsr4Build}
           onEnableFsr4={config.enableFsr4}
           onApply={config.setOptions}

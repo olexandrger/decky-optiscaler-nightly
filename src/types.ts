@@ -455,60 +455,8 @@ export interface LiveStatus {
   state: string;
   error: string | null;
   seq: string | null;
-  can_switch_upscaler: boolean;
   age: number | null;
   live_keys: string[];
-  /**
-   * Sampled from OptiScaler's own frame counter. Which of the two rates it
-   * counts is not fixed, which is why `base_fps` and `total_fps` are derived
-   * rather than one of them simply being this.
-   */
-  fps: number | null;
-  /**
-   * The rate the game itself renders at, and the rate that reaches the screen.
-   * Equal to each other until frame generation is actually inserting frames,
-   * and both null when the two intervals could not be matched to the counter.
-   */
-  base_fps?: number | null;
-  total_fps?: number | null;
-  /**
-   * The two frame intervals it measured, in milliseconds, named after the
-   * `State` slots they came out of rather than after a role — which of them is
-   * the presented one is decided from the numbers, not from the name.
-   */
-  rendered_ms?: number | null;
-  presented_ms?: number | null;
-  /** The raw counter value behind that rate, for diagnostics. */
-  frames?: number | null;
-  /**
-   * How many upscalers OptiScaler has registered. 0 means a switch has nothing
-   * to act on yet; null means the count could not be read at all.
-   */
-  backend_entries?: number | null;
-  fg_enabled: boolean | null;
-  /**
-   * Whether the in-game plugin located the two State flags that make OptiScaler
-   * rebuild its frame generator. Without them the FFX FG version can still be
-   * recorded, but only the next launch will use it.
-   */
-  can_change_fg?: boolean;
-  /** The FFX FG version the running game is configured for, as an index. */
-  fg_index?: number | null;
-  /**
-   * The frame generators this game's FidelityFX runtime reported, in the order
-   * FfxFGIndex numbers them. Empty until the game has asked the SDK.
-   */
-  ffx_fg_versions?: string[];
-  /**
-   * The FSR versions this game's FidelityFX runtime reported, in the order
-   * FfxUpscalerIndex numbers them — "4.1.1 *", "3.1.5" and so on. This is where
-   * the exact version comes from: OptiScaler's own feature parses its name out
-   * of this same list, which is why the overlay's title bar can be specific
-   * where the backend id ("fsr31") cannot.
-   */
-  ffx_upscaler_versions?: string[];
-  /** Which of them the running game is configured for, as an index. */
-  ffx_upscaler_index?: number | null;
   /**
    * Whether the FSR version can be changed without a restart. It needs no flags
    * of its own — the same rebuild that switches upscaler re-reads it — so this
@@ -517,9 +465,6 @@ export interface LiveStatus {
   can_change_ffx_upscaler?: boolean;
   /** Which status-file format the installed plugin speaks; older ones say less. */
   schema?: number | null;
-  upscaler: { dx12: string | null; dx11: string | null; vulkan: string | null } | null;
-  /** A switch handed over but not yet consumed by OptiScaler. */
-  pending_backend: string | null;
   /** Where the in-game plugin decided to put its control files. */
   dir?: string | null;
   /** Whether that is the folder being managed. false means it is writing where nobody reads. */
@@ -539,10 +484,8 @@ export interface LiveApplyResult {
   reason?: string;
   applied?: string[];
   deferred?: string[];
-  backend_change?: boolean;
   /** The upscaler is re-created on the next frame to pick the change up. */
   reinit?: boolean;
-  can_switch_upscaler?: boolean;
   /** The write left every value as it was: nothing to apply or restart for. */
   unchanged?: boolean;
   /** Settings turned on by OptiScaler's own shortcut (FG on): press_live_keys. */

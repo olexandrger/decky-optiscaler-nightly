@@ -147,8 +147,7 @@ export function QuickControls({
   };
 
   // The FidelityFX versions this runtime offers (the game's list, else the ini's).
-  const ffxVersions = ffxVersionOptions(live?.ffx_upscaler_versions, optionById(FFX_UPSCALER_ID),
-    ffxVersionName(ffx)).options;
+  const ffxVersions = ffxVersionOptions(optionById(FFX_UPSCALER_ID), ffxVersionName(ffx)).options;
 
   const pickFamily = (id: string) => {
     const next = UPSCALER_FAMILIES.find((candidate) => candidate.id === id);

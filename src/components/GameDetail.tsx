@@ -24,7 +24,6 @@ import { Centered, Pill } from "./Common";
 import { ConfigTab } from "./ConfigTab";
 import { DetailHeader, ModeSwitch } from "./DetailHeader";
 import { InstallPanel } from "./InstallPanel";
-import { LiveStats } from "./LiveStats";
 import { MonitorTab } from "./MonitorTab";
 import { SetupChecklist } from "./SetupChecklist";
 
@@ -256,7 +255,7 @@ export function GameDetail({
       >
         <span style={{ flexGrow: 1 }}>
           Applied in-game — no restart needed.
-          {config.live.backend_change || config.live.reinit ? " The upscaler reloads on the next frame." : ""}
+          {config.live.reinit ? " The upscaler reloads on the next frame." : ""}
         </span>
       </div>
     ) : null;
@@ -384,7 +383,6 @@ export function GameDetail({
             title: "Settings",
             content: (
               <TabBody>
-                <LiveStats live={liveStatus} />
                 {targetDir ? (
                   <RunningConfig
                     targetDir={targetDir}

@@ -16,11 +16,9 @@ import { keepRunningChanges, toggleMenu, type RunningConfig } from "../api";
 import { optionById } from "../config/tabs";
 import type { Game, GameDetail, LiveStatus, RunningGame, OptionChange } from "../types";
 import { GamesList } from "./GamesList";
-import { LiveTiles } from "./LiveStats";
 import { TabStrip } from "./TabStrip";
 import { UpdateBanner } from "./UpdateBanner";
 import { Centered, Notice, Pill } from "./Common";
-import { MULTIPLIER_KEY, MULTIPLIER_SECTION, supportsMultiplier } from "../config/basic";
 import { curatedLabel } from "../config/labels";
 
 /**
@@ -158,14 +156,6 @@ function NowPlayingTab({
     );
   }
 
-  // Only meaningful on the XeSS frame generator, which is the one that can do
-  // more than 2X; anywhere else it would be a number that means nothing.
-  const multiplier = supportsMultiplier(values)
-    ? values[MULTIPLIER_SECTION]?.[MULTIPLIER_KEY]
-    : null;
-  const fgSub = multiplier
-    ? curatedLabel(`${MULTIPLIER_SECTION}.${MULTIPLIER_KEY}`, multiplier)
-    : undefined;
   const overlay = fpsOverlayLabel(values, live);
 
   const openOptiScalerMenu = () => {
@@ -189,11 +179,6 @@ function NowPlayingTab({
   return (
     <>
       <PanelSection title={runningGame.name}>
-        {installed ? (
-          <PanelSectionRow>
-            <LiveTiles live={live} fgSub={fgSub} />
-          </PanelSectionRow>
-        ) : null}
         <InfoRow id="status" info={installed ? <StatusInfo live={live} /> : undefined}>
           <InstallPill filename={detail?.install.filename} resolving={resolving} />
           {installed ? <LivePill live={live} /> : null}

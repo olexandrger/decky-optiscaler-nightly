@@ -882,7 +882,6 @@ class OptiScalerService:
                 outcome = live.apply_changes(target_dir, moved,
                                              can_reinit=state.get("can_reinit", False))
                 outcome["attached"] = True
-                outcome["can_switch_upscaler"] = False
                 return outcome
 
             result["live"] = await self._run(push)
@@ -1156,20 +1155,6 @@ class OptiScalerService:
         if result.get("ok"):
             await self.write_config(target_dir, live.ini_requirements())
             result["load_enabled"] = await self._run(live.load_enabled, target_dir)
-        return result
-
-    async def switch_upscaler(self, target_dir, code):
-        """The overlay's "Change Upscaler" button, from here."""
-        result = await self._run(live.switch_backend, target_dir, code)
-        if result.get("ok"):
-            # Record the choice for the next launch, but do not push it into the
-            # running game: the overlay's own switch writes State::newBackend
-            # and leaves Config alone until OptiScaler has rebuilt the feature,
-            # and writing Config first can make the switch a no-op.
-            key = {"fsr31_12": "Dx11Upscaler", "ffx_12": "Dx11Upscaler"}.get(code, "Dx12Upscaler")
-            await self.write_config(target_dir, [
-                {"section": "Upscalers", "key": key, "value": code},
-            ], push_live=False)
         return result
 
     async def live_diagnostics(self, target_dir):

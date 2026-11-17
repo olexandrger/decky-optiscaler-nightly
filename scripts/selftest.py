@@ -740,8 +740,6 @@ def check_live_control():
         check("a change with nothing live-settable sends nothing",
               live.apply_changes(str(target), [
                   {"section": "Hotfix", "key": "DisableOverlays", "value": "true"}])["sent"] is False)
-        check("the upscaler switch is refused, pointing at OptiScaler's overlay",
-              not live.switch_backend(str(target), "fsr31")["ok"])
 
         (target / live.DUMP_FILE).write_text(
             "fields 2\nSharpness f32 1 0.5 0.400000006 -\nDx12Upscaler i32 0 - 0 -\n")
@@ -811,7 +809,6 @@ def check_live_diagnostics():
         check("the plugin API version is carried through", report["api"] == 3, report["api"])
         check("ReInitUpscalers makes the FSR version live", report["can_reinit"]
               and report["can_change_ffx_upscaler"])
-        check("the upscaler cannot be switched from the panel", not report["can_switch_upscaler"])
         check("the last applied command is carried through", report["seq"] == "7", report["seq"])
 
         old = time.time() - (live.STATUS_STALE_SECONDS + 30)
@@ -3018,6 +3015,61 @@ def check_option_validation():
         check(f"every key the {name} preset writes is accepted", not bad, bad)
 
 
+def _ts_fields(path, interface):
+    """Field names of a TypeScript interface, as declared in the frontend."""
+    text = (ROOT / path).read_text(encoding="utf-8")
+    start = text.index(f"export interface {interface} {{")
+    body, depth = [], 0
+    for line in text[start:].splitlines()[1:]:
+        if depth == 0 and line.startswith("}"):
+            break
+        if depth == 0:
+            match = re.match(r"\s+(\w+)\??:", line)
+            if match:
+                body.append(match.group(1))
+        depth += line.count("{") - line.count("}")
+    return body
+
+
+def check_frontend_types_match_backend():
+    """The panel reads only fields the backend really sends.
+
+    Fields from OptiScaler's State (frame rates, the backend in use, the
+    generator list) stayed in the frontend's types after the in-game plugin
+    stopped reading State; the backend sent them as null forever, and the only
+    things that ever filled them were hand-written harness fixtures. Each
+    declared field has to be a key the backend's reply holds.
+    """
+    import tempfile
+    from optiscaler import live, running
+    from optiscaler.service import OptiScalerService
+
+    print("\nFrontend types against the backend")
+    root = Path(tempfile.mkdtemp(prefix="optiscaler-types-"))
+    try:
+        target = root / "game"
+        target.mkdir()
+        (target / INI_NAME).write_text("[Plugins]\nLoadAsiPlugins=true\n")
+        (target / live.STATUS_FILE).write_text(
+            f"schema {live.STATUS_SCHEMA}\nbuilt_for test\nstatus ready\napi 3\nreinit_available 1\n"
+            "seq 0\napplied 0\nreinit -1\nconfig 0x1\nfields 1\nerror \n")
+        (target / running.VALUES_FILE).write_text("fields 1\nSharpness f32 1 0.5 0.3 - 0\n")
+        service = OptiScalerService(ROOT, root / "settings", root / "runtime", root / "home",
+                                    logging.getLogger("types"))
+        replies = {
+            "LiveStatus": asyncio.run(service.get_live_status(str(target))),
+            "RunningConfig": asyncio.run(service.get_running_config(str(target))),
+        }
+        where = {"LiveStatus": "src/types.ts", "RunningConfig": "src/api.ts"}
+        for interface, reply in replies.items():
+            declared = _ts_fields(where[interface], interface)
+            missing = [name for name in declared if name not in reply]
+            check(f"every {interface} field the panel declares is one the backend sends",
+                  declared and not missing, missing or declared)
+    finally:
+        shutil.rmtree(root, ignore_errors=True)
+
+
 def main():
     logging.basicConfig(level=logging.ERROR)
     asyncio.run(run())
@@ -3026,6 +3078,7 @@ def main():
     check_debug_report()
     check_live_push_only_what_moved()
     check_running_config()
+    check_frontend_types_match_backend()
     check_live_fields_match_optiscalers_menu()
     check_live_keys()
     check_remembered_choices()

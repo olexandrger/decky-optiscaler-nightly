@@ -36,8 +36,8 @@ OptiScaler v0.9.4 is bundled, so installing works offline and every game gets th
 
 This branch bundles an **OptiScaler nightly** from
 [optiscaler/OptiScaler-nightly](https://github.com/optiscaler/OptiScaler-nightly/releases)
-in place of the 0.9.4 release — currently **10.0.0-pre1 (2026-10-30)**. It
-installs over the regular plugin (same name, same settings and per-game records).
+in place of the 0.9.4 release — currently **10.0.0-pre1 (2026-10-30)**. It is
+a separate Decky plugin from the original (see below for installing both).
 
 - **Live in-game control, rebuilt on OptiScaler 10's plugin API.** Frame
   generation on/off, HUD fix, sharpness, the FPS overlay, the XeFG multiplier,
@@ -77,6 +77,10 @@ installs over the regular plugin (same name, same settings and per-game records)
   status, command, plugin log and `OptiScaler.log` excerpts, to
   `~/Downloads/decky-optiscaler-nightly-debug-<game>-<time>.txt`; when
   OptiScaler is not logging, one button turns its log on for the next launch.
+- No frame-rate readout or "in game" backend tiles: those came from
+  OptiScaler's `State`, which this fork's in-game plugin does not read. The
+  running game's settings (above) and OptiScaler's own FPS overlay replace them.
+  The upstream sections below still describe the old readout.
 - A game set up by an earlier build shows **Update OptiScaler in this game**,
   which reapplies the bundled OptiScaler with the game's choices and its
   OptiScaler.ini kept.
