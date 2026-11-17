@@ -1847,7 +1847,7 @@ def check_live_push_only_what_moved():
     one applies live.
     """
     import tempfile
-    from optiscaler import live
+    from optiscaler import live, running
     from optiscaler.service import OptiScalerService
 
     print("\nLive push: only what moved")
@@ -1869,6 +1869,20 @@ def check_live_push_only_what_moved():
         again = asyncio.run(service.write_config(str(target), preset)).get("live") or {}
         check("writing the same values again sends nothing and asks for no restart",
               again.get("unchanged") and not again.get("sent"), again)
+        # The game holds another value than the ini (OptiScaler's key turned FG
+        # off); the panel shows the game's, the user picks the ini's: it is
+        # unchanged in the ini but has to reach the game.
+        (target / INI_NAME).write_text("[Upscalers]\nDx12Upscaler=ffx\n[FSR]\nUpscalerIndex=1\n"
+                                       "[Menu]\nShowFps=false\n")
+        (target / running.VALUES_FILE).write_text("fields 2\nShowFps bool 1 1 0 - 0\nFfxUpscalerIndex i32 1 1 0 - 0\n")
+        (target / running.LOADED_FILE).write_text("fields 2\nShowFps bool 1 0 0 - 0\nFfxUpscalerIndex i32 1 1 0 - 0\n")
+        again = asyncio.run(service.write_config(str(target), [
+            {"section": "Menu", "key": "ShowFps", "value": "false"},
+            {"section": "FSR", "key": "UpscalerIndex", "value": "1"}])).get("live") or {}
+        check("a live key the ini already says is sent when the game holds another value",
+              again.get("sent") and again.get("applied") == ["ShowFps"], again)
+        (target / running.VALUES_FILE).unlink()
+        (target / running.LOADED_FILE).unlink()
         switch = asyncio.run(service.write_config(str(target), [
             {"section": "Upscalers", "key": "Dx12Upscaler", "value": "xess"}])).get("live") or {}
         check("a real backend switch still waits for the next launch",

@@ -86,7 +86,7 @@ export function QuickControls({
    * (OptiScaler adjusts some itself); laid over the ini they made the Lite
    * preset unrecognisable, and the upscaler read as plain "FSR 3.X/4".
    */
-  configured?: ConfigValues;
+  configured: ConfigValues;
   live: LiveStatus | null;
   gpu: GpuInfo | null | undefined;
   ffx?: FfxUpscalerInfo | null;
@@ -102,24 +102,27 @@ export function QuickControls({
   const liveReady = Boolean(live?.ready);
 
   // -- frame generation --------------------------------------------------
+  // On/off is live: the running game's. The FG pair and whether the output can
+  // multiply are what is set up (OptiScaler resets an output it cannot run to
+  // none at runtime; turning FG on must not rewrite the pair from that).
+  const setUp = configured;
   const fgOn = frameGenEnabled(values);
   const planned = plan?.available ? plan : null;
   const plannedFg = planned && auto ? planned.framegen ?? null : null;
   const fgUnavailable = plannedFg?.input === "nofg";
   const multiplierOption = optionById(`${MULTIPLIER_SECTION}.${MULTIPLIER_KEY}`);
-  const multiplierUsable = supportsMultiplier(values);
-  const rawFgInput = (values.FrameGen?.FGInput ?? AUTO).toLowerCase();
-  const rawFgOutput = (values.FrameGen?.FGOutput ?? AUTO).toLowerCase();
-  const fgPair = activeFgPreset(values)?.label ??
+  const multiplierUsable = supportsMultiplier(setUp);
+  const rawFgInput = (setUp.FrameGen?.FGInput ?? AUTO).toLowerCase();
+  const rawFgOutput = (setUp.FrameGen?.FGOutput ?? AUTO).toLowerCase();
+  const fgPair = activeFgPreset(setUp)?.label ??
     `${curatedLabel("FrameGen.FGInput", rawFgInput) ?? rawFgInput} → ${curatedLabel("FrameGen.FGOutput", rawFgOutput) ?? rawFgOutput}`;
 
   const turnFrameGenOn = () =>
     onApply(plannedFg && plannedFg.input !== "nofg"
       ? enableFrameGenWith(plannedFg.input, plannedFg.output)
-      : enableFrameGenChanges(values));
+      : enableFrameGenChanges(setUp));
 
   // -- upscaler ----------------------------------------------------------
-  const setUp = configured ?? values;
   const preset = activeUpscalerPreset(setUp);
   const choices = upscalerChoicesFor(gpu, preset);
   const available = new Set(choices.map((choice) => choice.id));

@@ -14,6 +14,14 @@ Newest first. Each release ships `Decky OptiScaler.zip` for Decky Loader's
   dll names). Live: frame generation on/off, HUD fix, debug view, depth copy,
   XeFG multiplier, sharpness, the FPS overlay and the FSR version. Not live:
   switching the upscaler backend or the FFX frame generator.
+- Fixed, found by the new real-backend harness: a live control the ini
+  already agreed with (FG off after OptiScaler's End key, the overlay after
+  Page Up, the multiplier, FSR version or XeSS model changed in OptiScaler's
+  menu) never reached the game and flipped back; turning FG on rewrote the FG
+  pair from an output OptiScaler had reset at runtime; the upscaler read as
+  plain FFX when the game held another FSR 4 model than the ini.
+- `testharness/backend.tsx` + `scripts/harness_backend.py`: the panel against
+  the real backend and a simulated running game, 43 cases, in CI.
 - Condensed Quick Access panel (QuickControls): OptiScaler menu and overlay
   buttons on top, frame generation on/off and multiplier, the upscaler as a
   family plus the model under it, explanations behind ⓘ buttons, diagnostics

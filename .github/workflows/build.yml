@@ -132,6 +132,11 @@ jobs:
       - name: Live-controls harness
         run: HARNESS=live-fields.tsx node testharness/build-and-run.mjs
 
+      # The Quick Access panel against the real Python backend and a simulated
+      # running game whose values differ from the ini (scripts/harness_backend.py).
+      - name: Panel against the real backend
+        run: HARNESS=backend.tsx node testharness/build-and-run.mjs
+
       - name: Package
         run: python3 scripts/package.py
 

@@ -140,6 +140,7 @@ jobs:
           HARNESS=all-options.tsx node testharness/build-and-run.mjs 2>&1 | tee all-options.log
           grep -q "real React errors: 0" all-options.log
           HARNESS=live-fields.tsx node testharness/build-and-run.mjs
+          HARNESS=backend.tsx node testharness/build-and-run.mjs
 
       - name: Package
         if: steps.bundle.outputs.release == 'true'

@@ -221,8 +221,21 @@ python3 scripts/test_live_asi.py  # live editing inside the bundled OptiScaler, 
 HARNESS=run.tsx node testharness/build-and-run.mjs          # "React errors/warnings: 0", no line ending ": false"
 HARNESS=all-options.tsx node testharness/build-and-run.mjs  # "real React errors: 0"
 HARNESS=live-fields.tsx node testharness/build-and-run.mjs  # exits non-zero on failure
+HARNESS=backend.tsx node testharness/build-and-run.mjs      # the panel against the real backend; exits non-zero
 python3 scripts/package.py
 ```
+
+`backend.tsx` is the one to extend for anything the Quick Access panel shows
+or changes. It runs the real `OptiScalerService` (`scripts/harness_backend.py`)
+on a temporary game folder, with a simulated running game that loads the ini,
+applies the panel's commands as the in-game plugin does, and changes values by
+itself, the way OptiScaler's menu, its keys and its own runtime adjustments do.
+Every case requires the control to show the pick after a refresh of the
+running values, the ini to hold it, and the game to hold it if it is live.
+Hand-written fakes (`live-fields.tsx`, `run.tsx`) only behave as their author
+assumed the backend does; three panel bugs got past them because none served a
+running game that differs from the ini. A new control gets cases there under
+each such drift, and is checked to fail with the bug put back.
 
 None of these run OptiScaler in a game (`test_live_asi.py` runs it in a stand-in
 host). Whether it renders under Proton, which FSR 4 model it creates, whether a

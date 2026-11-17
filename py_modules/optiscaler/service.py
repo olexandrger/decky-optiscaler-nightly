@@ -861,10 +861,21 @@ class OptiScalerService:
                 # A preset rewrites keys it shares with the current one (the
                 # backend, picking FSR 3.1 over FSR 4): only what moved counts,
                 # or an unchanged restart-only key would ask for a restart.
-                moved = result.get("changed", [])
+                moved = list(result.get("changed", []))
+                state = live.status(target_dir)
+                if state.get("ready"):
+                    # ...and a live key the ini already says, but the running
+                    # game holds otherwise (OptiScaler's key or menu changed it):
+                    # the control showed the game's value, the user picked the
+                    # ini's, and only the game can still change.
+                    held = running.snapshot(target_dir).get("values", {})
+                    for entry in result["applied"]:
+                        ini_key = f"{entry['section']}.{entry['key']}"
+                        if (entry not in moved and ini_key in live.LIVE_FIELDS and ini_key in held
+                                and not running.same(held[ini_key], entry["value"])):
+                            moved.append(entry)
                 if not moved:
                     return {"ok": True, "sent": False, "unchanged": True}
-                state = live.status(target_dir)
                 if not state.get("ready"):
                     return {"ok": True, "sent": False, "reason": state.get("state"),
                             "attached": bool(state.get("attached"))}
