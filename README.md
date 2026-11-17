@@ -40,8 +40,10 @@ in place of the 0.9.4 release — currently **10.0.0-pre1 (2026-10-30)**. It
 installs over the regular plugin (same name, same settings and per-game records).
 
 - **Live in-game control, rebuilt on OptiScaler 10's plugin API.** Frame
-  generation on/off, HUD fix, sharpness, the FPS overlay, the XeFG multiplier
-  and the FSR version apply in the running game; everything else when it
+  generation on/off, HUD fix, sharpness, the FPS overlay, the XeFG multiplier,
+  the FSR version, the FSR 4 model and the init flags (auto exposure, HDR,
+  depth inverted, jitter cancellation, display-resolution MVs, dynamic
+  resolution) apply in the running game; everything else when it
   restarts (**Restart game to apply**). The ASI is compiled for each bundled
   nightly from that nightly's own `Config.h` and tested inside it under Wine
   (`scripts/test_live_asi.py`), so a nightly that breaks it fails the build

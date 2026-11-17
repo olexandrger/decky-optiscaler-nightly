@@ -50,8 +50,13 @@ live ones go through `asi/live.cpp`, an ASI OptiScaler loads from the game's
 - The ASI validates `Config` (file name, path, defaults) before writing anything
   and otherwise reports `failed` and stays inert.
 - Live keys are `optiscaler.live.LIVE_FIELDS`: settings OptiScaler re-reads per
-  frame, plus the FFX upscaler version (write, then `ReInitUpscalers`).
-  `py_modules/optiscaler/live.py` sends them as `set`/`reinit` commands through
+  frame, plus what OptiScaler's own overlay changes by writing the value and
+  rebuilding the upscaler on the same backend (`ReInitUpscaler` in
+  `menu_common.cpp`): the FFX upscaler version, the FSR 4 model and the init
+  flags (write, then `ReInitUpscalers`). `ReInitUpscalers` keeps the current
+  backend, so it cannot switch to another one. "auto" for those is `unset`
+  (the overlay's "Auto").
+  `py_modules/optiscaler/live.py` sends them as `set`/`unset`/`reinit` commands through
   `decky_optiscaler_live.cmd`/`.status`; the panel claims an edit took effect
   only when the ASI is `ready` and the key was sent.
 - Not live, on purpose: switching to another upscaler backend or FFX frame

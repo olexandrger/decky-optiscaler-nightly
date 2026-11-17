@@ -709,6 +709,26 @@ def check_live_control():
               live.apply_changes(str(target), [
                   {"section": "FrameGen", "key": "Enabled", "value": "auto"}])["deferred"]
               == ["FrameGen.Enabled"])
+        # The FSR 4 model and the init flags: what the overlay changes live by
+        # writing the value and rebuilding the upscaler on the same backend.
+        model = live.apply_changes(str(target), [
+            {"section": "FSR", "key": "Fsr4Model", "value": "3"},
+            {"section": "InitFlags", "key": "HDR", "value": "auto"},
+        ])
+        model_body = (target / live.CMD_FILE).read_text().splitlines()
+        check("an FSR 4 model change is written, then the upscaler re-created",
+              model_body[1:] == ["set Fsr4Model u8 3", "unset HDR", "reinit"]
+              and model["applied"] == ["Fsr4Model", "HDR"] and not model["deferred"], model_body)
+        check("'auto' for a resettable setting unsets it, as the overlay's Auto does",
+              live.apply_changes(str(target), [
+                  {"section": "FSR", "key": "Fsr4Model", "value": "auto"}])["applied"] == ["Fsr4Model"])
+        check("an FSR 4 model OptiScaler does not have is refused",
+              not _accepts(live.LIVE_FIELDS["FSR.Fsr4Model"], "4"))
+        check("every setting that needs the upscaler rebuilt waits without ReInitUpscalers",
+              live.apply_changes(str(target), [
+                  {"section": "FSR", "key": "Fsr4Model", "value": "auto"},
+                  {"section": "InitFlags", "key": "AutoExposure", "value": "true"}],
+                  can_reinit=False)["deferred"] == ["FSR.Fsr4Model", "InitFlags.AutoExposure"])
         check("a change with nothing live-settable sends nothing",
               live.apply_changes(str(target), [
                   {"section": "Hotfix", "key": "DisableOverlays", "value": "true"}])["sent"] is False)
@@ -1810,6 +1830,45 @@ def check_debug_report():
         shutil.rmtree(root, ignore_errors=True)
 
 
+def check_live_push_only_what_moved():
+    """A preset rewrites keys it shares with the current one; only what moved is pushed.
+
+    Picking FSR 3.1 over FSR 4 rewrites the backend with the value it already
+    has. Pushed as a change, that unchanged restart-only key asked for a
+    restart the user did not need: only the FSR version had moved, and that
+    one applies live.
+    """
+    import tempfile
+    from optiscaler import live
+    from optiscaler.service import OptiScalerService
+
+    print("\nLive push: only what moved")
+    root = Path(tempfile.mkdtemp(prefix="optiscaler-moved-"))
+    try:
+        target = root / "game"
+        target.mkdir()
+        (target / INI_NAME).write_text("[Upscalers]\nDx12Upscaler=ffx\n[FSR]\nUpscalerIndex=0\n")
+        (target / live.STATUS_FILE).write_text(
+            f"schema {live.STATUS_SCHEMA}\nbuilt_for 03b37db7\nstatus ready\napi 3\n"
+            "reinit_available 1\nseq 0\napplied 0\nreinit -1\nconfig 0x1\nfields 380\nerror \n")
+        service = OptiScalerService(ROOT, root / "s", root / "r", root / "h", logging.getLogger("t"))
+        preset = [{"section": "Upscalers", "key": "Dx12Upscaler", "value": "ffx"},
+                  {"section": "FSR", "key": "UpscalerIndex", "value": "1"}]
+        pushed = asyncio.run(service.write_config(str(target), preset)).get("live") or {}
+        check("only the FSR version is pushed, and nothing waits for a restart",
+              pushed.get("sent") and pushed.get("applied") == ["FfxUpscalerIndex"]
+              and pushed.get("deferred") == [] and pushed.get("reinit"), pushed)
+        again = asyncio.run(service.write_config(str(target), preset)).get("live") or {}
+        check("writing the same values again sends nothing and asks for no restart",
+              again.get("unchanged") and not again.get("sent"), again)
+        switch = asyncio.run(service.write_config(str(target), [
+            {"section": "Upscalers", "key": "Dx12Upscaler", "value": "xess"}])).get("live") or {}
+        check("a real backend switch still waits for the next launch",
+              switch.get("deferred") == ["Upscalers.Dx12Upscaler"], switch)
+    finally:
+        shutil.rmtree(root, ignore_errors=True)
+
+
 def check_optipatcher():
     """OptiPatcher ships alongside and installs into the same plugin folder."""
     import tempfile
@@ -2602,6 +2661,7 @@ def main():
     check_live_control()
     check_live_diagnostics()
     check_debug_report()
+    check_live_push_only_what_moved()
     check_remembered_choices()
     check_launch_record()
     check_launch_options_read()

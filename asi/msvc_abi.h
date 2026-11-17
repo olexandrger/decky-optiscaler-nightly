@@ -98,6 +98,10 @@ template <class T> struct CustomOptional {
         base.engaged = true;
         isVolatile = false;
     }
+
+    // Matches std::optional::reset, which the overlay uses for "Auto": the
+    // value is dropped and value_or_default() falls back to the default.
+    void reset() { base.engaged = false; }
 };
 
 // std::vector<T> on MSVC: three pointers.

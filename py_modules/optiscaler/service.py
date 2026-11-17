@@ -819,7 +819,9 @@ class OptiScalerService:
             if not path.is_file():
                 return {"ok": False, "error": "OptiScaler.ini not found"}
             ini = IniFile(path)
+            current = ini.to_dict()
             applied = []
+            changed = []
             rejected = []
             for change in changes or []:
                 section = change.get("section")
@@ -833,10 +835,14 @@ class OptiScalerService:
                     rejected.append({"section": section, "key": key, "value": value})
                     continue
                 ini.set(section, key, value)
-                applied.append({"section": section, "key": key, "value": value})
+                entry = {"section": section, "key": key, "value": value}
+                applied.append(entry)
+                before = current.get(section, {}).get(key)
+                if str(before if before not in (None, "") else "auto").strip().lower() != value.strip().lower():
+                    changed.append(entry)
             if applied:
                 ini.save()
-            return {"ok": True, "applied": applied, "rejected": rejected,
+            return {"ok": True, "applied": applied, "changed": changed, "rejected": rejected,
                     "written_at": time.time()}
 
         async with self._mutation_lock:
@@ -852,11 +858,17 @@ class OptiScalerService:
                 # user would be told the change took effect when it did not.
                 # "ready" rather than merely "attached": until the ASI has found
                 # OptiScaler's Config it cannot apply anything.
+                # A preset rewrites keys it shares with the current one (the
+                # backend, picking FSR 3.1 over FSR 4): only what moved counts,
+                # or an unchanged restart-only key would ask for a restart.
+                moved = result.get("changed", [])
+                if not moved:
+                    return {"ok": True, "sent": False, "unchanged": True}
                 state = live.status(target_dir)
                 if not state.get("ready"):
                     return {"ok": True, "sent": False, "reason": state.get("state"),
                             "attached": bool(state.get("attached"))}
-                outcome = live.apply_changes(target_dir, result["applied"],
+                outcome = live.apply_changes(target_dir, moved,
                                              can_reinit=state.get("can_reinit", False))
                 outcome["attached"] = True
                 outcome["can_switch_upscaler"] = False

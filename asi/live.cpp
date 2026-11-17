@@ -26,9 +26,10 @@
 // Protocol (files next to OptiScaler's dll, written by py_modules/optiscaler/live.py):
 //   decky_optiscaler_live.cmd     seq <n>, then one command per line:
 //                                   set <member> <bool|i32|u32|u8|f32> <value>
+//                                   unset <member>  drop the value (the overlay's "Auto")
 //                                   reinit      re-create the upscaler
 //                                   dump        write every field to .dump
-//   decky_optiscaler_live.status  rewritten every second (schema 6):
+//   decky_optiscaler_live.status  rewritten every second (schema 7):
 //                                 status loaded|searching|ready|failed
 //   decky_optiscaler_live.dump    <member> <kind> <engaged> <value> <default> <ini>
 //   decky_optiscaler_live.log     what the plugin did
@@ -50,7 +51,7 @@
 
 using namespace optimirror;
 
-#define STATUS_SCHEMA 6
+#define STATUS_SCHEMA 7
 
 // The OptiScaler commit whose Config.h this was compiled against (asi/build.sh
 // passes asi/optiscaler_ref/SOURCE_COMMIT.txt). Reported so the panel can tell
@@ -386,6 +387,25 @@ static bool SetField(const char* name, const char* type, const char* value) {
     return true;
 }
 
+/** Drop a field's value, as the overlay's "Auto" does: OptiScaler then uses its default. */
+static bool UnsetField(const char* name) {
+    const FieldDesc* f = FindField(name);
+    if (!f) { SetError("no Config field %s", name); return false; }
+    if (!g_config) { SetError("Config not found"); return false; }
+    unsigned char* at = (unsigned char*) g_config + f->offset;
+    if (!Writable(at, sizeof(CustomOptional<double>))) { SetError("%s is not writable", name); return false; }
+    switch (f->kind) {
+    case OPTI_BOOL: FieldAt<bool>(f)->reset(); break;
+    case OPTI_I32: FieldAt<int32_t>(f)->reset(); break;
+    case OPTI_U32: FieldAt<uint32_t>(f)->reset(); break;
+    case OPTI_U8: FieldAt<uint8_t>(f)->reset(); break;
+    case OPTI_FLOAT: FieldAt<float>(f)->reset(); break;
+    default: SetError("%s cannot be unset", name); return false;
+    }
+    LogLine("unset %s", name);
+    return true;
+}
+
 /** "<engaged> <value> <default> <ini>" for a scalar field, "-" where unset. */
 template <class T> static void FormatOptional(const CustomOptional<T>* o, const char* fmt, char* out,
                                               size_t outLen) {
@@ -556,6 +576,8 @@ static int ApplyCommands(char* text, long long* seqOut) {
             *seqOut = atoll(a);
         } else if (parts >= 4 && strcmp(verb, "set") == 0) {
             if (SetField(a, b, c)) applied++;
+        } else if (parts >= 2 && strcmp(verb, "unset") == 0) {
+            if (UnsetField(a)) applied++;
         } else if (strcmp(verb, "reinit") == 0) {
             wantReInit = true;
         } else if (strcmp(verb, "dump") == 0) {

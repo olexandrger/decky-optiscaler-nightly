@@ -24,6 +24,7 @@ import {
   supportsInt8Override,
   supportsMultiplier,
   usesFfxFrameGen,
+  sameBackend,
   usesFfxUpscaler,
 } from "../config/basic";
 import { curatedLabel } from "../config/labels";
@@ -234,6 +235,8 @@ export function BasicPanel({
   const [methodChanged, setMethodChanged] = useState(false);
   const [ffxFgChanged, setFfxFgChanged] = useState(false);
   const [ffxUpscalerChanged, setFfxUpscalerChanged] = useState(false);
+  // The last pick moves to another backend, which no live path can do.
+  const [backendSwitched, setBackendSwitched] = useState(false);
   const [switching, setSwitching] = useState(false);
   const [switchError, setSwitchError] = useState<string | null>(null);
 
@@ -330,7 +333,10 @@ export function BasicPanel({
   // Only the FidelityFX backend has versions to choose between. The ini answers
   // for a game that is not running; a game that *is* running has already picked
   // one, which settles it for the "auto" the ini can only leave open.
-  const ffxUpsUsable = live?.attached ? isFfxBackend(liveBackend) : usesFfxUpscaler(values);
+  // The in-game plugin cannot read which backend OptiScaler created (that is
+  // State), so a running game is judged by the ini like a stopped one.
+  const ffxUpsUsable =
+    live?.attached && liveBackend ? isFfxBackend(liveBackend) : usesFfxUpscaler(values);
   // Attached, the user has moved it, and there was nothing to act on: no
   // upscaler is registered yet, so this was an ini write only.
   const ffxUpsNotLive =
@@ -356,6 +362,7 @@ export function BasicPanel({
   const switchNotReady =
     Boolean(targetDir) &&
     Boolean(wanted) &&
+    backendSwitched &&
     wanted !== liveBackend &&
     Boolean(live?.attached) &&
     !live?.can_switch_upscaler &&
@@ -659,6 +666,8 @@ export function BasicPanel({
                   .finally(() => setInstallingFsr4(false));
                 return;
               }
+              const next = backendCode(preset);
+              setBackendSwitched(!next || !sameBackend(String(rawUpscaler ?? "").toLowerCase(), next));
               setPicked(preset.id);
               setSwitchError(null);
               onApply(preset.changes);
@@ -736,9 +745,8 @@ export function BasicPanel({
         {switchNotReady ? (
           <PanelSectionRow>
             <Notice tone="info">
-              {live?.backend_entries === 0
-                ? "Saved. The game has not started upscaling yet, so there is nothing to switch — it takes effect as soon as it does."
-                : "Saved. It applies when the game restarts."}
+              Saved for the next launch. OptiScaler only switches to another upscaler at
+              startup, or from its own menu (the <b>OptiScaler menu</b> button).
             </Notice>
           </PanelSectionRow>
         ) : null}

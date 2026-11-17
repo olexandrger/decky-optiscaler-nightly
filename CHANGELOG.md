@@ -14,6 +14,11 @@ Newest first. Each release ships `Decky OptiScaler.zip` for Decky Loader's
   dll names). Live: frame generation on/off, HUD fix, debug view, depth copy,
   XeFG multiplier, sharpness, the FPS overlay and the FSR version. Not live:
   switching the upscaler backend or the FFX frame generator.
+- Live: the FSR 4 model and the init flags, the way OptiScaler's overlay
+  changes them (write, then rebuild the upscaler on the same backend); "auto"
+  unsets them. The FSR version control is shown while the game runs (it was
+  hidden), a preset that only moves the FSR version no longer asks for a
+  restart, and a backend switch says it needs one or OptiScaler's own menu.
 - Live-control diagnostics in the Quick Access panel and on the game's page,
   with **Save debug report** (a text file in `~/Downloads`). The ASI now names
   the OptiScaler commit it was built for (`built_for` in its status) and, when it

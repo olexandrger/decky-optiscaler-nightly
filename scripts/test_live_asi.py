@@ -96,6 +96,13 @@ SENTINELS = {
     "Sharpness.OverrideSharpness": "true",
     "Sharpness.Sharpness": "0.55",
     "Menu.ShowFps": "true",
+    "FSR.Fsr4Model": "2",
+    "InitFlags.AutoExposure": "true",
+    "InitFlags.HDR": "true",
+    "InitFlags.DepthInverted": "true",
+    "InitFlags.JitterCancellation": "true",
+    "InitFlags.DisplayResolution": "true",
+    "InitFlags.DynamicResolution": "true",
 }
 # What the panel then changes live. Different from every sentinel.
 LIVE_VALUES = {
@@ -109,6 +116,14 @@ LIVE_VALUES = {
     "Sharpness.OverrideSharpness": "false",
     "Sharpness.Sharpness": "0.8125",
     "Menu.ShowFps": "false",
+    # "auto" for a resettable field: the ASI unsets it, as the overlay's "Auto".
+    "FSR.Fsr4Model": "auto",
+    "InitFlags.AutoExposure": "false",
+    "InitFlags.HDR": "auto",
+    "InitFlags.DepthInverted": "false",
+    "InitFlags.JitterCancellation": "false",
+    "InitFlags.DisplayResolution": "false",
+    "InitFlags.DynamicResolution": "false",
 }
 
 DEFAULT_RE = re.compile(
@@ -265,7 +280,8 @@ def run(wine, scratch):
         changes = [{"section": k.split(".", 1)[0], "key": k.split(".", 1)[1], "value": v}
                    for k, v in LIVE_VALUES.items()]
         sent = live.apply_changes(str(game), changes, can_reinit=st["can_reinit"])
-        expected_deferred = [] if st["can_reinit"] else [live.FFX_UPSCALER_ID]
+        expected_deferred = [] if st["can_reinit"] else sorted(
+            key for key in LIVE_VALUES if live.LIVE_FIELDS[key].needs_reinit)
         check("every live setting is sent", sent["sent"] and sorted(sent["deferred"]) == expected_deferred,
               sent)
         check("the ASI applies the command", wait_seq(game, sent["seq"]) is True)
@@ -280,6 +296,10 @@ def run(wine, scratch):
                 continue
             field = live.LIVE_FIELDS[key]
             got = fields.get(field.member)
+            if value == "auto":
+                check(f"{key} is unset in OptiScaler's Config (its default applies)",
+                      got is not None and not got[1], got)
+                continue
             check(f"{key} now holds the new value in OptiScaler's Config",
                   got is not None and got[1] and same(field.wire_type, got[2], field.encode(value)), got)
         if st["can_reinit"]:

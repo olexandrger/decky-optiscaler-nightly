@@ -110,7 +110,8 @@ export function useConfig(targetDir: string | null, enabled: boolean, reloadKey?
       const applied = result.live ?? null;
       setLive(applied);
       const fullyLive =
-        Boolean(applied?.sent) && (applied?.deferred?.length ?? 0) === 0;
+        Boolean(applied?.unchanged) ||
+        (Boolean(applied?.sent) && (applied?.deferred?.length ?? 0) === 0);
       if (!fullyLive) setDirty(true);
 
       const rejected = result.rejected ?? [];

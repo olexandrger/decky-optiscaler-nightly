@@ -38,7 +38,7 @@ STATUS_FILE = "decky_optiscaler_live.status"
 LOG_FILE = "decky_optiscaler_live.log"
 DUMP_FILE = "decky_optiscaler_live.dump"
 # The status-file format this module reads (asi/live.cpp STATUS_SCHEMA).
-STATUS_SCHEMA = 6
+STATUS_SCHEMA = 7
 
 # A status file older than this means the ASI is not running - the game exited,
 # or it never loaded. The ASI heartbeats every few seconds precisely so that
@@ -71,10 +71,13 @@ FFX_UPSCALER_MAX = FFX_FG_MAX
 class LiveField:
     """One INI key the ASI can apply without a restart."""
 
-    def __init__(self, member, wire_type, encode, needs_reinit=False):
+    def __init__(self, member, wire_type, encode, needs_reinit=False, resettable=False):
         self.member = member
         self.wire_type = wire_type
         self.encode = encode
+        # "auto" in the INI is an unset value; for these the ASI unsets it
+        # (the overlay's "Auto"), instead of leaving it for the next launch.
+        self.resettable = resettable
         # Read when the upscaler is created rather than every frame: the write
         # is followed by OptiPluginApi::ReInitUpscalers, which makes OptiScaler
         # re-create the upscaler with the new value on its next frame.
@@ -96,6 +99,18 @@ def _int(value):
 
 def _float(value):
     return repr(float(str(value).strip()))
+
+
+def _fsr4_model(value):
+    """[FSR] Fsr4Model: 0 FP8, 1 INT8, 2 INT8 RDNA2, 3 INT8 Lite."""
+    model = int(float(str(value).strip()))
+    if model < 0 or model > 3:
+        raise ValueError(f"not an FSR 4 model: {value!r}")
+    return str(model)
+
+
+def _is_auto(value):
+    return str(value).strip().lower() in ("auto", "")
 
 
 def _ffx_upscaler_index(value):
@@ -127,6 +142,21 @@ LIVE_FIELDS = {
     # context: written, then the upscaler is re-created through the plugin API.
     FFX_UPSCALER_ID: LiveField("FfxUpscalerIndex", "i32", _ffx_upscaler_index,
                                needs_reinit=True),
+
+    # Also read when the upscaler is created, and switched by OptiScaler's own
+    # overlay exactly this way: the value written, then the upscaler rebuilt on
+    # the same backend (menu_common.cpp: the "FSR4 Model" combo and the Init
+    # Flags checkboxes call ReInitUpscaler, which is what ReInitUpscalers asks).
+    "FSR.Fsr4Model": LiveField("Fsr4Model", "u8", _fsr4_model, needs_reinit=True, resettable=True),
+    "InitFlags.AutoExposure": LiveField("AutoExposure", "bool", _bool, needs_reinit=True, resettable=True),
+    "InitFlags.HDR": LiveField("HDR", "bool", _bool, needs_reinit=True, resettable=True),
+    "InitFlags.DepthInverted": LiveField("DepthInverted", "bool", _bool, needs_reinit=True, resettable=True),
+    "InitFlags.JitterCancellation": LiveField("JitterCancellation", "bool", _bool,
+                                              needs_reinit=True, resettable=True),
+    "InitFlags.DisplayResolution": LiveField("DisplayResolution", "bool", _bool,
+                                             needs_reinit=True, resettable=True),
+    "InitFlags.DynamicResolution": LiveField("DynamicResolution", "bool", _bool,
+                                             needs_reinit=True, resettable=True),
 
     # Cheap per-frame knobs, safe to move while playing.
     "Sharpness.OverrideSharpness": LiveField("OverrideSharpness", "bool", _bool),
@@ -456,6 +486,10 @@ def apply_changes(target_dir, changes, can_reinit=True):
         if field is None or (field.needs_reinit and not can_reinit):
             deferred.append(ini_key)
             continue
+        if field.resettable and _is_auto(change["value"]):
+            live.append(f"unset {field.member}")
+            reinit = reinit or field.needs_reinit
+            continue
         try:
             encoded = field.encode(change["value"])
         except (TypeError, ValueError):
@@ -478,7 +512,7 @@ def apply_changes(target_dir, changes, can_reinit=True):
         "ok": True,
         "sent": True,
         "seq": seq,
-        "applied": [line.split(" ")[1] for line in live if line.startswith("set ")],
+        "applied": [line.split(" ")[1] for line in live if line.startswith(("set ", "unset "))],
         "deferred": deferred,
         "reinit": reinit,
     }

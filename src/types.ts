@@ -534,5 +534,7 @@ export interface LiveApplyResult {
   /** The upscaler is re-created on the next frame to pick the change up. */
   reinit?: boolean;
   can_switch_upscaler?: boolean;
+  /** The write left every value as it was: nothing to apply or restart for. */
+  unchanged?: boolean;
   error?: string;
 }

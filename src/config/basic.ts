@@ -42,7 +42,7 @@ export const FSR4_INT8_SUPPORT = "2";
  * both match. On DX12, `fsr31` is `ffx`.
  */
 const BACKEND_ALIASES: Record<string, string> = { fsr31: "ffx", fsr31_12: "ffx_12" };
-function sameBackend(actual: string, expected: string): boolean {
+export function sameBackend(actual: string, expected: string): boolean {
   const norm = (code: string) => BACKEND_ALIASES[code] ?? code;
   return norm(actual) === norm(expected);
 }
