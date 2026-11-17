@@ -24,6 +24,11 @@ export function outdatedReason(install: InstallInfo | null | undefined,
   if (live?.asi_current === false) {
     return "This game's live-control plugin is from an older build of this plugin.";
   }
+  // Set up by a build that shipped no live-control plugin (every fork release
+  // before live editing came back), on the same OptiScaler as this one.
+  if (live && live.asi_available && !live.asi_installed) {
+    return "This game was set up without live control.";
+  }
   return null;
 }
 

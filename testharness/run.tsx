@@ -1606,6 +1606,23 @@ async function render(name: string, element: React.ReactElement) {
     console.log(`  a current install shows no update: ${
       !(current.host.textContent ?? "").includes("Update OptiScaler in this game")}`);
     current.root.unmount();
+
+    // Same OptiScaler, but set up by a build that shipped no live-control ASI.
+    const previousLive = fixtures.get_live_status;
+    fixtures.get_live_status = { ...(previousLive ?? {}), asi_available: true, asi_installed: false,
+                                 attached: false, ready: false, state: "absent" };
+    const noAsi = await render(
+      "QuickPanel (no live control)",
+      <QuickPanel
+        runningGame={{ appid: 1091500, name: "Cyberpunk 2077", gameid: "1091500" }}
+        onOpenManager={() => {}}
+      />
+    );
+    console.log(`  a game set up without live control is offered the update: ${
+      (noAsi.host.textContent ?? "").includes("set up without live control")
+      && (noAsi.host.textContent ?? "").includes("Update OptiScaler in this game")}`);
+    noAsi.root.unmount();
+    fixtures.get_live_status = previousLive;
   }
 
   console.log("\n=== backend calls made ===");
