@@ -18,6 +18,9 @@ import { Navigation } from "@decky/ui";
 import { GENERATED_OPTIONS } from "../src/config/generatedSchema";
 import { QuickPanel } from "../src/components/QuickPanel";
 import { nextFpsOverlay } from "../src/components/FpsOverlayButton";
+import { BasicPanel } from "../src/components/BasicPanel";
+import { useConfig } from "../src/hooks/useConfig";
+import { useLiveStatus } from "../src/hooks/useLiveStatus";
 import { forgetWrites } from "../src/config/writeRecord";
 
 // ---- a backend that keeps state -------------------------------------------
@@ -239,7 +242,38 @@ const tile = (host: Element, label: string) => {
   return null;
 };
 
+/**
+ * The game page's settings (BasicPanel, wired as NowPlaying and GameDetail wire
+ * it). The Quick Access panel no longer shows the FG pair, the FFX FG version or
+ * the full upscaler preset list; this is where those are, and tested.
+ */
+function FullPage() {
+  const config = useConfig(detail.install.path, true, null);
+  const { status: live } = useLiveStatus(detail.install.path, true);
+  if (config.loading) return <div>loading</div>;
+  return (
+    <BasicPanel values={config.values} gpu={detail.gpu} live={live} ffx={detail.install.fsr4?.ffx}
+      targetDir={detail.install.path} onLiveChanged={() => {}} fsr4Build={config.fsr4Build}
+      onEnableFsr4={config.enableFsr4} onApply={config.setOptions} />
+  );
+}
+
+async function mount(kind: "quick" | "page") {
+  const node = document.createElement("div");
+  document.body.appendChild(node);
+  const r = createRoot(node);
+  await act(async () => {
+    r.render(kind === "page" ? <FullPage /> : (
+      <QuickPanel runningGame={{ appid: 1091500, name: "Cyberpunk 2077", gameid: "1091500" }}
+        onOpenManager={() => {}} />
+    ));
+  });
+  await settle();
+  return { node, root: r };
+}
+
 (async () => {
+  const page = (await mount("page")).node;
   const host = document.createElement("div");
   document.body.appendChild(host);
   const root = createRoot(host);
@@ -254,26 +288,26 @@ const tile = (host: Element, label: string) => {
   await settle();
 
   console.log("=== the upscaler dropdown ===");
-  check("opens on what the ini says", selected(host, "Override upscaler with"), "fsr31");
-  const upscaler = control(host, "Override upscaler with");
+  check("opens on what the ini says", selected(page, "Override upscaler with"), "fsr31");
+  const upscaler = control(page, "Override upscaler with");
   await act(async () => {
     (all(upscaler, '[data-opt-value="xess"]')[0] as HTMLElement).click();
   });
   await settle();
-  check("shows the pick straight away", selected(host, "Override upscaler with"), "xess");
+  check("shows the pick straight away", selected(page, "Override upscaler with"), "xess");
   // Past the debounce, so the write has been made and answered.
   await settle(200);
-  check("still shows it after the write", selected(host, "Override upscaler with"), "xess");
+  check("still shows it after the write", selected(page, "Override upscaler with"), "xess");
   check("the ini has it", ini.Upscalers.Dx12Upscaler, "xess");
 
   console.log("=== the FFX FG version dropdown ===");
-  const ffx = control(host, "FFX FG version");
+  const ffx = control(page, "FFX FG version");
   console.log(`  options: ${all(ffx, "[data-opt]").map((n) => n.textContent).join(", ")}`);
   await act(async () => {
     (all(ffx, '[data-opt-value="2"]')[0] as HTMLElement).click();
   });
   await settle(200);
-  check("shows the third generator", selected(host, "FFX FG version"), "2");
+  check("shows the third generator", selected(page, "FFX FG version"), "2");
   // The shipped ini documents two generators because that is what the
   // reference build offered; the running game is the authority on the list.
   check("and the ini records it", ini.FSR.FGIndex, "2");
@@ -282,7 +316,7 @@ const tile = (host: Element, label: string) => {
   // The second half of the upscaler question. "fsr31" is every FSR from 2.3.4
   // to 4.1.1, so which one is running is a separate choice, and the running
   // game is the authority on what the choices are.
-  const fsrVersion = control(host, "FSR version");
+  const fsrVersion = control(page, "FSR version");
   check("the versions are the ones the game reports, named as OptiScaler names them",
     all(fsrVersion, "[data-opt]").map((n) => n.textContent).join(", "),
     "FSR 4.1.1 *, FSR 4.0.2, FSR 3.1.5, FSR 2.3.4");
@@ -294,7 +328,7 @@ const tile = (host: Element, label: string) => {
     (all(fsrVersion, '[data-opt-value="3"]')[0] as HTMLElement).click();
   });
   await settle(200);
-  check("shows the version picked", selected(host, "FSR version"), "3");
+  check("shows the version picked", selected(page, "FSR version"), "3");
   // The shipped ini documents three versions because that is what the
   // reference build offered; a fourth has to be writable all the same.
   check("and the ini records it past the end of the ini's own list",
@@ -302,7 +336,7 @@ const tile = (host: Element, label: string) => {
   check("an older version leaves the FSR 4 upgrade path alone",
     ini.FSR.Fsr4Update, "false");
 
-  const toFsr4 = control(host, "FSR version");
+  const toFsr4 = control(page, "FSR version");
   await act(async () => {
     (all(toFsr4, '[data-opt-value="0"]')[0] as HTMLElement).click();
   });
@@ -319,13 +353,13 @@ const tile = (host: Element, label: string) => {
   // On a device OptiScaler's own GPU checks cover, the same click has to write
   // it — that is what this section has always covered, and it still holds.
   setGpu(RDNA4_GPU);
-  const onAmd = control(host, "FSR version");
+  const onAmd = control(page, "FSR version");
   await act(async () => {
     (all(onAmd, '[data-opt-value="3"]')[0] as HTMLElement).click();
   });
   await settle(200);
   await act(async () => {
-    (all(control(host, "FSR version"), '[data-opt-value="0"]')[0] as HTMLElement).click();
+    (all(control(page, "FSR version"), '[data-opt-value="0"]')[0] as HTMLElement).click();
   });
   await settle(200);
   // OptiScaler 10 removed Fsr4Update: FSR 4 runs wherever the GPU supports
@@ -352,12 +386,7 @@ const tile = (host: Element, label: string) => {
   document.body.appendChild(host5);
   const root5 = createRoot(host5);
   await act(async () => {
-    root5.render(
-      <QuickPanel
-        runningGame={{ appid: 1091500, name: "Cyberpunk 2077", gameid: "1091500" }}
-        onOpenManager={() => {}}
-      />
-    );
+    root5.render(<FullPage />);
   });
   await settle();
   check("the Lite preset is the one recognised",
@@ -419,12 +448,7 @@ const tile = (host: Element, label: string) => {
   document.body.appendChild(host6);
   const root6 = createRoot(host6);
   await act(async () => {
-    root6.render(
-      <QuickPanel
-        runningGame={{ appid: 1091500, name: "Cyberpunk 2077", gameid: "1091500" }}
-        onOpenManager={() => {}}
-      />
-    );
+    root6.render(<FullPage />);
   });
   await settle();
   check("the Deck preset can replace an older DLL",
@@ -441,6 +465,88 @@ const tile = (host: Element, label: string) => {
   detail.install.fsr4.ffx.version = "4.1.1.2740";
   setIni({ FSR: { Fsr4Update: "false", UpscalerIndex: "0" } });
 
+  console.log("=== the Quick Access upscaler: family, then the model under it ===");
+  const opts = (node: Element, label: string) =>
+    all(control(node, label) as Element, "[data-opt]").map((n) => n.getAttribute("data-opt-value")).join(",");
+  const pick = async (node: Element, label: string, value: string) => {
+    await act(async () => {
+      (all(control(node, label) as Element, `[data-opt-value="${value}"]`)[0] as HTMLElement)?.click();
+    });
+    await settle(200);
+  };
+  setIni({ Upscalers: { Dx12Upscaler: "ffx", Dx11Upscaler: "ffx_12", VulkanUpscaler: "ffx_12" },
+    FSR: { Fsr4GpuSupport: "4", Fsr4Model: "3", UpscalerIndex: "0" } });
+  let quick = await mount("quick");
+  check("a Deck on FSR 4 Lite reads as FSR 4", selected(quick.node, "Upscaler"), "fsr4");
+  check("no DLSS on a Deck", opts(quick.node, "Upscaler"), "auto,fsr4,fsr3,fsr22,xess");
+  check("its model is the Deck preset", selected(quick.node, "FSR 4 model"), "fsr4-lite");
+  check("and both Deck models are offered", opts(quick.node, "FSR 4 model"), "fsr4-lite,fsr4-rdna2");
+  await pick(quick.node, "FSR 4 model", "fsr4-rdna2");
+  check("picking RDNA2 sets that model up", `${ini.FSR.Fsr4Model}/${ini.FSR.Fsr4GpuSupport}`, "2/3");
+  check("and says the game needs a restart for it",
+    (quick.node.textContent ?? "").includes("Restart game to apply"), true);
+  await pick(quick.node, "Upscaler", "fsr3");
+  // The game reports 4.1.1, 4.0.2, 3.1.5, 2.3.4: its first FSR 3 is index 2.
+  check("FSR 3 is the FidelityFX backend on the game's first FSR 3 version",
+    `${ini.Upscalers.Dx12Upscaler}/${ini.FSR.UpscalerIndex}`, "ffx/2");
+  check("its versions are the game's FSR 3 and older ones", opts(quick.node, "FSR version"), "2,3");
+  await pick(quick.node, "FSR version", "3");
+  check("a version pick is the FidelityFX index", ini.FSR.UpscalerIndex, "3");
+  check("and stays FSR 3", selected(quick.node, "Upscaler"), "fsr3");
+  await pick(quick.node, "Upscaler", "xess");
+  check("XeSS is XeSS", ini.Upscalers.Dx12Upscaler, "xess");
+  check("with OptiScaler's XeSS models", opts(quick.node, "XeSS model"), "0,1,2,3,4,5");
+  await pick(quick.node, "XeSS model", "1");
+  check("a model pick writes XeSS's network model", ini.XeSS.NetworkModel, "1");
+  await pick(quick.node, "Upscaler", "fsr4");
+  check("back to FSR 4 on a Deck goes through the Deck setup (Lite)",
+    `${ini.Upscalers.Dx12Upscaler}/${ini.FSR.Fsr4Model}`, "ffx/3");
+  await act(async () => quick.root.unmount());
+
+  setGpu({ ...RDNA4_GPU });
+  quick = await mount("quick");
+  await pick(quick.node, "Upscaler", "fsr3");
+  await pick(quick.node, "Upscaler", "fsr4");
+  check("FSR 4 elsewhere is the plain preset", `${ini.Upscalers.Dx12Upscaler}/${ini.FSR.UpscalerIndex}`, "ffx/0");
+  check("with OptiScaler's FSR 4 models", opts(quick.node, "FSR 4 model"), "auto,0,1,2,3");
+  await pick(quick.node, "FSR 4 model", "0");
+  check("a model pick writes the FSR 4 model", ini.FSR.Fsr4Model, "0");
+  await act(async () => quick.root.unmount());
+
+  setGpu({ ...RDNA4_GPU, vendor: "nvidia" } as any);
+  quick = await mount("quick");
+  await pick(quick.node, "Upscaler", "dlss");
+  check("DLSS on an Nvidia GPU", ini.Upscalers.Dx12Upscaler, "dlss");
+  check("starts on the game's own preset", selected(quick.node, "DLSS preset"), "0");
+  await pick(quick.node, "DLSS preset", "11");
+  check("a preset turns the override on and picks it",
+    `${ini.DLSS.RenderPresetOverride}/${ini.DLSS.RenderPresetForAll}`, "true/11");
+  await pick(quick.node, "DLSS preset", "0");
+  check("Default turns the override off", ini.DLSS.RenderPresetOverride, "false");
+  await act(async () => quick.root.unmount());
+  setGpu(DECK_GPU);
+  setIni({ Upscalers: { Dx12Upscaler: "ffx", Dx11Upscaler: "ffx_12", VulkanUpscaler: "ffx_12" },
+    FSR: { Fsr4GpuSupport: "auto", Fsr4Model: "auto", UpscalerIndex: "0" }, DLSS: { RenderPresetOverride: "auto" } });
+
+  console.log("=== explanations live behind the ⓘ ===");
+  quick = await mount("quick");
+  check("no control carries a description", all(quick.node, "[data-desc]").length, 0);
+  check("the panel itself reads no paragraph",
+    (quick.node.textContent ?? "").includes("presses OptiScaler's FG key"), false);
+  check("each section has an ⓘ", all(quick.node, "[data-info]").map((n) => n.getAttribute("data-info")).join(","),
+    "status,framegen,upscaler");
+  await act(async () => { (all(quick.node, '[data-info="framegen"]')[0] as HTMLElement).click(); });
+  check("pressing it shows the explanation",
+    (quick.node.textContent ?? "").includes("presses OptiScaler's FG key"), true);
+  check("FG input/output are not on the panel, only named", Boolean(control(quick.node, "Method")), false);
+  await act(async () => { (all(quick.node, '[data-info="framegen"]')[0] as HTMLElement).click(); });
+  check("and pressing it again hides it",
+    (quick.node.textContent ?? "").includes("presses OptiScaler's FG key"), false);
+  check("the OptiScaler menu and the overlay are the first row",
+    all(quick.node, "[data-button]").slice(0, 2).map((n) => n.getAttribute("data-button")).join(","),
+    "optiscaler-menu,fps-overlay");
+  await act(async () => quick.root.unmount());
+
   console.log("=== the live tiles ===");
   // The backend id cannot say which FSR is running and OptiScaler's own name
   // for it — "FSR 3.X/4" — says so out loud. The version list can, and the game
@@ -451,12 +557,17 @@ const tile = (host: Element, label: string) => {
     `${tile(host, "base fps")} / ${tile(host, "with fg")}`, "20 / 40");
 
   console.log("=== the frame multiplier ===");
-  // Only the XeSS FG output can do more than 2X, so switch to it first.
-  const method = control(host, "Method");
+  // Only the XeSS FG output can do more than 2X; the output is chosen on the
+  // game's page, so it is set in the ini and the panel reopened.
+  check("the multiplier is there but off without the XeFG output",
+    control(host, "Frame multiplier")?.getAttribute("data-disabled"), "true");
+  setIni({ FrameGen: { FGInput: "fsrfg", FGOutput: "xefg" } });
+  await act(async () => root.render(<div />));
   await act(async () => {
-    (all(method, '[data-opt-value="xefg"]')[0] as HTMLElement).click();
+    root.render(<QuickPanel runningGame={{ appid: 1091500, name: "Cyberpunk 2077", gameid: "1091500" }}
+      onOpenManager={() => {}} />);
   });
-  await settle(200);
+  await settle();
   const mult = control(host, "Frame multiplier");
   check("the multiplier is usable on XeFG", mult?.getAttribute("data-disabled"), "null");
   await act(async () => {
@@ -493,8 +604,7 @@ const tile = (host: Element, label: string) => {
   // The button's own text, without its description.
   const ownText = (b: Element) =>
     (b.textContent ?? "").replace(b.querySelector("[data-desc]")?.textContent ?? "", "");
-  const overlayFound = () => all(host, '[data-mock="ButtonItem"]')
-    .find((b) => ownText(b).startsWith("FPS overlay:")) as HTMLElement | undefined;
+  const overlayFound = () => all(host, '[data-button="fps-overlay"]')[0] as HTMLElement | undefined;
   const overlayButton = () => {
     const found = overlayFound();
     return found ? { click: () => found.click(), textContent: ownText(found) } : undefined;
@@ -504,13 +614,13 @@ const tile = (host: Element, label: string) => {
   await act(async () => { overlayButton()?.click(); });
   await settle(200);
   // Off -> the first type.
-  check("from off it shows OptiScaler's first type", overlayButton()?.textContent, "FPS overlay: Just FPS");
+  check("from off it shows OptiScaler's first type", overlayButton()?.textContent, "Overlay: Just FPS");
   check("and writes what OptiScaler's FPS keys write", `${ini.Menu.ShowFps}/${ini.Menu.FpsOverlayType}`, "true/0");
   const seen: string[] = [];
   for (let i = 0; i < 7; i++) {
     await act(async () => { overlayButton()?.click(); });
     await settle(200);
-    seen.push((overlayButton()?.textContent ?? "").replace("FPS overlay: ", ""));
+    seen.push((overlayButton()?.textContent ?? "").replace("Overlay: ", ""));
   }
   check("then every type in OptiScaler's order, Custom skipped without rows, then off",
     seen.join(" | "), "Simple | Detailed | Detailed + Graph | Full | Full + Graph | Low latency timings | Off");
@@ -541,12 +651,7 @@ const tile = (host: Element, label: string) => {
   document.body.appendChild(host3);
   const root3 = createRoot(host3);
   await act(async () => {
-    root3.render(
-      <QuickPanel
-        runningGame={{ appid: 1091500, name: "Cyberpunk 2077", gameid: "1091500" }}
-        onOpenManager={() => {}}
-      />
-    );
+    root3.render(<FullPage />);
   });
   await settle();
   check("the upscaler is not passed off as Auto",
@@ -561,6 +666,11 @@ const tile = (host: Element, label: string) => {
     selected(host3, "Method"), "dlssg \u2192 xefg");
   console.log(`  and is named: ${shown(host3, "Method")}`);
   await act(async () => root3.unmount());
+  const quick3 = await mount("quick");
+  check("the Quick Access panel does not pass it off as a family either",
+    selected(quick3.node, "Upscaler"), "fsr21");
+  check("and names it", shown(quick3.node, "Upscaler"), "FSR 2.1.2");
+  await act(async () => quick3.root.unmount());
 
   console.log("=== a write the backend will not take ===");
   // A rejected write reaches neither the file nor the running game. The control
@@ -592,27 +702,27 @@ const tile = (host: Element, label: string) => {
     if (!refused) return { ok: true, applied: changes, rejected: [], live: { sent: true, deferred: [] } };
     return { ok: true, applied: [], rejected: changes, live: { sent: false, deferred: [] } };
   };
-  const before = selected(host4, "Override upscaler with");
-  const target = control(host4, "Override upscaler with");
+  const before = selected(host4, "Upscaler");
+  const target = control(host4, "Upscaler");
   await act(async () => {
     (all(target, '[data-opt-value="xess"]')[0] as HTMLElement).click();
   });
   await settle(200);
   check("the panel stays up through the re-read",
-    Boolean(control(host4, "Override upscaler with")), true);
+    Boolean(control(host4, "Upscaler")), true);
   check("the control goes back to the file",
-    selected(host4, "Override upscaler with"), before);
+    selected(host4, "Upscaler"), before);
   check("and the refusal is reported",
     /would not accept/.test(host4.textContent ?? ""), true);
 
   // And once the backend accepts again, an edit sticks.
   refused = false;
-  const retry = control(host4, "Override upscaler with");
+  const retry = control(host4, "Upscaler");
   await act(async () => {
     (all(retry, '[data-opt-value="xess"]')[0] as HTMLElement).click();
   });
   await settle(200);
-  check("a later edit sticks", selected(host4, "Override upscaler with"), "xess");
+  check("a later edit sticks", selected(host4, "Upscaler"), "xess");
   await act(async () => root4.unmount());
 
   console.log("=== closing the panel while the write is in flight ===");
@@ -654,9 +764,9 @@ const tile = (host: Element, label: string) => {
   };
 
   let panel = await open();
-  check("opens on XeSS", selected(panel.node, "Override upscaler with"), "xess");
+  check("opens on XeSS", selected(panel.node, "Upscaler"), "xess");
   await act(async () => {
-    (all(control(panel.node, "Override upscaler with"), '[data-opt-value="fsr4"]')[0] as HTMLElement)
+    (all(control(panel.node, "Upscaler"), '[data-opt-value="fsr3"]')[0] as HTMLElement)
       .click();
   });
   await settle();
@@ -665,7 +775,7 @@ const tile = (host: Element, label: string) => {
   await act(async () => panel.root.unmount());
   panel = await open();
   check("reopening does not show the value from before the change",
-    selected(panel.node, "Override upscaler with"), "fsr4");
+    selected(panel.node, "Upscaler"), "fsr3");
   // Now let the write through and reopen once more: the file agrees, and the
   // record retires itself.
   await act(async () => {
@@ -676,7 +786,7 @@ const tile = (host: Element, label: string) => {
   await act(async () => panel.root.unmount());
   panel = await open();
   check("and still agrees once the write lands",
-    selected(panel.node, "Override upscaler with"), "fsr4");
+    selected(panel.node, "Upscaler"), "fsr3");
   // OptiScaler 10's name for the FidelityFX backend.
   check("the file has it", ini.Upscalers.Dx12Upscaler, "ffx");
 
@@ -684,7 +794,7 @@ const tile = (host: Element, label: string) => {
   FFX_VERSIONS.length = 0;
   FFX_VERSIONS.push("3.1.6");
   await act(async () => panel.root.unmount());
-  panel = await open();
+  panel = await mount("page");
   const single = control(panel.node, "FFX FG version");
   check("the control is still there", Boolean(single), true);
   check("but there is nothing to pick", single?.getAttribute("data-disabled"), "true");
@@ -758,7 +868,7 @@ const tile = (host: Element, label: string) => {
     await new Promise((r) => setTimeout(r, 60));
     return (promptly as any)(...args);
   };
-  panel = await open();
+  panel = await mount("page");
   const versionControl = control(panel.node, "FSR version");
   // Not the reference ini's "FSR 4.0.2": the library sitting next to the game
   // is 4.1.1, and that is readable without the game running at all.
@@ -792,15 +902,17 @@ const tile = (host: Element, label: string) => {
   const realClose = Navigation.CloseSideMenus;
   Navigation.CloseSideMenus = () => { closedSideMenus += 1; };
   panel = await open();
+  check("the explanation is behind the status ⓘ, not on the panel",
+    (panel.node.textContent ?? "").includes("Changes made here apply when the game restarts"), false);
+  await act(async () => { (all(panel.node, '[data-info="status"]')[0] as HTMLElement)?.click(); });
   const text = panel.node.textContent ?? "";
   check("the panel says edits apply on restart",
-    text.includes("Changes made here apply when the game restarts."), true);
+    text.includes("Changes made here apply when the game restarts"), true);
   check("the status pill says restart, not that something is off",
     text.includes("restart to apply") && !text.includes("live control off"), true);
   check("nothing is set apart as restart-only, since everything is",
     text.includes("Needs a restart"), false);
-  const menuButton = all(panel.node, '[data-mock="ButtonItem"]')
-    .find((b) => (b.textContent ?? "").includes("OptiScaler menu")) as HTMLElement | undefined;
+  const menuButton = all(panel.node, '[data-button="optiscaler-menu"]')[0] as HTMLElement | undefined;
   check("there is an OptiScaler menu button", Boolean(menuButton), true);
   await act(async () => { menuButton?.click(); });
   check("pressing it closes the Quick Access menu first", closedSideMenus, 1);
@@ -827,7 +939,7 @@ const tile = (host: Element, label: string) => {
   check("it names the plugin that owns the game", foreignText.includes("Installed by Decky OptiScaler"), true);
   check("and says to remove it there first", foreignText.includes("remove OptiScaler from it there first"), true);
   check("no settings are offered for it",
-    Boolean(control(panel.node, "Override upscaler with")), false);
+    Boolean(control(panel.node, "Upscaler")), false);
   check("nor a set-up button", foreignText.includes("Set up OptiScaler"), false);
   fixtures.find_running_game = ownGame;
   await act(async () => panel.root.unmount());

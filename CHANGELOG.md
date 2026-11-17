@@ -14,6 +14,13 @@ Newest first. Each release ships `Decky OptiScaler.zip` for Decky Loader's
   dll names). Live: frame generation on/off, HUD fix, debug view, depth copy,
   XeFG multiplier, sharpness, the FPS overlay and the FSR version. Not live:
   switching the upscaler backend or the FFX frame generator.
+- Condensed Quick Access panel (QuickControls): OptiScaler menu and overlay
+  buttons on top, frame generation on/off and multiplier, the upscaler as a
+  family plus the model under it, explanations behind ⓘ buttons, diagnostics
+  and all settings as one row at the bottom. The FG method and FFX FG version
+  moved to the game's page only. XeSS's network model and DLSS's render preset
+  are live (OptiScaler's menu switches them with a rebuild on the same
+  backend). Picking FSR 3 uses the runtime's first FSR 3 version.
 - **FPS overlay** button in the Quick Access panel, cycling off and
   OptiScaler's overlay types in its own order and names (`FpsOverlayType` is
   live).

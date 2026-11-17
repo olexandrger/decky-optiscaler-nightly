@@ -53,7 +53,8 @@ live ones go through `asi/live.cpp`, an ASI OptiScaler loads from the game's
   frame, plus what OptiScaler's own overlay changes by writing the value and
   rebuilding the upscaler on the same backend (`ReInitUpscaler` in
   `menu_common.cpp`): the FFX upscaler version, the FSR 4 model and the init
-  flags (write, then `ReInitUpscalers`). `ReInitUpscalers` keeps the current
+  flags, and the other backends' models (XeSS's network model, DLSS's render
+  preset) (write, then `ReInitUpscalers`). `ReInitUpscalers` keeps the current
   backend, so it cannot switch to another one. "auto" for those is `unset`
   (the overlay's "Auto").
   `py_modules/optiscaler/live.py` sends them as `set`/`unset`/`reinit` commands through

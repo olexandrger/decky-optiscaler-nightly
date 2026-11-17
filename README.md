@@ -51,6 +51,12 @@ installs over the regular plugin (same name, same settings and per-game records)
   is not live from the panel; the Quick Access panel's **OptiScaler menu**
   button opens OptiScaler's own overlay for that (it presses the game's
   `[Menu] ShortcutKey`, Insert by default, on a virtual keyboard).
+- **A condensed Quick Access panel**: the OptiScaler menu and the overlay on
+  top; frame generation (on/off, multiplier); the upscaler as a family (Auto,
+  FSR 4, FSR 3, FSR 2.2, XeSS, DLSS) and the model under it (the Steam Deck's
+  FSR 4 Lite / RDNA2, the FSR 3 version, XeSS's model, DLSS's preset). Every
+  explanation sits behind an ⓘ. The FG input/output pair and everything else
+  are on the game's page.
 - **FPS overlay** button in the Quick Access panel: off → Just FPS → Simple →
   … → Low latency timings → off, OptiScaler's own types and names (Custom too,
   once rows are chosen). Live: the same two settings OptiScaler's Page Up /

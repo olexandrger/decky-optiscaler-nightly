@@ -1,6 +1,6 @@
 import { ButtonItem, PanelSection, PanelSectionRow } from "@decky/ui";
 import { toaster } from "@decky/api";
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { liveDiagnostics, saveDebugReport, setLogging, type LiveDiagnostics as Report } from "../api";
 import { KeyValue, Notice } from "./Common";
 
@@ -14,8 +14,15 @@ const TONE_COLORS = { ok: "#7fd08a", warn: "#e6c36a", bad: "#ff8a80" } as const;
  * plus the raw status, command, plugin log and OptiScaler.log excerpts to
  * ~/Downloads, as one text file to send on.
  */
-export function LiveDiagnostics({ targetDir }: Readonly<{ targetDir: string }>) {
-  const [open, setOpen] = useState(false);
+export function LiveDiagnostics({
+  targetDir,
+  embedded,
+}: Readonly<{
+  targetDir: string;
+  /** Shown already open, under a button of the caller's (the Quick Access panel). */
+  embedded?: boolean;
+}>) {
+  const [open, setOpen] = useState(Boolean(embedded));
   const [report, setReport] = useState<Report | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -30,8 +37,13 @@ export function LiveDiagnostics({ targetDir }: Readonly<{ targetDir: string }>) 
     }
   }, [targetDir]);
 
+  useEffect(() => {
+    if (embedded) void load();
+  }, [embedded, load]);
+
   return (
-    <PanelSection title="Live-control diagnostics">
+    <PanelSection title={embedded ? undefined : "Live-control diagnostics"}>
+      {embedded ? null : (
       <PanelSectionRow>
         <ButtonItem
           layout="below"
@@ -45,6 +57,7 @@ export function LiveDiagnostics({ targetDir }: Readonly<{ targetDir: string }>) 
           {open ? "Hide diagnostics" : "Show diagnostics"}
         </ButtonItem>
       </PanelSectionRow>
+      )}
 
       {open && report?.error ? (
         <PanelSectionRow>

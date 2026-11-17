@@ -23,6 +23,7 @@ import {
   runningBackend,
   supportsInt8Override,
   supportsMultiplier,
+  upscalerChoicesFor,
   usesFfxFrameGen,
   sameBackend,
   usesFfxUpscaler,
@@ -59,8 +60,6 @@ interface Props {
    * running, so it leaves this out and the control never appears there.
    */
   targetDir?: string;
-  /** Trims descriptions and explanations for the ~310px Quick Access column. */
-  compact?: boolean;
   /**
    * What the wiki says about this game. When there is a plan, the automatic
    * toggle appears; without one there is nothing to be automatic about and the
@@ -97,7 +96,7 @@ const MULTIPLIER_ID = `${MULTIPLIER_SECTION}.${MULTIPLIER_KEY}`;
  * be read, `newest` names entry 0 from the file rather than from the comment,
  * and only the older compatibility providers below it stay as documented.
  */
-function ffxVersionOptions(
+export function ffxVersionOptions(
   reported: string[] | undefined,
   option: OptionMeta | undefined,
   newest?: string | null
@@ -128,12 +127,12 @@ function ffxVersionOptions(
  * The file carries four components ("4.1.1.2740"); the SDK reports three, and
  * three is what the overlay shows.
  */
-function ffxVersionName(ffx: FfxUpscalerInfo | null | undefined): string | null {
+export function ffxVersionName(ffx: FfxUpscalerInfo | null | undefined): string | null {
   const parts = (ffx?.version ?? "").split(".").filter(Boolean);
   return parts.length >= 3 ? parts.slice(0, 3).join(".") : null;
 }
 
-interface Choice {
+export interface Choice {
   data: string;
   label: string;
   /** The FidelityFX version this entry names, where the entry is one. */
@@ -170,7 +169,7 @@ interface Choice {
  * the config read resolves, by which time the first live poll has landed, so it
  * built the right label first time and the page never did.
  */
-function ValueDropdown({
+export function ValueDropdown({
   options,
   selected,
   describe,
@@ -217,7 +216,6 @@ export function BasicPanel({
   live,
   ffx,
   targetDir,
-  compact,
   plan,
   auto,
   onAutoChange,
@@ -240,8 +238,7 @@ export function BasicPanel({
   const [switching, setSwitching] = useState(false);
   const [switchError, setSwitchError] = useState<string | null>(null);
 
-  /** Explanatory text, dropped in the narrow Quick Access column. */
-  const hint = (text: string | undefined) => (compact ? undefined : text);
+  const hint = (text: string | undefined) => text;
 
   const fgOn = frameGenEnabled(values);
   const fgPreset = activeFgPreset(values);
@@ -283,14 +280,7 @@ export function BasicPanel({
   // setting OptiScaler then ignores, and the FSR 3.X/4 preset beside it is the
   // one that works. Visible while it is what the ini holds, so the selection can
   // still be read.
-  const upscalerChoices = UPSCALER_PRESETS.filter(
-    (preset) =>
-      (preset.id !== "dlss" ||
-        upscalerPreset?.id === "dlss" ||
-        !gpu?.vendor ||
-        gpu.vendor === "nvidia") &&
-      (!isDeckFsr4Preset(preset.id) || needsForcedInt8(gpu) || upscalerPreset?.id === preset.id)
-  );
+  const upscalerChoices = upscalerChoicesFor(gpu, upscalerPreset);
 
   const needsInt8 = fsr4Selected && int8Route;
   // An FSR 4 version picked while the FidelityFX backend is on something else.
@@ -392,19 +382,10 @@ export function BasicPanel({
     );
 
   /**
-   * The one control here the running game cannot take.
-   *
-   * FG Input and FG Output are read when the swapchain is built, so this is a
-   * restart either way — which is why in the Quick Access panel it is moved out
-   * of the frame-generation section and put last, behind everything that does
-   * apply now. Over a running game the controls that change what is on screen
-   * are the ones worth reaching first, and a control that cannot act yet is not
-   * one of them.
+   * The one control here the running game cannot take: FG Input and FG
+   * Output are read when the swapchain is built, so this is a restart either
+   * way. The Quick Access panel leaves it out (QuickControls); it is here.
    */
-  // The compact panel sets restart-only controls apart from live ones; that
-  // split only means something when the game has the live-control plugin.
-  const splitRestart = Boolean(compact && live?.asi_installed);
-
   const methodControls = (
     <>
       {/* The method is offered in automatic mode too. The wiki's pair is the
@@ -482,7 +463,7 @@ export function BasicPanel({
               onChange={(checked) => onAutoChange?.(checked)}
             />
           </PanelSectionRow>
-          {automatic && !compact ? (
+          {automatic ? (
             <PanelSectionRow>
               <div style={{ padding: "0 0 8px", fontSize: "12px", opacity: 0.8 }}>
                 {planned.settings.length > 0 ? (
@@ -551,7 +532,7 @@ export function BasicPanel({
           </PanelSectionRow>
         ) : null}
 
-        {splitRestart ? null : methodControls}
+        {methodControls}
 
         {/* Which FidelityFX frame generator the FSR FG output runs — the
             overlay's "FFX FG" combo and its "Change FG" button. Unlike the
@@ -627,7 +608,7 @@ export function BasicPanel({
             restart path and OptiScaler's own hotkey here whether or not either
             was relevant, which is noise on a page for a game that is not even
             running. */}
-        {!compact && live?.attached ? (
+        {live?.attached ? (
           <PanelSectionRow>
             <Notice tone="success" title="Live control is connected">
               Frame generation changes as soon as you set it here — no restart, no overlay.
@@ -781,7 +762,7 @@ export function BasicPanel({
               image) to run FSR 4 on this device.
             </Notice>
           </PanelSectionRow>
-        ) : fsr4Selected && !compact ? (
+        ) : fsr4Selected ? (
           <PanelSectionRow>
             <Notice tone="info" title="FSR 4 selected">
               Uses the FidelityFX 4.1 library bundled with OptiScaler. OptiScaler only picks
@@ -792,12 +773,6 @@ export function BasicPanel({
         ) : null}
       </PanelSection>
 
-      {/* Last, and only in the Quick Access panel with live control: everything
-          above it takes effect in the running game, and this does not. Without
-          live control nothing does, so there is nothing to set apart. */}
-      {splitRestart ? (
-        <PanelSection title="Needs a restart">{methodControls}</PanelSection>
-      ) : null}
     </>
   );
 }

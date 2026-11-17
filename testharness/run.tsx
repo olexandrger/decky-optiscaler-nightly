@@ -159,6 +159,9 @@ Object.assign(fixtures, {
     load_enabled: true, loaded_by_optiscaler: true,
     error: null, seq: "1", can_switch_upscaler: true, age: 1.0,
     live_keys: ["FrameGen.Enabled", "Upscalers.Dx12Upscaler"],
+    fps_overlay_types: ["Just FPS", "Simple", "Detailed", "Detailed + Graph", "Full", "Full + Graph",
+      "Low latency timings", "Custom"],
+    fps_overlay_default: 5,
     fps: 40.4, fg_enabled: true, frames: 12000, backend_entries: 1,
     upscaler: { dx12: "fsr31", dx11: null, vulkan: null },
     pending_backend: null,
@@ -270,54 +273,22 @@ async function render(name: string, element: React.ReactElement) {
   console.log(`  sidebar tabs: ${qpTabs.join(", ")}`);
   const activeTab = findAll(qp.host, '[data-tab][data-active="true"]')[0];
   console.log(`  opens on the running game: ${activeTab?.getAttribute("data-tab") === "now"}`);
-  console.log(`  live fps shown: ${/\d+(\.\d+)?\s*(fps|FPS)/.test(qp.host.textContent!)}`);
-
-  // The frame-generation state has to sit with the toggle that changes it,
-  // not in a section the user has to scroll back to.
-  console.log(`  frame generation state shown inline: ${/In game:\s*(ON|OFF)/.test(qp.host.textContent!)}`);
-  // The FFX FG list is the running game's answer, not the shipped ini's, and
-  // it is named the way the overlay's own combo names it.
-  console.log(`  ffx fg versions come from the running game: ${
-    qp.host.textContent!.includes("FSR 3.1.6")}`);
-
-  const upscalerDrop = findAll(
-    qp.host,
-    '[data-mock="DropdownItem"][data-label="Override upscaler with"]'
-  )[0];
+  // The condensed panel: the OptiScaler menu and the overlay on top, then
+  // frame generation (on/off, multiplier) and the upscaler (family, model).
+  const buttons = findAll(qp.host, "[data-button]").map((n) => n.getAttribute("data-button"));
+  console.log(`  the OptiScaler menu and the overlay come first: ${
+    buttons.slice(0, 2).join(",") === "optiscaler-menu,fps-overlay"}`);
+  const dropLabels = findAll(qp.host, '[data-mock="DropdownItem"]').map((n) => n.getAttribute("data-label"));
+  console.log(`  dropdowns are the multiplier, the upscaler and its model: ${
+    JSON.stringify(dropLabels) === JSON.stringify(["Frame multiplier", "Upscaler", "FSR version"])}`);
+  const upscalerDrop = findAll(qp.host, '[data-mock="DropdownItem"][data-label="Upscaler"]')[0];
   const upscalerLabels = findAll(upscalerDrop, "[data-opt]").map((n) => n.textContent);
   console.log(`  DLSS not offered on an AMD GPU: ${!upscalerLabels.includes("DLSS")}`);
-
-  // The switch is an action, not a permanent control: it appears only once a
-  // different upscaler has been picked.
-  console.log(`  no upscaler switch before a change: ${!qp.host.textContent!.includes("Switch now")}`);
-  await act(async () => {
-    (findAll(upscalerDrop, '[data-opt-value="xess"]')[0] as HTMLElement).click();
-  });
-  await settle();
-  console.log(`  picking one offers the live switch: ${qp.host.textContent!.includes("Switch now")}`);
-
-  // FG method is read when the swapchain is created, so it cannot apply live.
-  const methodDrop = findAll(qp.host, '[data-mock="DropdownItem"][data-label^="Method"]')[0];
-  await act(async () => {
-    (findAll(methodDrop, '[data-opt-value="xefg"]')[0] as HTMLElement).click();
-  });
-  await settle();
-  console.log(`  changing the FG method warns about the restart: ${
-    qp.host.textContent!.includes("Restart the game to apply")}`);
-
-  // Over a running game the controls that act now come first; the one that
-  // cannot until the next launch is last, under its own heading.
-  {
-    const order = (label: string) =>
-      findAll(qp.host, '[data-mock="DropdownItem"]').findIndex(
-        (n) => n.getAttribute("data-label") === label
-      );
-    console.log(`  restart-only control comes after the live ones: ${
-      order("Method") > order("Override upscaler with") &&
-      order("Method") > order("FFX FG version")}`);
-    console.log(`  and says so as a heading: ${
-      qp.host.textContent!.includes("Needs a restart")}`);
-  }
+  console.log(`  the FG method is on the game's page, not here: ${
+    findAll(qp.host, '[data-mock="DropdownItem"][data-label^="Method"]').length === 0}`);
+  console.log(`  no control carries a paragraph: ${findAll(qp.host, "[data-desc]").length === 0}`);
+  console.log(`  each section explains itself behind an ⓘ: ${
+    findAll(qp.host, "[data-info]").length === 3}`);
 
   const gamesTab = findAll(qp.host, '[data-tab="games"]')[0] as HTMLElement;
   await act(async () => {
@@ -326,7 +297,7 @@ async function render(name: string, element: React.ReactElement) {
   await settle();
   const qpGames = qp.host.textContent!;
   // "Now Playing" is the tab's own label, so the body is what has to change.
-  console.log(`  switching to Games swaps the body: ${!qpGames.includes("All settings & logs")}`);
+  console.log(`  switching to Games swaps the body: ${!qpGames.includes("Frame multiplier")}`);
   console.log(`  sidebar lists games: ${qpGames.includes("Test Game 01")}`);
   console.log(`  sidebar pages at 20: ${qpGames.includes("Test Game 19") && !qpGames.includes("Test Game 20")}`);
   console.log(`  sidebar offers the next page: ${/Show next \d+ of \d+ more/.test(qpGames)}`);
@@ -355,7 +326,7 @@ async function render(name: string, element: React.ReactElement) {
   });
   await settle();
   console.log(`  switching back restores Now Playing: ${
-    qp.host.textContent!.includes("All settings & logs")}`);
+    findAll(qp.host, '[data-button="all-settings"]').length === 1}`);
 
   console.log("\n=== rendering ManagerPage (main page) ===");
   const mp = await render("ManagerPage", <ManagerPage />);

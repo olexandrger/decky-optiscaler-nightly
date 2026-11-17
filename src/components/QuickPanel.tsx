@@ -6,14 +6,15 @@ import { useAutoPlan } from "../hooks/useAutoPlan";
 import { useConfig } from "../hooks/useConfig";
 import { useLiveStatus } from "../hooks/useLiveStatus";
 import { LiveDiagnostics } from "./LiveDiagnostics";
-import { RunningConfig } from "./RunningConfig";
-import { FpsOverlayButton } from "./FpsOverlayButton";
+import { fpsOverlayLabel, nextFpsOverlay } from "./FpsOverlayButton";
+import { ButtonRow, InfoRow } from "./Compact";
+import { QuickControls } from "./QuickControls";
 import { useRunningConfig } from "../hooks/useRunningConfig";
 import { OutdatedInstall } from "./OutdatedInstall";
 import { restartGame } from "../hooks/useRunningGame";
-import { toggleMenu } from "../api";
+import { keepRunningChanges, toggleMenu, type RunningConfig } from "../api";
+import { optionById } from "../config/tabs";
 import type { Game, GameDetail, LiveStatus, RunningGame, OptionChange } from "../types";
-import { BasicPanel } from "./BasicPanel";
 import { GamesList } from "./GamesList";
 import { LiveTiles } from "./LiveStats";
 import { TabStrip } from "./TabStrip";
@@ -95,6 +96,7 @@ function NowPlayingTab({
   const [detail, setDetail] = useState<GameDetail | null>(null);
   const [resolving, setResolving] = useState(false);
   const [notFound, setNotFound] = useState(false);
+  const [diagnostics, setDiagnostics] = useState(false);
 
   const resolve = useCallback(async () => {
     if (!runningGame) {
@@ -164,6 +166,25 @@ function NowPlayingTab({
   const fgSub = multiplier
     ? curatedLabel(`${MULTIPLIER_SECTION}.${MULTIPLIER_KEY}`, multiplier)
     : undefined;
+  const overlay = fpsOverlayLabel(values, live);
+
+  const openOptiScalerMenu = () => {
+    if (!detail) return;
+    const target = detail.install.path;
+    // OptiScaler's menu opens on its shortcut: close Quick Access first, or
+    // the key goes to Steam's overlay, then give the game a moment for focus.
+    Navigation.CloseSideMenus();
+    window.setTimeout(() => {
+      void toggleMenu(target).then((result) => {
+        if (!result.ok) {
+          toaster.toast({
+            title: "Could not open the OptiScaler menu",
+            body: result.error ?? "Press its shortcut key (Insert) instead.",
+          });
+        }
+      });
+    }, 450);
+  };
 
   return (
     <>
@@ -173,12 +194,36 @@ function NowPlayingTab({
             <LiveTiles live={live} fgSub={fgSub} />
           </PanelSectionRow>
         ) : null}
-        <PanelSectionRow>
-          <div style={{ padding: "2px 0" }}>
-            <InstallPill filename={detail?.install.filename} resolving={resolving} />
-            {installed ? <LivePill live={live} /> : null}
-          </div>
-        </PanelSectionRow>
+        <InfoRow id="status" info={installed ? <StatusInfo live={live} /> : undefined}>
+          <InstallPill filename={detail?.install.filename} resolving={resolving} />
+          {installed ? <LivePill live={live} /> : null}
+        </InfoRow>
+        {installed && runningCfg.running ? (
+          <RunningLine
+            running={runningCfg.running}
+            unsaved={runningCfg.unsaved}
+            targetDir={targetDir}
+            onKept={() => {
+              void config.reload();
+              void runningCfg.refresh();
+            }}
+          />
+        ) : null}
+        {installed && detail ? (
+          <ButtonRow
+            buttons={[
+              { id: "optiscaler-menu", label: "OptiScaler menu", onClick: openOptiScalerMenu },
+              ...(overlay !== null
+                ? [{
+                    id: "fps-overlay",
+                    label: `Overlay: ${overlay}`,
+                    disabled: config.loading,
+                    onClick: () => applyOptions(nextFpsOverlay(values, live)),
+                  }]
+                : []),
+            ]}
+          />
+        ) : null}
       </PanelSection>
 
       {/* A game set up by an earlier build keeps that build's OptiScaler and
@@ -191,18 +236,6 @@ function NowPlayingTab({
           onUpdated={() => {
             void resolve();
             void refreshLive();
-          }}
-        />
-      ) : null}
-
-      {installed && targetDir ? (
-        <RunningConfig
-          targetDir={targetDir}
-          running={runningCfg.running}
-          unsaved={runningCfg.unsaved}
-          onKept={() => {
-            void config.reload();
-            void runningCfg.refresh();
           }}
         />
       ) : null}
@@ -252,56 +285,8 @@ function NowPlayingTab({
 
       {installed && detail ? (
         <>
-          {/* OptiScaler's own overlay changes everything while the game runs,
-              including what the panel's live control cannot (the upscaler
-              backend). It opens on a keyboard shortcut, so this closes the
-              Quick Access menu — otherwise the key would go to Steam's overlay
-              — and presses it on a virtual keyboard. */}
-          <PanelSection>
-            <FpsOverlayButton
-              values={values}
-              live={live}
-              disabled={config.loading}
-              onApply={applyOptions}
-            />
-            <PanelSectionRow>
-              <ButtonItem
-                layout="below"
-                description="Opens or closes OptiScaler's in-game menu, where changes apply immediately."
-                onClick={() => {
-                  const target = detail.install.path;
-                  Navigation.CloseSideMenus();
-                  // Give the menu time to close and the game time to take focus.
-                  window.setTimeout(() => {
-                    void toggleMenu(target).then((result) => {
-                      if (!result.ok) {
-                        toaster.toast({
-                          title: "Could not open the OptiScaler menu",
-                          body: result.error ?? "Press its shortcut key (Insert) instead.",
-                        });
-                      }
-                    });
-                  }, 450);
-                }}
-              >
-                OptiScaler menu
-              </ButtonItem>
-            </PanelSectionRow>
-            {live ? (
-              <PanelSectionRow>
-                <Notice tone="info">
-                  {live.ready
-                    ? "Frame generation, sharpness, the FPS overlay, the FSR version and FSR 4 model apply immediately (turning frame generation on closes this menu to press OptiScaler's FG key); other changes when the game restarts."
-                    : "Changes made here apply when the game restarts."}
-                </Notice>
-              </PanelSectionRow>
-            ) : null}
-          </PanelSection>
-
           {/* A write the backend would not take reaches neither the file nor
-              the running game, and this is the surface those changes are made
-              from, so it has to say so rather than leave the control looking
-              as if it worked. */}
+              the running game: said, rather than left looking as if it worked. */}
           {config.error ? (
             <PanelSection>
               <PanelSectionRow>
@@ -313,19 +298,15 @@ function NowPlayingTab({
           {config.loading ? (
             <Centered>Reading config…</Centered>
           ) : (
-            <BasicPanel
+            <QuickControls
               values={values}
-              gpu={detail.gpu}
               live={live}
+              gpu={detail.gpu}
               ffx={detail.install.fsr4?.ffx}
-              targetDir={detail.install.path}
               plan={plan}
               auto={auto}
-              compact
-              onLiveChanged={() => void refreshLive()}
-              fsr4Build={config.fsr4Build}
-              onEnableFsr4={config.enableFsr4}
               onApply={applyOptions}
+              onEnableFsr4={config.enableFsr4}
             />
           )}
 
@@ -352,20 +333,96 @@ function NowPlayingTab({
             </PanelSection>
           ) : null}
 
-          <LiveDiagnostics targetDir={detail.install.path} />
-
           <PanelSection>
-            <PanelSectionRow>
-              <ButtonItem
-                layout="below"
-                onClick={() =>
-                  onOpenManager(detail.path, detail.name, String(runningGame.appid))
-                }
-              >
-                All settings & logs
-              </ButtonItem>
-            </PanelSectionRow>
+            <ButtonRow
+              buttons={[
+                {
+                  id: "diagnostics",
+                  label: diagnostics ? "Hide diagnostics" : "Diagnostics",
+                  onClick: () => setDiagnostics((open) => !open),
+                },
+                {
+                  id: "all-settings",
+                  label: "All settings",
+                  onClick: () => onOpenManager(detail.path, detail.name, String(runningGame.appid)),
+                },
+              ]}
+            />
           </PanelSection>
+          {diagnostics ? <LiveDiagnostics targetDir={detail.install.path} embedded /> : null}
+        </>
+      ) : null}
+    </>
+  );
+}
+
+/** What applies now and what at the next launch, behind the status ⓘ. */
+function StatusInfo({ live }: Readonly<{ live: LiveStatus | null }>) {
+  if (!live?.ready) {
+    return (
+      <>
+        Changes made here apply when the game restarts
+        {live?.state === "failed" ? ": the in-game plugin does not match this OptiScaler build (see Diagnostics)." :
+          !live?.asi_installed ? ": this game has no in-game plugin (Update OptiScaler in this game adds it)." : "."}
+      </>
+    );
+  }
+  return (
+    <>
+      Live: frame generation and its multiplier, the upscaler&apos;s model or version, sharpness and the FPS
+      overlay apply at once. Turning frame generation on closes this menu to press OptiScaler&apos;s FG key.
+      A different upscaler or frame generator applies at the next launch, or at once from the OptiScaler
+      menu.
+    </>
+  );
+}
+
+/** One line on what the game is running, and what was changed in OptiScaler's menu. */
+function RunningLine({
+  running,
+  unsaved,
+  targetDir,
+  onKept,
+}: Readonly<{ running: RunningConfig; unsaved: string[]; targetDir: string | null; onKept: () => void }>) {
+  const v = running.values;
+  const fgOutput = (v["FrameGen.FGOutput"] ?? "").toLowerCase();
+  const fg = v["FrameGen.Enabled"] === "true" ? curatedLabel("FrameGen.FGOutput", fgOutput) ?? fgOutput : "FG off";
+  const upscaler = running.created?.upscaler ?? null;
+  const parts = [upscaler, fg].filter(Boolean);
+  return (
+    <>
+      {parts.length > 0 ? (
+        <PanelSectionRow>
+          <div data-running style={{ fontSize: "12px", opacity: 0.75, padding: "0 0 4px" }}>
+            Running: {parts.join(" · ")}
+          </div>
+        </PanelSectionRow>
+      ) : null}
+      {unsaved.length > 0 && targetDir ? (
+        <>
+          <InfoRow
+            id="unsaved"
+            info={unsaved.map((key) => `${optionById(key)?.label ?? key}: ${v[key] ?? "?"}`).join(" · ")}
+          >
+            <span style={{ fontSize: "12px" }}>
+              {unsaved.length} changed in OptiScaler&apos;s menu, not saved
+            </span>
+          </InfoRow>
+          <ButtonRow
+            buttons={[{
+              id: "keep-running",
+              label: "Keep them in OptiScaler.ini",
+              onClick: () => {
+                void keepRunningChanges(targetDir, unsaved).then((result) => {
+                  toaster.toast({
+                    title: result.ok ? "Kept in OptiScaler.ini" : "Could not keep them",
+                    body: result.ok ? `${result.kept?.length ?? 0} setting(s)` : result.error ?? "",
+                  });
+                  onKept();
+                });
+              },
+            }]}
+          />
         </>
       ) : null}
     </>

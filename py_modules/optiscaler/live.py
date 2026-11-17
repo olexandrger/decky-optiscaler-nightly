@@ -106,6 +106,15 @@ def _float(value):
     return repr(float(str(value).strip()))
 
 
+def _index(limit, what):
+    def encode(value):
+        index = int(float(str(value).strip()))
+        if index < 0 or index >= limit:
+            raise ValueError(f"not {what}: {value!r}")
+        return str(index)
+    return encode
+
+
 def _fsr4_model(value):
     """[FSR] Fsr4Model: 0 FP8, 1 INT8, 2 INT8 RDNA2, 3 INT8 Lite."""
     model = int(float(str(value).strip()))
@@ -189,6 +198,15 @@ LIVE_FIELDS = {
                                              needs_reinit=True, resettable=True),
     "InitFlags.DynamicResolution": LiveField("DynamicResolution", "bool", _bool,
                                              needs_reinit=True, resettable=True),
+    # The model each other backend runs, also switched by OptiScaler's menu as a
+    # write and a rebuild on the same backend: XeSS's "Network Models" combo,
+    # and DLSS's render preset override with its "Apply Changes" button.
+    "XeSS.NetworkModel": LiveField("NetworkModel", "i32", _index(6, "an XeSS network model"),
+                                   needs_reinit=True, resettable=True),
+    "DLSS.RenderPresetOverride": LiveField("RenderPresetOverride", "bool", _bool,
+                                           needs_reinit=True, resettable=True),
+    "DLSS.RenderPresetForAll": LiveField("RenderPresetForAll", "u32", _index(16, "a DLSS render preset"),
+                                         needs_reinit=True, resettable=True),
 
     # The override is read per frame, except by DLSS before 3, which OptiScaler's
     # menu rebuilds for it; rebuilding always is the same thing, one frame later.

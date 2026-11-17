@@ -104,6 +104,9 @@ SENTINELS = {
     "InitFlags.JitterCancellation": "true",
     "InitFlags.DisplayResolution": "true",
     "InitFlags.DynamicResolution": "true",
+    "XeSS.NetworkModel": "2",
+    "DLSS.RenderPresetOverride": "true",
+    "DLSS.RenderPresetForAll": "3",
 }
 # Shown from the running game, not set live: enums the ini spells as words,
 # read back through the token tables generated from OptiScaler's headers.
@@ -134,6 +137,9 @@ LIVE_VALUES = {
     "InitFlags.JitterCancellation": "false",
     "InitFlags.DisplayResolution": "false",
     "InitFlags.DynamicResolution": "false",
+    "XeSS.NetworkModel": "4",
+    "DLSS.RenderPresetOverride": "false",
+    "DLSS.RenderPresetForAll": "11",
 }
 
 DEFAULT_RE = re.compile(
@@ -299,6 +305,9 @@ def run(wine, scratch):
                   running.same(snap["values"].get(key), value), snap["values"].get(key))
 
         print("\nLive changes, through the panel's own code")
+        check("every live setting has a sentinel and a live value here",
+              set(SENTINELS) == set(LIVE_VALUES) == set(live.LIVE_FIELDS),
+              sorted(set(live.LIVE_FIELDS) ^ set(SENTINELS)) or sorted(set(SENTINELS) ^ set(LIVE_VALUES)))
         changes = [{"section": k.split(".", 1)[0], "key": k.split(".", 1)[1], "value": v}
                    for k, v in LIVE_VALUES.items()]
         sent = live.apply_changes(str(game), changes, can_reinit=st["can_reinit"])

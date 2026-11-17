@@ -481,6 +481,21 @@ export function activeFgPreset(values: ConfigValues): Preset | undefined {
   return FG_PRESETS.find((preset) => preset.matches(values));
 }
 
+/**
+ * The upscaler presets worth offering on this GPU.
+ *
+ * DLSS needs a real Nvidia GPU and the Steam Deck FSR 4 presets the INT8 route;
+ * either stays listed while it is what the ini holds, so the selection can
+ * still be read, and DLSS when the GPU is unknown.
+ */
+export function upscalerChoicesFor(gpu: GpuInfo | null | undefined, active: Preset | undefined): Preset[] {
+  return UPSCALER_PRESETS.filter(
+    (preset) =>
+      (preset.id !== "dlss" || active?.id === "dlss" || !gpu?.vendor || gpu.vendor === "nvidia") &&
+      (!isDeckFsr4Preset(preset.id) || needsForcedInt8(gpu) || active?.id === preset.id)
+  );
+}
+
 export function activeUpscalerPreset(values: ConfigValues): Preset | undefined {
   return UPSCALER_PRESETS.find((preset) => preset.matches(values));
 }

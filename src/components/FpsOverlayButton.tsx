@@ -1,4 +1,3 @@
-import { ButtonItem, PanelSectionRow } from "@decky/ui";
 import type { ConfigValues, LiveStatus, OptionChange } from "../types";
 
 const OFF = -1;
@@ -39,40 +38,10 @@ export function nextFpsOverlay(values: ConfigValues, live: LiveStatus | null): O
   ];
 }
 
-/**
- * One button through OptiScaler's FPS overlay: off, Just FPS, Simple, … Full +
- * Graph, Low latency timings, off. The same two settings OptiScaler's own FPS
- * keys change (ShowFps, and FpsOverlayType for the cycle key), both of which it
- * reads every frame, so it applies at once in a game with the in-game plugin.
- */
-export function FpsOverlayButton({
-  values,
-  live,
-  disabled,
-  onApply,
-}: Readonly<{
-  values: ConfigValues;
-  live: LiveStatus | null;
-  disabled?: boolean;
-  onApply: (changes: OptionChange[]) => void;
-}>) {
+/** What the overlay button says: the overlay now, in OptiScaler's own words. */
+export function fpsOverlayLabel(values: ConfigValues, live: LiveStatus | null): string | null {
   const types = live?.fps_overlay_types ?? [];
   if (types.length === 0) return null;
   const current = currentFpsOverlay(values, live);
-  return (
-    <PanelSectionRow>
-      <ButtonItem
-        layout="below"
-        disabled={disabled}
-        description={
-          live?.ready
-            ? "Cycles off → Just FPS → … → Low latency timings → off, like OptiScaler's FPS keys."
-            : "Cycles OptiScaler's FPS overlay; applies when the game restarts."
-        }
-        onClick={() => onApply(nextFpsOverlay(values, live))}
-      >
-        FPS overlay: {current === OFF ? "Off" : types[current]}
-      </ButtonItem>
-    </PanelSectionRow>
-  );
+  return current === OFF ? "Off" : types[current];
 }
