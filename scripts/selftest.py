@@ -1734,7 +1734,9 @@ def check_debug_report():
         (target / "OptiScaler.ini").write_text("[Plugins]\nLoadAsiPlugins=true\n[Log]\nLogToFile=true\n")
         (target / "OptiScaler.log").write_text(
             "[info] OptiScaler v10.0.0-dev (1e568bb3) (20261116_122736)\n"
-            f"[info] Loaded: C:\\game\\plugins\\{live.ASI_NAME}\n")
+            f"[info] Loaded: C:\\game\\plugins\\{live.ASI_NAME}\n"
+            "[I] StreamlineHooks::streamlineLogCallback Looking for plugins in S:/sl\n"
+            "[I] FSRFG_Dx12::CreateContext XeFG context created\n")
         (target / live.STATUS_FILE).write_text(
             f"schema {live.STATUS_SCHEMA}\nbuilt_for 1e568bb3\nstatus ready\napi 3\n"
             "reinit_available 1\nseq 4\napplied 1\nreinit -1\nconfig 0x1\nfields 377\nerror \n")
@@ -1790,6 +1792,10 @@ def check_debug_report():
         text = path.read_text() if path.is_file() else ""
         check("the report's file name is safe and names the game",
               path.name.startswith("decky-optiscaler-nightly-debug-Some_Game_2026_"), path.name)
+        fg = text.split("frame generation and upscaler lines")[-1]
+        check("the report carries OptiScaler's frame-generation lines", "XeFG context created" in fg)
+        check("Streamline's own plugin chatter stays out of the plugin lines",
+              "Looking for plugins in S:/sl" not in text.split("plugin lines")[-1].split("=====")[1])
         for needle in (str(target), "built_for e7e3872d", "OptiScaler v10.0.0-dev (1e568bb3)",
                        "LoadAsiPlugins=false", "seq 9\nset Menu.ShowFps", live.ASI_NAME,
                        "[ bad] In-game plugin built for"):

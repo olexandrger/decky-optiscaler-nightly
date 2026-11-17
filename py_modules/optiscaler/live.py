@@ -527,6 +527,13 @@ def log_tail(target_dir, lines=40):
 # ------------------------------------------------------------ diagnostics --
 
 _BANNER_RE = re.compile(r"OptiScaler v([0-9][\w.\-]*) \(([0-9a-f]{7,40})\)(?: \((\d{8}_\d{6})\))?")
+# Frame generation and upscaler (re)creation: whether a live change took
+# effect shows here, not in the plugin's own lines.
+_EFFECT_RE = re.compile(r"FrameGen|FGEnabled|[^a-z]FG[A-Z_ :]|XeFG|xefg|FSRFG|fsrfg|FfxFG|"
+                        r"SwapChain|swapchain|TryCreateOptiFeature|Creating .* feature|ReInit|"
+                        r"ReleaseFeature|changeBackend|Interpolat")
+# Streamline logs its own "plugins" by the hundred; they are not ours.
+_STREAMLINE_RE = re.compile(r"streamlineLogCallback")
 _RELEVANT_RE = re.compile(r"plugin|\.asi|LoadAsiPlugins|decky_optiscaler|OptiPluginInit|\[E\]|error",
                           re.IGNORECASE)
 
@@ -647,7 +654,11 @@ def diagnostics(target_dir, source=None, install=None):
                             if re.match(r"\s*(\[Plugins\]|\[Log\]|LoadAsiPlugins|Path|LogToFile|LogLevel)", line))
     log_text = _read_text(log_path) or ""
     log_lines = log_text.splitlines()
-    relevant = [line for line in log_lines if _RELEVANT_RE.search(line)][:120]
+    relevant = [line for line in log_lines
+                if _RELEVANT_RE.search(line) and not _STREAMLINE_RE.search(line)][:120]
+    effects = [line for line in log_lines
+               if _EFFECT_RE.search(line) and not _STREAMLINE_RE.search(line)]
+    effects = effects[:60] + (["..."] if len(effects) > 260 else []) + effects[60:][-200:]
     plugins_dir = target / PLUGIN_SUBDIR
     listing = "\n".join(f"{p.name}  {p.stat().st_size} bytes" for p in sorted(plugins_dir.iterdir())) \
         if plugins_dir.is_dir() else "(no plugins/ folder)"
@@ -661,6 +672,7 @@ def diagnostics(target_dir, source=None, install=None):
     report.append(section("plugins/", listing))
     report.append(section("OptiScaler.ini [Plugins]/[Log]", plugins_ini))
     report.append(section(f"OptiScaler.log: plugin lines ({len(relevant)})", "\n".join(relevant)))
+    report.append(section("OptiScaler.log: frame generation and upscaler lines", "\n".join(effects)))
     report.append(section("OptiScaler.log: first 40 lines", "\n".join(log_lines[:40])))
     report.append(section("OptiScaler.log: last 80 lines", "\n".join(log_lines[-80:])))
     return {"facts": facts, "report": "\n".join(report), "status": st}
