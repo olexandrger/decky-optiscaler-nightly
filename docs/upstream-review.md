@@ -16,10 +16,12 @@ thing in it worth a port is in the queue below. The next review starts after it
 
 ## Queue
 
-Open items, oldest first. One port a day at most (the daily task's step 6).
-Each line: id, upstream commit, what upstream found or did. An item is checked
-against the fork's code before anything is written: many were found in code the
-fork has since changed.
+Open items, oldest first. One port a day at most (the daily task, AGENTS.md
+"Automatic fixes"). Each line: id, upstream commit, what upstream found or did.
+An item is checked against the fork's code before anything is written: many
+were found in code the fork has since changed. One that needs a decision says
+so, and once reported says "Reported <date>, awaiting a decision"; the task
+skips it until the line changes.
 
 - [ ] UI-02 (886d5f0): switching games while a page is open keeps the previous game's detail and writable controls, so an edit can go to the wrong game folder; async loads have no target check, and an older reply can overwrite a newer one.
 - [ ] PD-02 (886d5f0): setup writes Steam's launch options as only this plugin's override and the wiki's flags, dropping the player's own wrappers and arguments.
@@ -40,8 +42,8 @@ fork has since changed.
 - [ ] PD-06 (886d5f0): automatic mode refreshes the wiki plan but does not write the new settings to the installed game.
 - [ ] TS-04 (886d5f0): the automatic-install orchestration has no integration test tying "done" to the written config.
 - [ ] TS-01b (886d5f0): all-options.tsx computes ungrouped sections, empty enums and inverted ranges but exits on React errors only.
-- [ ] IDEA restore-point (886d5f0): a restore point of the game's files and ini before an upgrade, with a rollback on the game's page (upstream restorepoint.py); candidate for "Update OptiScaler in this game". A feature: needs a decision.
-- [ ] IDEA game-profiles (886d5f0): per-game requirements surfaced in setup (upstream gameprofiles.py: Phantom Blade Zero's executable folder and 100% output scale). A feature: needs a decision.
+- [ ] IDEA restore-point (886d5f0): a restore point of the game's files and ini before an upgrade, with a rollback on the game's page (upstream restorepoint.py); candidate for "Update OptiScaler in this game". A feature: needs a decision. Reported 2026-11-17, awaiting a decision.
+- [ ] IDEA game-profiles (886d5f0): per-game requirements surfaced in setup (upstream gameprofiles.py: Phantom Blade Zero's executable folder and 100% output scale). A feature: needs a decision. Reported 2026-11-17, awaiting a decision.
 
 ## Done
 
