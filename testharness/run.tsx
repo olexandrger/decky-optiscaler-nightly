@@ -405,6 +405,56 @@ async function render(name: string, element: React.ReactElement) {
       handed === undefined}`);
     (globalThis as any).appDetailsStore = undefined;
     fixtures.find_running_game = previousLookup;
+
+    // Another game opened while the page shows one (the library context menu
+    // on a second game): until the new folder is read, the page must not go
+    // on showing the first game's detail and writable controls, which would
+    // send an edit to the wrong game folder (upstream audit UI-02).
+    const otherDetail = {
+      ...detail,
+      path: "/games/BMW", name: "Black Myth Wukong", target: "/games/BMW/b1/Binaries/Win64",
+      install: { ...detail.install, installed: false, managed: false, path: "/games/BMW/b1/Binaries/Win64",
+                 filename: null, version: null, backed_up: [] },
+    };
+    const previousGetGame = fixtures.get_game;
+    let releaseOther: () => void = () => {};
+    fixtures.get_game = (path: string) =>
+      path === otherDetail.path
+        ? new Promise((resolve) => { releaseOther = () => resolve(otherDetail); })
+        : previousGetGame;
+    await act(async () => {
+      openManager({ path: otherDetail.path, name: otherDetail.name, appid: "2358720" });
+    });
+    await settle();
+    const whileReading = plain.host.textContent!;
+    console.log(`  another game opened: the first game's page is gone while it is read: ${
+      !whileReading.includes("Installed as") && whileReading.includes("Reading game folder")}`);
+    await act(async () => releaseOther());
+    await settle();
+    console.log(`  and the new game's page follows: ${
+      !plain.host.textContent!.includes("Installed as")}`);
+
+    // Two app-id lookups in a row, the first slower: the older answer must not
+    // replace the newer game.
+    const lookups: Record<string, () => void> = {};
+    fixtures.find_running_game = (appid: string) =>
+      new Promise((resolve) => {
+        lookups[appid] = () =>
+          resolve(appid === "2358720"
+            ? { found: true, appid, name: otherDetail.name, path: otherDetail.path }
+            : { found: true, appid, name: detail.name, path: detail.path });
+      });
+    fixtures.get_game = (path: string) => (path === otherDetail.path ? otherDetail : previousGetGame);
+    await act(async () => openManager({ appid: "1091500" }));
+    await act(async () => openManager({ appid: "2358720" }));
+    await act(async () => lookups["2358720"]());
+    await settle();
+    await act(async () => lookups["1091500"]());
+    await settle();
+    console.log(`  an older lookup answering last does not replace the newer game: ${
+      !plain.host.textContent!.includes("Installed as")}`);
+    fixtures.find_running_game = previousLookup;
+    fixtures.get_game = previousGetGame;
   }
 
   console.log("\n=== steam library context menu ===");

@@ -1,5 +1,5 @@
 import { PanelSection, PanelSectionRow, Tabs } from "@decky/ui";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { getStatus, preparePayload } from "../api";
 import { resolveGame } from "../shortcuts";
 import {
@@ -35,6 +35,8 @@ export function ManagerPage() {
   // what the page is for. The current app is read synchronously on mount, so
   // this is the real answer rather than a guess that corrects itself.
   const [tab, setTab] = useState(() => (runningGame ? "now" : "games"));
+  /** Counts open requests, so an app-id lookup answering late is dropped. */
+  const request = useRef(0);
 
   /**
    * Open at whichever game was asked for.
@@ -44,6 +46,9 @@ export function ManagerPage() {
    * first. A request naming neither is a request for the library list.
    */
   const openTarget = useCallback((target: ManagerTarget) => {
+    // Only the newest request decides which game the page shows: a lookup
+    // still under way for an earlier one is dropped when it answers.
+    const current = ++request.current;
     setResolveError(null);
     if (target.path && target.name) {
       setResolving(false);
@@ -60,6 +65,7 @@ export function ManagerPage() {
     void (async () => {
       try {
         const game = await resolveGame(appid);
+        if (current !== request.current) return;
         if (game.found && game.path && game.name) {
           setSelection({ path: game.path, name: game.name, appid });
         } else {
@@ -73,9 +79,9 @@ export function ManagerPage() {
           );
         }
       } catch (err) {
-        setResolveError(String(err));
+        if (current === request.current) setResolveError(String(err));
       } finally {
-        setResolving(false);
+        if (current === request.current) setResolving(false);
       }
     })();
   }, []);
@@ -168,7 +174,11 @@ export function ManagerPage() {
       ) : null}
 
       {selection ? (
+        // Keyed by folder: another game gets a fresh page rather than the
+        // previous game's detail and controls until its own folder is read,
+        // which would write an edit made meanwhile to the wrong game.
         <GameDetail
+          key={selection.path}
           gamePath={selection.path}
           gameName={selection.name}
           appid={selection.appid}

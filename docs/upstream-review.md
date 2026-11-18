@@ -24,7 +24,6 @@ so, and once reported says "Reported <date>, awaiting a decision"; the task
 skips it until the line changes. A port ticks its item in the port's own
 commit as "Ported in this commit" (`git log -S "<id> ("` finds it).
 
-- [ ] UI-02 (886d5f0): switching games while a page is open keeps the previous game's detail and writable controls, so an edit can go to the wrong game folder; async loads have no target check, and an older reply can overwrite a newer one.
 - [ ] PD-02 (886d5f0): setup writes Steam's launch options as only this plugin's override and the wiki's flags, dropping the player's own wrappers and arguments.
 - [ ] CD-05 (886d5f0): the payload cache counts as extracted when OptiScaler.dll exists; an extraction that failed half way is trusted by later installs, which skip missing support files silently.
 - [ ] CD-08 (886d5f0): FSR 4 file import, REFramework, OptiPatcher and live-control installs write the game folder outside the install/uninstall lock.
@@ -53,6 +52,7 @@ commit as "Ported in this commit" (`git log -S "<id> ("` finds it).
 - [x] IDEA restore-point (886d5f0): keep the previous OptiScaler on update, with "Go back to OptiScaler <version>" on the game's page. Ported in this commit, the fork's way: on top of the install journal, one step back, only the files the update changed, ini untouched (not upstream's restorepoint.py).
 - [x] CD-01 (886d5f0): half installs that cannot be undone. Already covered: transactional installs (installer `_Journal`).
 - [x] TS-01 (886d5f0): run.tsx printing false without failing. Already covered: CI fails on a line ending ": false".
+- [x] UI-02 (886d5f0): another game opened while the page shows one kept the previous game's detail and writable controls until the new folder was read, and an older app-id lookup answering last replaced the newer game. Ported in this commit: the game page is keyed by folder, and only the newest open request picks the game.
 
 ## Not taken
 
