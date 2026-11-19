@@ -15,6 +15,7 @@ import { setLaunchOptions } from "../hooks/useRunningGame";
 import {
   currentLaunchOptions,
   launchOptionFor,
+  mergeOverride,
   recordPreviousLaunchOptions,
 } from "../launchOptions";
 import { PREF_INSTALL_LAUNCH, isRemembering, recall, remember } from "../prefs";
@@ -169,7 +170,7 @@ export function InstallPanel({ detail, status, appid, live, onChanged }: Props) 
     const remembered = await recall(PREF_INSTALL_LAUNCH);
     if (remembered === "never") return;
     if (remembered === "always") {
-      applyLaunchOptions();
+      void applyLaunchOptions();
       return;
     }
     const canRemember = await isRemembering();
@@ -180,18 +181,20 @@ export function InstallPanel({ detail, status, appid, live, onChanged }: Props) 
         canRemember={canRemember}
         onDecide={(apply, rememberIt) => {
           if (rememberIt) void remember(PREF_INSTALL_LAUNCH, apply ? "always" : "never");
-          if (apply) applyLaunchOptions();
+          if (apply) void applyLaunchOptions();
         }}
       />
     );
   };
 
-  const applyLaunchOptions = () => {
+  const applyLaunchOptions = async () => {
     if (!appid) return;
-    if (setLaunchOptions(Number(appid), launchOption)) {
-      setLaunchNow(launchOption);
+    // Added to what the player already has, never written over it (PD-02).
+    const written = mergeOverride((await currentLaunchOptions(appid)) ?? launchNow, launchOption);
+    if (setLaunchOptions(Number(appid), written)) {
+      setLaunchNow(written);
       setLaunchRead(true);
-      toaster.toast({ title: "Launch options set", body: launchOption });
+      toaster.toast({ title: "Launch options set", body: written });
     } else {
       toaster.toast({ title: "Could not set launch options", body: "Set them manually in Steam." });
     }
@@ -523,7 +526,7 @@ export function InstallPanel({ detail, status, appid, live, onChanged }: Props) 
         ) : null}
         {appid && !needsNoOverride ? (
           <PanelSectionRow>
-            <ButtonItem layout="below" disabled={busy} onClick={applyLaunchOptions}>
+            <ButtonItem layout="below" disabled={busy} onClick={() => void applyLaunchOptions()}>
               Set launch options for me
             </ButtonItem>
           </PanelSectionRow>

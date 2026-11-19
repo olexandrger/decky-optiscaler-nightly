@@ -28,9 +28,11 @@ import {
   hasOverride,
   launchChoices,
   launchOptionFor,
+  mergeOverride,
   recordPreviousLaunchOptions,
   recordedValue,
   resolveChoice,
+  stripOverride,
 } from "../launchOptions";
 import type { LaunchAction, LaunchState } from "../launchOptions";
 import { PREF_REMOVE_LAUNCH, isRemembering, recallLaunchAction, remember } from "../prefs";
@@ -427,16 +429,24 @@ export function SetupChecklist({
     // is the last moment it is still the game's own answer rather than ours.
     // Write-once in the backend, so the install's record wins if there is one.
     if (value && installed) await recordPreviousLaunchOptions(appid, detail.install.path);
-    if (setLaunchOptions(Number(appid), value)) {
+    // Ours go in next to what the player already has (PD-02), and switching
+    // them off takes out only ours: the rest of the field is not this plugin's.
+    const now = (await currentLaunchOptions(appid)) ?? launchNow;
+    const written = value
+      ? mergeOverride(now, value)
+      : now === null || now === launchWanted
+        ? ""
+        : stripOverride(ref ? stripOverride(now, ref.override) : now, filename);
+    if (setLaunchOptions(Number(appid), written)) {
       // Shown from what was written rather than read back: Steam flushes its
       // config file on its own schedule, so a read landing in that window
       // reports the old value and the row appears not to have taken.
-      setLaunchNow(value);
+      setLaunchNow(written);
       setLaunchReadable(true);
       void refreshLaunch();
       toaster.toast({
-        title: value ? "Launch options set" : "Launch options cleared",
-        body: value || detail.name,
+        title: value ? "Launch options set" : written ? "OptiScaler override removed" : "Launch options cleared",
+        body: written || detail.name,
       });
     } else {
       toaster.toast({
@@ -485,7 +495,8 @@ export function SetupChecklist({
       }
       if (withLaunch && appid && needsOverride) {
         await recordPreviousLaunchOptions(appid, detail.target);
-        setLaunchOptions(Number(appid), planned.launch_options);
+        setLaunchOptions(Number(appid),
+          mergeOverride(await currentLaunchOptions(appid), planned.launch_options));
       }
       toaster.toast({
         title: `${detail.name} is set up`,

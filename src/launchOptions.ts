@@ -112,6 +112,75 @@ export function stripOverride(options: string, filename: string): string {
 }
 
 /**
+ * Steam's launch options with ours added, keeping everything already there.
+ *
+ * `wanted` is what this plugin would write on its own (`launchOptionFor`, or
+ * the set-up plan's string): its `n,b` overrides and the game flags after its
+ * `%command%`. Writing that over the field used to drop the player's own
+ * wrappers (gamemoderun, gamescope, mangohud), environment and game arguments
+ * (ported from upstream's audit, PD-02). Instead:
+ *
+ * - our DLLs join the last `WINEDLLOVERRIDES` in front of `%command%`, the one
+ *   the game actually gets, as their own `dll=n,b` clauses (a DLL of ours
+ *   already listed with another mode is moved to `n,b`); with no assignment
+ *   there, one is put at the very front, which reaches the game through any
+ *   wrapper;
+ * - options with no `%command%` are game arguments to Steam, so they move
+ *   behind one;
+ * - each wanted flag not already after `%command%` is appended.
+ *
+ * With nothing to merge into (empty, or Steam would not say) it is `wanted`.
+ */
+export function mergeOverride(current: string | null, wanted: string): string {
+  if (current === null || current.trim() === "") return wanted;
+  const wantedAt = wanted.indexOf("%command%");
+  const stems: string[] = [];
+  for (const match of wanted.slice(0, Math.max(wantedAt, 0)).matchAll(OVERRIDES_RE)) {
+    for (const clause of clauses(match[1] ?? match[2] ?? match[3] ?? "")) {
+      if (clause.mode.trim().toLowerCase() === "n,b") stems.push(...clause.dlls);
+    }
+  }
+  const flags = wantedAt < 0 ? [] : wanted.slice(wantedAt + "%command%".length).split(/\s+/).filter(Boolean);
+
+  let merged = current.trim().replace(/\s+/g, " ");
+  if (!merged.includes("%command%")) merged = `%command% ${merged}`;
+  const commandAt = merged.indexOf("%command%");
+
+  if (stems.length > 0) {
+    const effective = [...merged.matchAll(OVERRIDES_RE)].filter((m) => (m.index ?? 0) < commandAt).pop();
+    if (effective) {
+      const [whole, double, single, bare] = effective;
+      const value = double ?? single ?? bare ?? "";
+      let parsed = clauses(value);
+      for (const stem of stems) {
+        const lower = stem.toLowerCase();
+        const ok = parsed.some((clause) => clause.mode.trim().toLowerCase() === "n,b"
+          && clause.dlls.some((dll) => dll.toLowerCase() === lower));
+        if (ok) continue;
+        parsed = parsed
+          .map((clause) => ({ ...clause, dlls: clause.dlls.filter((dll) => dll.toLowerCase() !== lower) }))
+          .filter((clause) => clause.dlls.length > 0);
+        parsed.push({ dlls: [stem], mode: "n,b" });
+      }
+      const rebuilt = parsed.map((clause) => `${clause.dlls.join(",")}=${clause.mode}`).join(";");
+      if (rebuilt !== value) {
+        // A bare value cannot hold `;` (the shell would end the command there).
+        const quote = single !== undefined ? "'" : '"';
+        const start = effective.index ?? 0;
+        merged = merged.slice(0, start) + `WINEDLLOVERRIDES=${quote}${rebuilt}${quote}`
+          + merged.slice(start + whole.length);
+      }
+    } else {
+      merged = `WINEDLLOVERRIDES="${stems.map((stem) => `${stem}=n,b`).join(";")}" ${merged}`;
+    }
+  }
+
+  const after = merged.slice(merged.indexOf("%command%") + "%command%".length).split(/\s+/).filter(Boolean);
+  const missing = flags.filter((flag) => !after.includes(flag));
+  return missing.length ? `${merged} ${missing.join(" ")}` : merged;
+}
+
+/**
  * What the user can be offered when OptiScaler is removed, best answer first.
  *
  * "Put back what was there" is only offered when there was something — which is

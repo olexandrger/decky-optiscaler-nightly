@@ -24,7 +24,6 @@ so, and once reported says "Reported <date>, awaiting a decision"; the task
 skips it until the line changes. A port ticks its item in the port's own
 commit as "Ported in this commit" (`git log -S "<id> ("` finds it).
 
-- [ ] PD-02 (886d5f0): setup writes Steam's launch options as only this plugin's override and the wiki's flags, dropping the player's own wrappers and arguments.
 - [ ] CD-05 (886d5f0): the payload cache counts as extracted when OptiScaler.dll exists; an extraction that failed half way is trusted by later installs, which skip missing support files silently.
 - [ ] CD-08 (886d5f0): FSR 4 file import, REFramework, OptiPatcher and live-control installs write the game folder outside the install/uninstall lock.
 - [ ] PD-01 (886d5f0): an existing OptiScaler.ini is not backed up; uninstall deletes it with the install's files.
@@ -53,6 +52,7 @@ commit as "Ported in this commit" (`git log -S "<id> ("` finds it).
 - [x] CD-01 (886d5f0): half installs that cannot be undone. Already covered: transactional installs (installer `_Journal`).
 - [x] TS-01 (886d5f0): run.tsx printing false without failing. Already covered: CI fails on a line ending ": false".
 - [x] UI-02 (886d5f0): another game opened while the page shows one kept the previous game's detail and writable controls until the new folder was read, and an older app-id lookup answering last replaced the newer game. Ported in this commit: the game page is keyed by folder, and only the newest open request picks the game.
+- [x] PD-02 (886d5f0): setup and "Set launch options for me" wrote Steam's launch options as only this plugin's override and the wiki's flags, dropping the player's own wrappers and arguments. Ported in this commit: `mergeOverride` adds our `n,b` clauses to the assignment the game gets (or in front) and appends missing flags; switching the checklist's launch options off takes out only ours.
 
 ## Not taken
 

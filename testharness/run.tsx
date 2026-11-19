@@ -711,6 +711,16 @@ async function render(name: string, element: React.ReactElement) {
   console.log(`  and records the old ones before overwriting them: ${
     order.join(",") === "install,record,steam"}`);
 
+  // The player's own wrapper and arguments stay: ours are added to them
+  // (upstream's audit, PD-02: the field used to be written over).
+  installs.length = 0; steamWrites.length = 0; order.length = 0;
+  (globalThis as any).SteamClient.Apps.GetAppLaunchOptions = async () => "gamemoderun %command% -fullscreen";
+  await pressSetUp(gdFresh.host);
+  console.log(`  set-up adds the override and flag to the player's own launch options: ${
+    JSON.stringify(steamWrites[0]) === JSON.stringify(
+      [1091500, 'WINEDLLOVERRIDES="dxgi=n,b" gamemoderun %command% -fullscreen -dx12'])}`);
+  delete (globalThis as any).SteamClient.Apps.GetAppLaunchOptions;
+
   // A failed install must not touch Steam's launch options: they would point
   // at a dxgi.dll override for an OptiScaler that is not there.
   installs.length = 0; steamWrites.length = 0; order.length = 0;
@@ -1123,6 +1133,32 @@ async function render(name: string, element: React.ReactElement) {
       !lo.hasOverride('WINEDLLOVERRIDES="xdxgi=n,b" %command%', "dxgi.dll")
         && lo.stripOverride('WINEDLLOVERRIDES="xdxgi=n,b" %command%', "dxgi.dll")
           === 'WINEDLLOVERRIDES="xdxgi=n,b" %command%'}`);
+    // Adding ours keeps what is there (upstream's audit, PD-02).
+    const wanted = 'WINEDLLOVERRIDES="dxgi=n,b" %command% -dx12';
+    console.log(`  nothing there yet: ours as they are: ${
+      lo.mergeOverride("", wanted) === wanted && lo.mergeOverride(null, wanted) === wanted}`);
+    console.log(`  a wrapper and game arguments stay, ours added: ${
+      lo.mergeOverride("gamescope -W 1280 -- %command% -windowed", wanted)
+        === 'WINEDLLOVERRIDES="dxgi=n,b" gamescope -W 1280 -- %command% -windowed -dx12'}`);
+    console.log(`  arguments without %command% go behind one: ${
+      lo.mergeOverride("-novid", wanted) === 'WINEDLLOVERRIDES="dxgi=n,b" %command% -novid -dx12'}`);
+    console.log(`  another DLL's override gains ours as a clause, quoted: ${
+      lo.mergeOverride("WINEDLLOVERRIDES=winmm=n,b mangohud %command%", wanted)
+        === 'WINEDLLOVERRIDES="winmm=n,b;dxgi=n,b" mangohud %command% -dx12'}`);
+    console.log(`  ours in another mode is moved to n,b: ${
+      lo.mergeOverride('WINEDLLOVERRIDES="dxgi,d3d11=b" %command%', wanted)
+        === 'WINEDLLOVERRIDES="d3d11=b;dxgi=n,b" %command% -dx12'}`);
+    console.log(`  options that already hold ours are left as they are: ${
+      lo.mergeOverride('WINEDLLOVERRIDES="dxgi=n,b" gamemoderun %command% -dx12', wanted)
+        === 'WINEDLLOVERRIDES="dxgi=n,b" gamemoderun %command% -dx12'}`);
+    console.log(`  REFramework's override is added with ours: ${
+      lo.mergeOverride("gamemoderun %command%", 'WINEDLLOVERRIDES="dxgi=n,b;dinput8=n,b" %command%')
+        === 'WINEDLLOVERRIDES="dxgi=n,b;dinput8=n,b" gamemoderun %command%'}`);
+    console.log(`  the assignment the game gets is the one merged into: ${
+      lo.mergeOverride("WINEDLLOVERRIDES=a=n,b gamescope -- env WINEDLLOVERRIDES=b=n,b %command%", wanted)
+        === 'WINEDLLOVERRIDES=a=n,b gamescope -- env WINEDLLOVERRIDES="b=n,b;dxgi=n,b" %command% -dx12'}`);
+    console.log(`  what is merged in is what hasOverride then finds: ${
+      lo.hasOverride(lo.mergeOverride("mangohud %command%", lo.launchOptionFor("winmm.dll")), "winmm.dll")}`);
     console.log(`  ours inside a shared clause is still recognised: ${
       lo.hasOverride('WINEDLLOVERRIDES="d3d11,dxgi=n,b" %command%', "dxgi.dll")}`);
     console.log(`  the removal choice says what stays: ${
