@@ -542,6 +542,75 @@ class InstallFolderTests(unittest.TestCase):
                                  [(c["relative"], round(c["score"])) for c in candidates[:3]])
 
 
+class PayloadCompletenessTests(unittest.TestCase):
+    """A payload folder counts as extracted only once a whole extraction
+    finished (upstream 886d5f0, audit CD-05): one cut short keeps the dll but
+    not the support files, and installs from it skipped them silently."""
+
+    def _fill(self, root, skip=()):
+        root.mkdir(parents=True, exist_ok=True)
+        for name in [payload_mod.MARKER, INI_NAME, *PAYLOAD_FILES]:
+            if name not in skip:
+                (root / name).write_bytes(b"x")
+        for name in payload_mod.PAYLOAD_DIRS:
+            if name not in skip:
+                (root / name).mkdir(exist_ok=True)
+
+    def _payload(self, temp):
+        return payload_mod.Payload(Path(temp) / PAYLOAD_ARCHIVE, Path(temp) / "out")
+
+    def test_a_folder_left_by_an_unfinished_extraction_is_not_ready(self):
+        with tempfile.TemporaryDirectory() as temp:
+            payload = self._payload(temp)
+            self._fill(payload.root)  # every file, but no finished stamp
+            self.assertFalse(payload.ready)
+            (payload.root / payload_mod.STAMP).write_text(payload_mod.PAYLOAD_SHA256)
+            self.assertTrue(payload.ready)
+            (payload.root / PAYLOAD_FILES[0]).unlink()
+            self.assertFalse(payload.ready)
+
+    def test_a_stamp_from_another_archive_is_not_trusted(self):
+        with tempfile.TemporaryDirectory() as temp:
+            payload = self._payload(temp)
+            self._fill(payload.root)
+            (payload.root / payload_mod.STAMP).write_text("0" * 64)
+            self.assertFalse(payload.ready)
+
+    def test_ensure_unpacks_again_over_a_partial_folder(self):
+        with tempfile.TemporaryDirectory() as temp:
+            payload = self._payload(temp)
+            self._fill(payload.root, skip=PAYLOAD_FILES[1:])  # dll, ini, one dll
+            calls = []
+
+            def extract(argv, logger=None):
+                calls.append(argv)
+                self._fill(payload.root)
+                return True, ""
+
+            with mock.patch.object(payload, "verify_archive"), \
+                    mock.patch.object(payload_mod, "_run", side_effect=extract), \
+                    mock.patch.object(payload_mod.shutil, "which", return_value="/usr/bin/7z"):
+                root = payload.ensure()
+            self.assertEqual(len(calls), 1)
+            self.assertTrue(payload.ready)
+            self.assertTrue(all((root / name).is_file() for name in PAYLOAD_FILES))
+
+    def test_an_extraction_that_comes_out_short_is_an_error(self):
+        with tempfile.TemporaryDirectory() as temp:
+            payload = self._payload(temp)
+
+            def extract(argv, logger=None):
+                self._fill(payload.root, skip=(PAYLOAD_FILES[-1],))
+                return True, ""
+
+            with mock.patch.object(payload, "verify_archive"), \
+                    mock.patch.object(payload_mod, "_run", side_effect=extract), \
+                    mock.patch.object(payload_mod.shutil, "which", return_value="/usr/bin/7z"):
+                with self.assertRaisesRegex(RuntimeError, "payload incomplete"):
+                    payload.ensure()
+            self.assertFalse(payload.ready)
+
+
 class PayloadArchiveTests(unittest.TestCase):
     """The bundled archive is checked before use and unpacks without 7-Zip."""
 

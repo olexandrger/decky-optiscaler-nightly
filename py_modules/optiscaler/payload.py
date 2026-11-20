@@ -10,7 +10,13 @@ import shutil
 import subprocess
 from pathlib import Path
 
-from .constants import OPTISCALER_VERSION, PAYLOAD_SHA256
+from .constants import (
+    INI_NAME,
+    OPTISCALER_VERSION,
+    PAYLOAD_DIRS,
+    PAYLOAD_FILES,
+    PAYLOAD_SHA256,
+)
 
 EXTRACTORS = [
     (["7z", "x", "-y"], "-o{dest}"),
@@ -22,6 +28,11 @@ EXTRACTORS = [
 BSDTAR = ["bsdtar", "-xf"]
 
 MARKER = "OptiScaler.dll"
+# Written only after an extraction finished and every payload file and dir was
+# there; it names the archive it came from. Without it (an extraction killed
+# half way, a disk that filled up) the folder is not trusted and is unpacked
+# again, instead of later installs skipping the support files it lacks.
+STAMP = ".decky-optiscaler-nightly-extracted"
 
 
 def sha256(path, chunk=1 << 20):
@@ -102,9 +113,27 @@ class Payload:
         self.archive = Path(archive_path)
         self.root = Path(extract_root) / OPTISCALER_VERSION
 
+    def _complete(self):
+        """Every file and dir an install copies is in the extracted folder."""
+        files = [MARKER, INI_NAME, *PAYLOAD_FILES]
+        return (all((self.root / name).is_file() for name in files)
+                and all((self.root / name).is_dir() for name in PAYLOAD_DIRS))
+
     @property
     def ready(self):
-        return (self.root / MARKER).is_file()
+        stamp = self.root / STAMP
+        try:
+            finished = stamp.read_text().strip() == PAYLOAD_SHA256
+        except OSError:
+            finished = False
+        return finished and self._complete()
+
+    def _finish(self):
+        """Stamp the extraction as done if it holds the whole payload."""
+        if not self._complete():
+            return False
+        (self.root / STAMP).write_text(PAYLOAD_SHA256 + "\n")
+        return True
 
     def status(self):
         return {
@@ -141,16 +170,16 @@ class Payload:
                 continue
             argv = command + [dest_flag.format(dest=str(self.root)), str(self.archive)]
             ok, message = self._run(argv, logger)
-            if ok and self.ready:
+            if ok and self._finish():
                 return self.root
-            errors.append(f"{command[0]}: {message}")
+            errors.append(f"{command[0]}: {message or 'payload incomplete after extraction'}")
 
         if shutil.which(BSDTAR[0]):
             argv = BSDTAR + [str(self.archive), "-C", str(self.root)]
             ok, message = self._run(argv, logger)
-            if ok and self.ready:
+            if ok and self._finish():
                 return self.root
-            errors.append(f"bsdtar: {message}")
+            errors.append(f"bsdtar: {message or 'payload incomplete after extraction'}")
 
         detail = "; ".join(errors) if errors else (
             "no supported archiver found (need one of 7z, 7zz, 7za, 7zr or bsdtar)"
