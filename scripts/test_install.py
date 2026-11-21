@@ -455,6 +455,94 @@ class ExclusiveWithOtherInstallsTests(unittest.TestCase):
         self.assertIn("decky_optiscaler_nightly_backup_files", names)
 
 
+class GameFolderWritesAreSerializedTests(unittest.TestCase):
+    """Every service call that writes a game folder waits for the others.
+
+    Upstream's audit (886d5f0, CD-08) found that importing FSR 4 files,
+    adding or removing REFramework or OptiPatcher and adding live control
+    wrote the folder outside the lock install, uninstall and settings writes
+    hold. One of them reading the manifest while an uninstall removed it
+    could write the manifest back, reviving an install that is gone.
+    """
+
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
+        self.root = Path(self.temp.name)
+        self.payload = make_payload(self.root)
+        self.game = self.root / "game"
+        self.game.mkdir()
+        (self.game / "Game.exe").write_bytes(b"MZ game")
+        installer.install(self.game, self.payload, "dxgi.dll", logger=LOG)
+        self.asi = self.root / "plugin.asi"
+        self.asi.write_bytes(b"asi")
+
+    def calls(self, service):
+        """(name, coroutine factory, the function that writes the folder)."""
+        from optiscaler import live
+        game = str(self.game)
+        plan = {"plan": {"reframework": {"required": True, "automatic": True}}}
+        service.get_auto_plan = mock.AsyncMock(return_value=plan)
+        service.live_asi_path = lambda: str(self.asi)
+        service.optipatcher_path = lambda: str(self.asi)
+        return [
+            ("import_fsr4_files", lambda: service.import_fsr4_files(game, str(self.root)),
+             (installer, "import_fsr4_files", {"files": []})),
+            ("install_reframework", lambda: service.install_reframework(game),
+             (installer, "add_files", {"ok": False, "error": "stub"})),
+            ("remove_reframework", lambda: service.remove_reframework(game),
+             (installer, "remove_files", {"removed": []})),
+            ("install_optipatcher", lambda: service.install_optipatcher(game, True),
+             (live, "install_plugin_asi", {"ok": False, "error": "stub"})),
+            ("install_live", lambda: service.install_live(game),
+             (live, "install_asi", {"ok": False, "error": "stub"})),
+        ]
+
+    def test_each_write_waits_for_a_running_uninstall(self):
+        import asyncio
+        import threading
+        from optiscaler import reframework
+        from optiscaler.service import OptiScalerService
+
+        def fresh():
+            # One per event loop: an asyncio.Lock belongs to the loop that used it.
+            return OptiScalerService(ROOT, self.root / "s", self.root / "r", self.root / "h", LOG)
+
+        for index, (name, _, (module, attr, answer)) in enumerate(self.calls(fresh())):
+            service = fresh()
+            call = self.calls(service)[index][1]
+            with self.subTest(name):
+                entered, release = threading.Event(), threading.Event()
+                order = []
+
+                def slow_uninstall(*args, **kwargs):
+                    entered.set()
+                    release.wait(5)
+                    order.append("uninstall")
+                    return {"removed": []}
+
+                def write(*args, **kwargs):
+                    order.append(name)
+                    return answer
+
+                async def race():
+                    uninstall = asyncio.ensure_future(service.uninstall(str(self.game)))
+                    while not entered.is_set():
+                        await asyncio.sleep(0.01)
+                    other = asyncio.ensure_future(call())
+                    await asyncio.sleep(0.3)
+                    release.set()
+                    await uninstall
+                    return await other
+
+                with mock.patch.object(installer, "uninstall", slow_uninstall), \
+                        mock.patch.object(module, attr, write), \
+                        mock.patch.object(reframework, "fetch", lambda *a, **k: []), \
+                        mock.patch.object(reframework, "revision_of", lambda *a, **k: None):
+                    outcome = asyncio.run(race())
+                self.assertEqual(order, ["uninstall", name], outcome)
+
+
 class ProxyNameTests(unittest.TestCase):
     """Every filename the plugin offers installs, gets the right launch option,
     and uninstalls back to the game's own file."""

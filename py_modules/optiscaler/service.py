@@ -552,13 +552,14 @@ class OptiScalerService:
             return {"ok": False, "error": str(exc)}
 
     async def import_fsr4_files(self, target_dir, source_dir):
-        refused = self._foreign(target_dir)
-        if refused:
-            return refused
         try:
-            result = await self._run(
-                installer.import_fsr4_files, target_dir, source_dir, self.log
-            )
+            async with self._mutation_lock:
+                refused = self._foreign(target_dir)
+                if refused:
+                    return refused
+                result = await self._run(
+                    installer.import_fsr4_files, target_dir, source_dir, self.log
+                )
             return {"ok": True, **result}
         except Exception as exc:
             self.log.exception("FSR4 import failed for %s", target_dir)
@@ -860,47 +861,54 @@ class OptiScalerService:
         has already been told directly; pushing them again would re-send the
         same change through a path that does not mean the same thing.
         """
-        refused = self._foreign(target_dir)
-        if refused:
-            return refused
-        def work():
-            path = Path(target_dir) / INI_NAME
-            if not path.is_file():
-                return {"ok": False, "error": "OptiScaler.ini not found"}
-            ini = IniFile(path)
-            current = ini.to_dict()
-            applied = []
-            changed = []
-            rejected = []
-            for change in changes or []:
-                section = change.get("section")
-                key = change.get("key")
-                if not section or not key:
-                    continue
-                value = change.get("value")
-                value = "auto" if value in (None, "") else str(value)
-                meta = SCHEMA.get((section, key))
-                if meta and not _valid(meta, value):
-                    rejected.append({"section": section, "key": key, "value": value})
-                    continue
-                ini.set(section, key, value)
-                entry = {"section": section, "key": key, "value": value}
-                applied.append(entry)
-                before = current.get(section, {}).get(key)
-                if str(before if before not in (None, "") else "auto").strip().lower() != value.strip().lower():
-                    changed.append(entry)
-            if applied:
-                ini.save()
-            return {"ok": True, "applied": applied, "changed": changed, "rejected": rejected,
-                    "written_at": time.time()}
-
         async with self._mutation_lock:
-            result = await self._run(work)
+            refused = self._foreign(target_dir)
+            if refused:
+                return refused
+            result = await self._run(self._write_ini, target_dir, changes)
+        if push_live:
+            await self._push_written(target_dir, result)
+        return result
 
+    @staticmethod
+    def _write_ini(target_dir, changes):
+        """Write ``changes`` into the game's OptiScaler.ini; the caller holds the lock."""
+        path = Path(target_dir) / INI_NAME
+        if not path.is_file():
+            return {"ok": False, "error": "OptiScaler.ini not found"}
+        ini = IniFile(path)
+        current = ini.to_dict()
+        applied = []
+        changed = []
+        rejected = []
+        for change in changes or []:
+            section = change.get("section")
+            key = change.get("key")
+            if not section or not key:
+                continue
+            value = change.get("value")
+            value = "auto" if value in (None, "") else str(value)
+            meta = SCHEMA.get((section, key))
+            if meta and not _valid(meta, value):
+                rejected.append({"section": section, "key": key, "value": value})
+                continue
+            ini.set(section, key, value)
+            entry = {"section": section, "key": key, "value": value}
+            applied.append(entry)
+            before = current.get(section, {}).get(key)
+            if str(before if before not in (None, "") else "auto").strip().lower() != value.strip().lower():
+                changed.append(entry)
+        if applied:
+            ini.save()
+        return {"ok": True, "applied": applied, "changed": changed, "rejected": rejected,
+                "written_at": time.time()}
+
+    async def _push_written(self, target_dir, result):
+        """Push what ``_write_ini`` wrote into the running game, when it can take it."""
         # The INI is the record of intent, but OptiScaler only reads it at
         # startup. If the live-control plugin is attached, push the same change
         # into the running game so it takes effect now instead of next launch.
-        if push_live and result.get("ok") and result.get("applied"):
+        if result.get("ok") and result.get("applied"):
             def push():
                 # Only claim a live change when the in-game plugin is actually
                 # answering; otherwise the command file would sit unread and the
@@ -934,7 +942,6 @@ class OptiScalerService:
                 return outcome
 
             result["live"] = await self._run(push)
-        return result
 
     async def toggle_menu(self, target_dir):
         """Open or close OptiScaler's own overlay in the running game.
@@ -1095,8 +1102,13 @@ class OptiScalerService:
             files = await self._run(reframework.fetch, wanted, self.reframework_cache(),
                                     self.log)
             revision = await self._run(reframework.revision_of, files)
-            result = await self._run(installer.add_files, target_dir, files, self.log,
-                                     revision)
+            async with self._mutation_lock:
+                # Checked again: the folder may have changed hands during the download.
+                refused = self._foreign(target_dir)
+                if refused:
+                    return refused
+                result = await self._run(installer.add_files, target_dir, files, self.log,
+                                         revision)
             if not result.get("ok"):
                 return {"ok": False, "error": result.get("error")}
             return {"ok": True, "installed": True, "files": result["files"],
@@ -1113,12 +1125,13 @@ class OptiScalerService:
         that folder and either could be the one at fault; being able to remove
         one of them is the difference between a bug report and an answer.
         """
-        refused = self._foreign(target_dir)
-        if refused:
-            return refused
         try:
-            result = await self._run(installer.remove_files, target_dir,
-                                     [REFRAMEWORK_DLL], self.log)
+            async with self._mutation_lock:
+                refused = self._foreign(target_dir)
+                if refused:
+                    return refused
+                result = await self._run(installer.remove_files, target_dir,
+                                         [REFRAMEWORK_DLL], self.log)
             return {"ok": True, **result}
         except Exception as exc:
             self.log.exception("REFramework removal failed for %s", target_dir)
@@ -1140,25 +1153,28 @@ class OptiScalerService:
 
     async def install_optipatcher(self, target_dir, enabled=True):
         """Add or remove OptiPatcher for one game without reinstalling."""
-        refused = self._foreign(target_dir)
-        if refused:
-            return refused
         try:
             path = Path(target_dir) / live.PLUGIN_SUBDIR / OPTIPATCHER_NAME
-            if not enabled:
-                if path.is_file():
-                    path.unlink()
-                return {"ok": True, "installed": False}
             source = self.optipatcher_path()
-            if not source:
+            if enabled and not source:
                 return {"ok": False, "error": "this build does not bundle OptiPatcher"}
-            result = await self._run(
-                live.install_plugin_asi, target_dir, source, OPTIPATCHER_NAME, self.log
-            )
-            if not result.get("ok"):
-                return {"ok": False, "error": result.get("error")}
-            # It is loaded by the same switch our own plugin needs.
-            await self.write_config(target_dir, live.ini_requirements())
+            async with self._mutation_lock:
+                refused = self._foreign(target_dir)
+                if refused:
+                    return refused
+                if not enabled:
+                    if path.is_file():
+                        await self._run(path.unlink)
+                    return {"ok": True, "installed": False}
+                result = await self._run(
+                    live.install_plugin_asi, target_dir, source, OPTIPATCHER_NAME, self.log
+                )
+                if not result.get("ok"):
+                    return {"ok": False, "error": result.get("error")}
+                # It is loaded by the same switch our own plugin needs, written
+                # under the same lock so an uninstall cannot come in between.
+                written = await self._run(self._write_ini, target_dir, live.ini_requirements())
+            await self._push_written(target_dir, written)
             return {"ok": True, "installed": True}
         except Exception as exc:
             self.log.exception("optipatcher change failed for %s", target_dir)
@@ -1200,9 +1216,16 @@ class OptiScalerService:
         source = self.live_asi_path()
         if not source:
             return {"ok": False, "error": "this build ships no live-control plugin"}
-        result = await self._run(live.install_asi, target_dir, source, self.log)
-        if result.get("ok"):
-            await self.write_config(target_dir, live.ini_requirements())
+        async with self._mutation_lock:
+            refused = self._foreign(target_dir)
+            if refused:
+                return refused
+            result = await self._run(live.install_asi, target_dir, source, self.log)
+            written = None
+            if result.get("ok"):
+                written = await self._run(self._write_ini, target_dir, live.ini_requirements())
+        if written is not None:
+            await self._push_written(target_dir, written)
             result["load_enabled"] = await self._run(live.load_enabled, target_dir)
         return result
 
