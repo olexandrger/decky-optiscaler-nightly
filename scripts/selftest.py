@@ -2014,7 +2014,7 @@ def check_running_config():
 
     print("\nRunning config (OptiScaler's settings in the game)")
     enums = running.ENUMS
-    check("the backend tokens come from OptiScaler's own UpscalerToCode",
+    check("the backend tokens come from OptiScaler's own table (EnumConfig<Upscaler> or UpscalerToCode)",
           "ffx" in enums.get("Upscaler", {}).get("codes", {}).values()
           and "xess" in enums.get("Upscaler", {}).get("codes", {}).values(), enums.get("Upscaler"))
     check("the FG output tokens come from its EnumConfig table",

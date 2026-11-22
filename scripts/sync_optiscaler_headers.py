@@ -44,7 +44,9 @@ RAW = "https://raw.githubusercontent.com/" + SOURCE_REPO + "/{commit}/OptiScaler
 HEADERS = ("Config.h", "Config.cpp", "OptiTypes.h", "OptiTypes.cpp", "State.h", "menu/menu_common.cpp")
 #: A marker each file must contain, so an error page is not taken for a header.
 MARKERS = {"Config.h": b"class Config", "Config.cpp": b"Config::", "OptiTypes.h": b"enum class Upscaler",
-           "OptiTypes.cpp": b"UpscalerToCode", "State.h": b"class State",
+           # Its own include: UpscalerToCode, once the marker, became an
+           # EnumConfig<Upscaler> table in OptiTypes.h (nightly 20261121).
+           "OptiTypes.cpp": b'#include "OptiTypes.h"', "State.h": b"class State",
            "menu/menu_common.cpp": b"MenuCommon::"}
 
 BUILD_RE = re.compile(rb"OptiScaler v([0-9][\w.\-]*) \(([0-9a-f]{7,40})\) \((\d{8}_\d{6})\)")

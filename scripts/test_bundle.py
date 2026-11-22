@@ -140,5 +140,58 @@ class DownloadTests(unittest.TestCase):
             self.assertFalse(transient(error), error)
 
 
+class HeaderSyncTests(unittest.TestCase):
+    """Syncing OptiScaler's headers at the dll's commit, and reading their enum tokens.
+
+    The 21 Nov nightly (1c4e4848) moved UpscalerToCode out of OptiTypes.cpp
+    into an EnumConfig<Upscaler> table in OptiTypes.h that lists aliases
+    after each value's own token; the sync refused the file and bundling
+    stopped.
+    """
+
+    OPTITYPES_CPP = b'#include "pch.h"\n\n#include "OptiTypes.h"\n' + b"// body\n" * 200
+    UPSCALER = """
+    enum class Upscaler { XeSS, XeSS_on12, FSR21, FSR21_on12, FSR22, FSR22_on12, FFX, FFX_on12,
+                          DLSS, DLSS_on12, FSR31, DLSSD, Reset };
+    template <> struct EnumConfig<Upscaler>
+    {
+        static constexpr std::pair<Upscaler, std::string_view> mapping[] = {
+            { Upscaler::XeSS, "xess" },         { Upscaler::FFX, "ffx" },
+            { Upscaler::FFX_on12, "ffx_12" },   { Upscaler::DLSS, "dlss" },
+            { Upscaler::FSR31, "fsr31" },       // DX11 only
+            { Upscaler::DLSS, "dlssd" },        // Ray reconstruction is picked by RRUpscaler
+            { Upscaler::FFX_on12, "fsr31_12" }, // From before FSR 3.1 got renamed to FFX
+            { Upscaler::DLSSD, "dlssd" },
+        };
+    };
+    """
+
+    def test_an_optitypes_cpp_without_upscalertocode_is_accepted(self):
+        import sync_optiscaler_headers as sync
+        data = sync.fetch("1c4e4848", "OptiTypes.cpp", lambda url, timeout=None: io.BytesIO(self.OPTITYPES_CPP))
+        self.assertEqual(data, self.OPTITYPES_CPP)
+
+    def test_an_error_page_is_still_refused(self):
+        import sync_optiscaler_headers as sync
+        page = b"<html>404: Not Found</html>" + b" " * 2000
+        with self.assertRaises(ValueError):
+            sync.fetch("1c4e4848", "OptiTypes.cpp", lambda url, timeout=None: io.BytesIO(page))
+
+    def test_each_value_gets_the_token_enumtocode_writes(self):
+        import generate_asi_layout
+        enum = generate_asi_layout.parse_enums(self.UPSCALER)["Upscaler"]
+        token = {name: enum["codes"].get(str(value)) for name, value in enum["values"].items()}
+        self.assertEqual((token["DLSS"], token["FFX_on12"], token["DLSSD"], token["FFX"], token["FSR31"]),
+                         ("dlss", "ffx_12", "dlssd", "ffx", "fsr31"))
+
+    def test_the_older_upscalertocode_still_reads(self):
+        import generate_asi_layout
+        text = ('enum class Upscaler { XeSS, FFX, Reset };\n'
+                'std::string UpscalerToCode(Upscaler upscaler)\n{\n    switch (upscaler)\n    {\n'
+                '    case Upscaler::XeSS: return "xess";\n    case Upscaler::FFX: return "ffx";\n    }\n}\n')
+        enum = generate_asi_layout.parse_enums(text)["Upscaler"]
+        self.assertEqual(enum["codes"], {"0": "xess", "1": "ffx"})
+
+
 if __name__ == "__main__":
     unittest.main()

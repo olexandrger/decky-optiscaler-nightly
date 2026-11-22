@@ -390,8 +390,11 @@ def parse_enums(*texts):
     """{enum: {"values": {name: int}, "codes": {int: ini token}}} from the headers.
 
     The tokens are what the ini holds ("ffx", "XeFG"): EnumConfig<T>::mapping,
-    and UpscalerToCode for Upscaler. The panel turns OptiScaler's live values
-    back into those, so it can show them as ini values.
+    and UpscalerToCode for Upscaler in nightlies before EnumConfig<Upscaler>.
+    The panel turns OptiScaler's live values back into those, so it can show
+    them as ini values. A mapping may list a value more than once (aliases
+    only read from older configs); EnumToCode writes its first match, so the
+    first one is the token.
     """
     text = "\n".join(strip_comments(t) for t in texts)
     enums = {}
@@ -415,13 +418,13 @@ def parse_enums(*texts):
             continue
         for pair in PAIR_RE.finditer(match.group("body")):
             if pair.group("value") in enum["values"]:
-                enum["codes"][str(enum["values"][pair.group("value")])] = pair.group("code")
+                enum["codes"].setdefault(str(enum["values"][pair.group("value")]), pair.group("code"))
     upscaler = enums.get("Upscaler")
     to_code = re.search(r"UpscalerToCode\s*\(\s*Upscaler\s+\w+\s*\)\s*\{(?P<body>.*?)\n\}", text, re.S)
     if upscaler and to_code:
         for case in UPSCALER_CASE_RE.finditer(to_code.group("body")):
             if case.group("value") in upscaler["values"] and case.group("code"):
-                upscaler["codes"][str(upscaler["values"][case.group("value")])] = case.group("code")
+                upscaler["codes"].setdefault(str(upscaler["values"][case.group("value")]), case.group("code"))
     # Hand-rolled reads in Config.cpp:  lstrcmpiA(x.value().c_str(), "nukems") == 0)
     #                                       FGNvngxReplacement.set_from_config(FGNvngxReplacement::Nukems);
     for case in STRCMP_CASE_RE.finditer(text):
