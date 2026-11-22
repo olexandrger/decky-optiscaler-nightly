@@ -1052,6 +1052,14 @@ def _install(target, payload, filename, preserve_ini, logger, live_asi, optipatc
             logger.info("removed retired payload dir %s/", name)
 
     ini_path = target / INI_NAME
+    if ini_path.is_file() and INI_NAME not in old_files and INI_NAME not in backups:
+        # An OptiScaler.ini this plugin did not put there (left by an earlier
+        # OptiScaler, or the player's own): a copy goes in the backup folder,
+        # so uninstall puts it back as it was instead of deleting it with
+        # the install's files.
+        backups[INI_NAME] = journal.stash(INI_NAME)
+        if preserve_ini:
+            journal.write_file(backup_dir(target) / INI_NAME, ini_path)
     if not (preserve_ini and ini_path.is_file()):
         journal.write_file(payload / INI_NAME, ini_path)
     if INI_NAME not in created:
@@ -1203,6 +1211,13 @@ def uninstall(target_dir, remove_ini=True, logger=None):
     # install; whoever asked for the uninstall has already been shown it.
     if forget_launch_options(target):
         removed.append(LAUNCH_RECORD_NAME)
+
+    if not remove_ini:
+        # Keeping the ini keeps the settings it holds now, not the copy an
+        # install set aside from before it.
+        kept = backup_dir(target) / INI_NAME
+        if kept.is_file() and (target / INI_NAME).is_file():
+            kept.unlink()
 
     restored.extend(restore_backups(target, logger))
 

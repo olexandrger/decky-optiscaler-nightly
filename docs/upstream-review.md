@@ -24,7 +24,6 @@ so, and once reported says "Reported <date>, awaiting a decision"; the task
 skips it until the line changes. A port ticks its item in the port's own
 commit as "Ported in this commit" (`git log -S "<id> ("` finds it).
 
-- [ ] PD-01 (886d5f0): an existing OptiScaler.ini is not backed up; uninstall deletes it with the install's files.
 - [ ] CD-02 (886d5f0): a reinstall rebuilds the manifest from this install only, so OptiPatcher and earlier imported files are no longer owned and uninstall leaves them.
 - [ ] CD-04 (886d5f0): installing the live-control ASI writes over the file in place (write_bytes) even when a running game has it mapped.
 - [ ] UI-07 (886d5f0): the full-screen Now Playing page drops write errors and the restart-needed notice the Quick Access panel shows.
@@ -53,6 +52,7 @@ commit as "Ported in this commit" (`git log -S "<id> ("` finds it).
 - [x] PD-02 (886d5f0): setup and "Set launch options for me" wrote Steam's launch options as only this plugin's override and the wiki's flags, dropping the player's own wrappers and arguments. Ported in this commit: `mergeOverride` adds our `n,b` clauses to the assignment the game gets (or in front) and appends missing flags; switching the checklist's launch options off takes out only ours.
 - [x] CD-05 (886d5f0): the payload cache counted as extracted when OptiScaler.dll existed, so an extraction cut short was trusted and installs skipped the support files it lacked. Ported in this commit: the extracted folder is trusted only with a stamp written after a finished extraction (naming the archive hash) and every payload file and dir present; otherwise it is unpacked again, and an extraction that comes out short is an error.
 - [x] CD-08 (886d5f0): FSR 4 file import, REFramework add/remove, OptiPatcher and live-control installs wrote the game folder outside the lock install, uninstall and settings writes hold. Ported in this commit: each takes the service's mutation lock for its folder writes (downloads stay outside), the foreign check runs inside it, and LoadAsiPlugins is written under the same lock as the ASI.
+- [x] PD-01 (886d5f0): an existing OptiScaler.ini is not backed up; uninstall deletes it with the install's files. Ported in this commit: an ini the manifest does not list as ours gets a copy in the backup folder at install (kept in place, or replaced when the ini is not preserved), uninstall puts it back, and an uninstall that keeps the ini keeps the current one and drops the copy.
 
 ## Not taken
 

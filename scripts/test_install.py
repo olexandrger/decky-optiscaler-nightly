@@ -219,6 +219,71 @@ class InstallSafetyTests(unittest.TestCase):
 
 
 
+class ExistingIniTests(unittest.TestCase):
+    """An OptiScaler.ini this plugin did not put there is the player's: an
+    uninstall puts it back as it was (upstream 886d5f0, audit PD-01). Before,
+    the install kept it in place but listed it as its own, and uninstalling
+    deleted it."""
+
+    ORIGINAL = "[Upscalers]\nDx12Upscaler=xess\n; the player's own\n"
+
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
+        self.root = Path(self.temp.name)
+        self.payload = make_payload(self.root)
+        self.game = self.root / "game"
+        self.game.mkdir()
+        (self.game / "Game.exe").write_bytes(b"MZ game")
+        (self.game / INI_NAME).write_text(self.ORIGINAL, encoding="utf-8")
+
+    def ini(self):
+        return (self.game / INI_NAME).read_text(encoding="utf-8")
+
+    def test_the_install_keeps_it_and_uninstall_puts_it_back(self):
+        before = snapshot(self.game)
+        installer.install(self.game, self.payload, "dxgi.dll", logger=LOG)
+        self.assertEqual(self.ini(), self.ORIGINAL)
+        (self.game / INI_NAME).write_text("[Upscalers]\nDx12Upscaler=ffx\n", encoding="utf-8")
+        installer.install(self.game, self.payload, "dxgi.dll", logger=LOG)  # an update
+        installer.uninstall(self.game, logger=LOG)
+        self.assertEqual(snapshot(self.game), before)
+
+    def test_replaced_by_the_bundled_ini_it_still_comes_back(self):
+        before = snapshot(self.game)
+        installer.install(self.game, self.payload, "dxgi.dll", preserve_ini=False, logger=LOG)
+        self.assertEqual(self.ini(), (self.payload / INI_NAME).read_text(encoding="utf-8"))
+        installer.uninstall(self.game, logger=LOG)
+        self.assertEqual(snapshot(self.game), before)
+
+    def test_uninstall_keeping_the_ini_keeps_the_current_settings(self):
+        installer.install(self.game, self.payload, "dxgi.dll", logger=LOG)
+        (self.game / INI_NAME).write_text("[Upscalers]\nDx12Upscaler=ffx\n", encoding="utf-8")
+        installer.uninstall(self.game, remove_ini=False, logger=LOG)
+        self.assertEqual(self.ini(), "[Upscalers]\nDx12Upscaler=ffx\n")
+        self.assertFalse((self.game / BACKUP_DIR).exists())
+
+    def test_an_ini_this_plugin_installed_is_not_backed_up(self):
+        (self.game / INI_NAME).unlink()
+        installer.install(self.game, self.payload, "dxgi.dll", logger=LOG)
+        installer.install(self.game, self.payload, "dxgi.dll", logger=LOG)
+        self.assertNotIn(INI_NAME, installer.read_manifest(self.game)["backups"])
+        installer.uninstall(self.game, logger=LOG)
+        self.assertFalse((self.game / INI_NAME).exists())
+
+    def test_a_failure_at_any_write_leaves_it_as_it_was(self):
+        before = snapshot(self.game)
+        clone = self.root / "count"
+        shutil.copytree(self.game, clone)
+        with FailingCopies(fail_at=10**9) as counter:
+            installer.install(clone, self.payload, "dxgi.dll", logger=LOG)
+        for fail_at in range(1, counter.count + 1):
+            with self.subTest(fail_at=fail_at):
+                with FailingCopies(fail_at), self.assertRaises(OSError):
+                    installer.install(self.game, self.payload, "dxgi.dll", logger=LOG)
+                self.assertEqual(snapshot(self.game), before)
+
+
 class PreviousInstallTests(unittest.TestCase):
     """Going back to the OptiScaler a game had before its last update.
 
