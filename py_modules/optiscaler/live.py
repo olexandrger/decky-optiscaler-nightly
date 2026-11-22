@@ -31,10 +31,15 @@ import threading
 import time
 from pathlib import Path
 
-from .constants import BACKUP_DIR
+from . import layout
+from .constants import BACKUP_DIR, OPTI_SUBDIR
+from .inifile import IniFile
 
 ASI_NAME = "decky_optiscaler_live.asi"
-PLUGIN_SUBDIR = "plugins"
+# The folder OptiScaler loads ASIs from, in its own folder (layout.plugin_dir):
+# OptiScaler/plugins, or plugins/ in the game folder for an install from
+# before OptiScaler/.
+PLUGIN_SUBDIR = layout.PLUGINS
 CMD_FILE = "decky_optiscaler_live.cmd"
 STATUS_FILE = "decky_optiscaler_live.status"
 LOG_FILE = "decky_optiscaler_live.log"
@@ -252,8 +257,13 @@ def is_live_key(section, key):
     return f"{section}.{key}" in LIVE_FIELDS
 
 
+def plugin_dir(target_dir):
+    """Where OptiScaler loads ASIs from in this game (OptiScaler 10's rule)."""
+    return layout.plugin_dir(target_dir)
+
+
 def asi_path(target_dir):
-    return Path(target_dir) / PLUGIN_SUBDIR / ASI_NAME
+    return plugin_dir(target_dir) / ASI_NAME
 
 
 def _control_path(target_dir, name):
@@ -298,8 +308,8 @@ def asi_current(target_dir, source):
         return None
 
 
-def install_plugin_asi(target_dir, source, name, logger=None):
-    """Drop an ASI into the game's OptiScaler plugin folder.
+def install_plugin_asi(target_dir, source, name, logger=None, folder=None):
+    """Drop an ASI into the game's OptiScaler plugin folder (or `folder`).
 
     OptiScaler loads every .asi in this folder once ``LoadAsiPlugins`` is on,
     which is how both our live-control module and OptiPatcher get in.
@@ -307,7 +317,7 @@ def install_plugin_asi(target_dir, source, name, logger=None):
     source = Path(source)
     if not source.is_file():
         return {"ok": False, "error": f"{name} missing at {source}"}
-    destination = Path(target_dir) / PLUGIN_SUBDIR / name
+    destination = Path(folder or plugin_dir(target_dir)) / name
     destination.parent.mkdir(parents=True, exist_ok=True)
     destination.write_bytes(source.read_bytes())
     if logger:
@@ -323,8 +333,11 @@ def install_asi(target_dir, source, logger=None):
 def remove_asi(target_dir, logger=None):
     """Remove the ASI and every file the live channel created."""
     removed = []
+    # Also where an install from before OptiScaler/ had it.
+    legacy = Path(target_dir) / PLUGIN_SUBDIR
     for path in (
         asi_path(target_dir),
+        legacy / ASI_NAME,
         _control_path(target_dir, CMD_FILE),
         _control_path(target_dir, STATUS_FILE),
         _control_path(target_dir, LOG_FILE),
@@ -339,12 +352,12 @@ def remove_asi(target_dir, logger=None):
                 logger.warning("could not remove %s: %s", path, exc)
 
     # Only clean the plugins folder up if we are the ones who created it.
-    plugin_dir = Path(target_dir) / PLUGIN_SUBDIR
-    try:
-        if plugin_dir.is_dir() and not any(plugin_dir.iterdir()):
-            plugin_dir.rmdir()
-    except OSError:
-        pass
+    for folder in {plugin_dir(target_dir), legacy}:
+        try:
+            if folder.is_dir() and not any(folder.iterdir()):
+                folder.rmdir()
+        except OSError:
+            pass
     return {"ok": True, "removed": removed}
 
 
@@ -352,9 +365,8 @@ def ini_requirements():
     """INI settings OptiScaler needs before it will load the ASI at all.
 
     Only the switch. ``Plugins.Path`` is deliberately left alone: OptiScaler
-    already defaults it to ``<dll folder>/plugins``, and writing a *relative*
-    path here would be resolved against the game's working directory instead,
-    which is not reliably the folder OptiScaler was loaded from.
+    already defaults it to ``OptiScaler/plugins`` (its own folder's), where
+    the installer puts the ASI.
     """
     return [
         {"section": "Plugins", "key": "LoadAsiPlugins", "value": "true"},
@@ -741,6 +753,61 @@ def running_build(target_dir):
     return match.groups() if match else None
 
 
+def _ini_setting(target_dir, section, key):
+    """A value OptiScaler.ini sets for itself (not "auto"), or None."""
+    try:
+        values = IniFile(Path(target_dir) / "OptiScaler.ini").to_dict()
+    except OSError:
+        return None
+    value = str(values.get(section, {}).get(key) or "").strip()
+    return None if value.lower() in ("", "auto") else value
+
+
+def _ini_folder(target_dir, value):
+    """A folder an ini path names, as OptiScaler resolves it (relative: to its dll's folder)."""
+    text = value.strip().strip('"').replace("\\", "/")
+    if re.match(r"^[A-Za-z]:/", text) or text.startswith("/"):
+        return None  # a Windows path from inside the prefix: not checked from here
+    return Path(target_dir) / text
+
+
+def folder_facts(target_dir):
+    """[label, value, tone]: where OptiScaler looks for its files here, if not where they are.
+
+    OptiScaler reads its DLLs from OptiScaler/ (the game folder for an install
+    from before it) and ASIs from its plugins/, unless [Libraries] OptiDllPath
+    or [Plugins] Path in the ini say otherwise; this plugin never writes those.
+    """
+    target = Path(target_dir)
+    facts = []
+    opti = layout.opti_dir(target)
+    if opti == target:
+        facts.append(["OptiScaler's files", "in the game folder (an install from before "
+                      f"{OPTI_SUBDIR}/): Update OptiScaler in this game moves them", "warn"])
+    else:
+        facts.append(["OptiScaler's files", f"{OPTI_SUBDIR}/", "ok"])
+    dll_path = _ini_setting(target, "Libraries", "OptiDllPath")
+    if dll_path:
+        facts.append(["[Libraries] OptiDllPath", f"{dll_path}: OptiScaler reads its DLLs there, not from "
+                      f"{layout.relative(target, opti) + '/' if opti != target else 'the game folder'}", "bad"])
+    plugin_path = _ini_setting(target, "Plugins", "Path")
+    named = _ini_folder(target, plugin_path) if plugin_path else None
+    if plugin_path:
+        elsewhere = named is None or named.is_dir()
+        facts.append(["[Plugins] Path", f"{plugin_path}: " + (
+            f"OptiScaler loads ASIs from there, not from {layout.relative(target, plugin_dir(target))}/"
+            if elsewhere else f"no such folder here, so OptiScaler uses {layout.relative(target, plugin_dir(target))}/"),
+            "bad" if elsewhere else "warn"])
+    legacy = target / PLUGIN_SUBDIR
+    if opti != target and legacy.is_dir() and (named is None or named.resolve() != legacy.resolve()):
+        strays = sorted(p.name for p in legacy.iterdir() if p.is_file() and p.suffix.lower() == ".asi")
+        if strays:
+            facts.append([f"{PLUGIN_SUBDIR}/ in the game folder", f"{', '.join(strays)}: OptiScaler 10 loads ASIs "
+                          f"from {OPTI_SUBDIR}/{PLUGIN_SUBDIR}/, not from here (move them if they are "
+                          "OptiScaler's; another ASI loader may use this folder)", "warn"])
+    return facts
+
+
 def diagnostics(target_dir, source=None, install=None):
     """Everything that decides whether live editing works in this game.
 
@@ -781,14 +848,18 @@ def diagnostics(target_dir, source=None, install=None):
     elif built_for:
         fact("In-game plugin built for", built_for)
 
-    asi = target / PLUGIN_SUBDIR / ASI_NAME
+    asi = asi_path(target)
+    shown = layout.relative(target, asi)
     if asi.is_file():
         current = st.get("asi_current")
-        fact("In-game plugin file", f"{PLUGIN_SUBDIR}/{ASI_NAME}, {asi.stat().st_size} bytes"
+        fact("In-game plugin file", f"{shown}, {asi.stat().st_size} bytes"
              + ("" if current is not False else " — older than this plugin's: Update OptiScaler in this game"),
              "ok" if current is not False else "bad")
     else:
-        fact("In-game plugin file", f"missing ({PLUGIN_SUBDIR}/{ASI_NAME}): Update OptiScaler in this game", "bad")
+        fact("In-game plugin file", f"missing ({shown}): Update OptiScaler in this game", "bad")
+
+    for label, value, tone in folder_facts(target):
+        fact(label, value, tone)
 
     enabled = st.get("load_enabled")
     fact("LoadAsiPlugins in OptiScaler.ini", {True: "true", False: "off: OptiScaler skips plugins",
@@ -835,9 +906,9 @@ def diagnostics(target_dir, source=None, install=None):
     effects = [line for line in log_lines
                if _EFFECT_RE.search(line) and not _STREAMLINE_RE.search(line)]
     effects = effects[:60] + (["..."] if len(effects) > 260 else []) + effects[60:][-200:]
-    plugins_dir = target / PLUGIN_SUBDIR
+    plugins_dir = plugin_dir(target)
     listing = "\n".join(f"{p.name}  {p.stat().st_size} bytes" for p in sorted(plugins_dir.iterdir())) \
-        if plugins_dir.is_dir() else "(no plugins/ folder)"
+        if plugins_dir.is_dir() else f"(no {layout.relative(target, plugins_dir)}/ folder)"
 
     report = [f"Decky OptiScaler Nightly live-control report, {time.strftime('%Y-%m-%d %H:%M:%S')}",
               f"Game folder: {target}", ""]
@@ -845,7 +916,7 @@ def diagnostics(target_dir, source=None, install=None):
     report.append(section(STATUS_FILE, _read_text(target / STATUS_FILE)))
     report.append(section(CMD_FILE, _read_text(cmd)))
     report.append(section(LOG_FILE + " (last 80 lines)", "\n".join(log_tail(target_dir, 80))))
-    report.append(section("plugins/", listing))
+    report.append(section(f"{layout.relative(target, plugins_dir)}/", listing))
     report.append(section("OptiScaler.ini [Plugins]/[Log]", plugins_ini))
     report.append(section(f"OptiScaler.log: plugin lines ({len(relevant)})", "\n".join(relevant)))
     report.append(section("OptiScaler.log: frame generation and upscaler lines", "\n".join(effects)))

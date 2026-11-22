@@ -19,7 +19,12 @@ export function outdatedReason(install: InstallInfo | null | undefined,
   if (!install?.installed || !install.managed || install.foreign) return null;
   if (install.outdated) {
     return `This game has OptiScaler ${install.version ?? "from an older build"}; ` +
-      `this plugin ships ${install.bundled_version ?? "a newer one"}.`;
+      `this plugin ships ${install.bundled_version ?? "a newer one"}.` +
+      (install.flat_layout ? " Updating also moves it into an OptiScaler folder and puts the game's own DLLs back." : "");
+  }
+  if (install.flat_layout) {
+    return "OptiScaler's DLLs sit in this game's folder, over the game's own. Updating moves them " +
+      "into an OptiScaler folder, as OptiScaler 10 lays itself out, and puts the game's own back.";
   }
   if (live?.asi_current === false) {
     return "This game's live-control plugin is from an older build of this plugin.";

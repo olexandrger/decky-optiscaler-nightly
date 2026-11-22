@@ -835,8 +835,11 @@ class OptiScalerService:
         if manifest.get("reframework"):
             return {"ok": False, "error": "This game's REFramework is managed too: reinstall "
                                           "from the game's page in Libraries & all settings."}
+        # OptiPatcher stays: added at install, or later from its toggle (which
+        # is not recorded), wherever OptiScaler loads it from now.
+        patcher = await self._run(lambda: (live.plugin_dir(target_dir) / OPTIPATCHER_NAME).is_file())
         return await self.install(target_dir, manifest["filename"], preserve_ini=True,
-                                  optipatcher=bool(manifest.get("optipatcher")))
+                                  optipatcher=bool(manifest.get("optipatcher")) or patcher)
 
     async def restore_previous(self, target_dir):
         """Go back to the OptiScaler this game had before its last update (game closed)."""
@@ -871,7 +874,7 @@ class OptiScalerService:
                 "path": str(path),
                 "values": IniFile(path).to_dict(),
                 "modified": path.stat().st_mtime,
-                "fsr4_build": (fsr4build.identify(path.parent / installer.FFX_UPSCALER_DLL) or {}).get("id"),
+                "fsr4_build": (fsr4build.identify(installer.layout.ffx_upscaler(path.parent)) or {}).get("id"),
             }
 
         return await self._run(work)
@@ -1166,7 +1169,7 @@ class OptiScalerService:
 
     async def get_optipatcher_status(self, target_dir):
         """Whether OptiPatcher is available here and installed for this game."""
-        installed_path = Path(target_dir) / live.PLUGIN_SUBDIR / OPTIPATCHER_NAME
+        installed_path = live.plugin_dir(target_dir) / OPTIPATCHER_NAME
         return {
             "available": self.optipatcher_path() is not None,
             "installed": installed_path.is_file(),
@@ -1176,7 +1179,7 @@ class OptiScalerService:
     async def install_optipatcher(self, target_dir, enabled=True):
         """Add or remove OptiPatcher for one game without reinstalling."""
         try:
-            path = Path(target_dir) / live.PLUGIN_SUBDIR / OPTIPATCHER_NAME
+            path = live.plugin_dir(target_dir) / OPTIPATCHER_NAME
             source = self.optipatcher_path()
             if enabled and not source:
                 return {"ok": False, "error": "this build does not bundle OptiPatcher"}

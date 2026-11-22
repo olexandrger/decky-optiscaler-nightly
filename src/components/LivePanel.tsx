@@ -45,7 +45,8 @@ export function LivePanel({ targetDir, status, onChanged }: Props) {
   ) : status.loaded_by_optiscaler === false ? (
     <Notice tone="warn" title="OptiScaler did not load it">
       OptiScaler searched its plugins folder this run and did not load the module. Check that
-      it is still in <Mono>plugins/</Mono> next to OptiScaler.
+      it is still in <Mono>OptiScaler/plugins/</Mono>, and that OptiScaler.ini sets no other
+      <b>[Plugins] Path</b> (Diagnostics says).
     </Notice>
   ) : null;
 

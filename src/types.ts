@@ -126,6 +126,11 @@ export interface InstallInfo {
   bundled_version?: string;
   /** This game holds another OptiScaler than the bundled one: reapply it. */
   outdated?: boolean;
+  /**
+   * Installed before OptiScaler 10's OptiScaler/ folder: its DLLs sit in the
+   * game folder, over the game's own. Reapplying moves them.
+   */
+  flat_layout?: boolean;
   installed_at: number | null;
   ini_present: boolean;
   ini_path: string;

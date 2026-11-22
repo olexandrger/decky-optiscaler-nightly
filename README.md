@@ -33,8 +33,10 @@ from it one at a time ([docs/upstream-review.md](docs/upstream-review.md)).
   changes made in its own menu, and can keep them in `OptiScaler.ini`.
 - **FSR 4 on a Steam Deck** with the INT8 Lite and INT8 RDNA2 models of the bundled
   FidelityFX upscaler, no extra downloads.
-- **Safe installs.** An install or update that fails part way leaves the game folder as it
-  was, and each update keeps the previous OptiScaler, so one game can go back to it.
+- **Safe installs.** OptiScaler goes in as OptiScaler 10 lays itself out, its DLLs in an
+  `OptiScaler` folder, so the game's own files stay as they are. An install or update that
+  fails part way leaves the game folder as it was, and each update keeps the previous
+  OptiScaler, so one game can go back to it.
 - **A separate plugin.** It can sit next to the original, but the two never manage the same
   game.
 
@@ -60,7 +62,7 @@ Then open a game in the plugin and install OptiScaler into it. Only tested on a 
   notices kept.
 - Releases bundle OptiScaler, which is GPL-3.0. Each release names the OptiScaler nightly it
   carries and links OptiScaler's source at the commit that build came from; the licenses of
-  the components OptiScaler ships are in its `Licenses` folder.
+  the components OptiScaler ships are in its `OptiScaler/Licenses` folder.
 - The original plugin is [danielcamilo1](https://github.com/danielcamilo1)'s work (you can
   [support them on Ko-fi](https://ko-fi.com/danielcamilo)). OptiScaler is the
   [OptiScaler project](https://github.com/optiscaler/OptiScaler)'s, with its wiki

@@ -20,7 +20,12 @@ from optiscaler import installer, fsr4build
 from optiscaler.constants import (FFX_UPSCALER_DLL, FSR4_DECK_MODELS, INI_NAME,
                                   MANIFEST_NAME, RETIRED_FSR4_BUILDS)
 from optiscaler.inifile import IniFile
+from optiscaler.layout import payload_name
 from optiscaler.service import OptiScalerService
+
+# OptiScaler's own upscaler, in OptiScaler/; a copy the game ships in its own
+# folder (FFX_UPSCALER_DLL there) is the game's, and stays as it is.
+UPS = payload_name(FFX_UPSCALER_DLL)
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -160,7 +165,7 @@ class DeckFsr4Tests(unittest.TestCase):
 
     def snapshot(self):
         return {name: (self.target/name).read_bytes()
-                for name in [FFX_UPSCALER_DLL, INI_NAME, MANIFEST_NAME]}
+                for name in [FFX_UPSCALER_DLL, UPS, INI_NAME, MANIFEST_NAME]}
 
     def test_enable_verify_reinstall_restore_uninstall(self):
         self.assertTrue(self.enable()['ok'])
@@ -177,10 +182,10 @@ class DeckFsr4Tests(unittest.TestCase):
         self.assertEqual(config['values']['FrameGen']['FGOutput'], 'fsr3')
         self.assertTrue(installer.verify_install(self.target, self.payload)['complete'])
         installer.install(self.target, self.payload)
-        self.assertEqual((self.target/FFX_UPSCALER_DLL).read_bytes(), self.dll.read_bytes())
+        self.assertEqual((self.target/UPS).read_bytes(), self.dll.read_bytes())
         self.assertEqual(installer.read_manifest(self.target)['fsr4_build']['id'], 'community')
         installer.restore_fsr4_build(self.target, self.payload)
-        self.assertEqual(fsr4build.identify(self.target/FFX_UPSCALER_DLL)['id'], 'bundled')
+        self.assertEqual(fsr4build.identify(self.target/UPS)['id'], 'bundled')
         self.assertTrue(installer.verify_install(self.target, self.payload)['complete'])
         self.assertTrue(self.enable()['ok'])
         installer.uninstall(self.target)
@@ -211,8 +216,8 @@ class DeckFsr4Tests(unittest.TestCase):
 
     def test_same_size_corruption_fails_verification_and_reinstall(self):
         self.assertTrue(self.enable()['ok'])
-        (self.target/FFX_UPSCALER_DLL).write_bytes(b'x'*self.build['file_bytes'])
-        self.assertIn(FFX_UPSCALER_DLL, installer.verify_install(self.target, self.payload)['problems'])
+        (self.target/UPS).write_bytes(b'x'*self.build['file_bytes'])
+        self.assertIn(UPS, installer.verify_install(self.target, self.payload)['problems'])
         before = self.snapshot()
         with self.assertRaises(ValueError):
             installer.install(self.target, self.payload)
@@ -233,9 +238,9 @@ class DeckFsr4Tests(unittest.TestCase):
 
     def test_unmanaged_install_rejected(self):
         (self.target/MANIFEST_NAME).unlink()
-        before = (self.target/FFX_UPSCALER_DLL).read_bytes()
+        before = (self.target/UPS).read_bytes()
         self.assertFalse(self.enable()['ok'])
-        self.assertEqual(before, (self.target/FFX_UPSCALER_DLL).read_bytes())
+        self.assertEqual(before, (self.target/UPS).read_bytes())
 
     def test_manifest_write_failure_rolls_back_dll_and_ini(self):
         before = self.snapshot()
@@ -276,11 +281,11 @@ class DeckModelTests(unittest.TestCase):
 
     def snapshot(self):
         return {name: (self.target/name).read_bytes()
-                for name in [FFX_UPSCALER_DLL, INI_NAME, MANIFEST_NAME]}
+                for name in [FFX_UPSCALER_DLL, UPS, INI_NAME, MANIFEST_NAME]}
 
     def test_the_bundled_upscaler_carries_both_models(self):
         # Provider classes FidelityFX registers per model (FSR4Models.cpp).
-        data = (Path(self.payload)/FFX_UPSCALER_DLL).read_bytes()
+        data = (Path(self.payload)/UPS).read_bytes()
         self.assertIn(b'ffxProvider_FSR4Lite_Int8', data)
         self.assertIn(b'ffxProvider_FSR4_Int8_Navi2', data)
 
@@ -297,7 +302,8 @@ class DeckModelTests(unittest.TestCase):
                 self.assertEqual(values['FSR']['Fsr4Model'], index)
                 self.assertEqual(values['FSR']['UpscalerIndex'], '0')
                 self.assertEqual(values['FrameGen']['FGOutput'], 'fsr3')
-                self.assertEqual(fsr4build.identify(self.target/FFX_UPSCALER_DLL)['id'], 'bundled')
+                self.assertEqual(fsr4build.identify(self.target/UPS)['id'], 'bundled')
+                self.assertEqual((self.target/FFX_UPSCALER_DLL).read_bytes(), b'original game DLL')
                 self.assertFalse(installer.read_manifest(self.target)['fsr4_build'])
                 self.assertTrue(installer.verify_install(self.target, self.payload)['complete'])
         installer.uninstall(self.target)
@@ -312,7 +318,7 @@ class DeckModelTests(unittest.TestCase):
             installer.install_fsr4_build(self.target, dll, build, enable_int8=True)
             self.assertEqual(installer.read_manifest(self.target)['fsr4_build']['id'], 'community')
             self.assertTrue(self.enable('lite')['ok'])
-        self.assertEqual(fsr4build.identify(self.target/FFX_UPSCALER_DLL)['id'], 'bundled')
+        self.assertEqual(fsr4build.identify(self.target/UPS)['id'], 'bundled')
         self.assertFalse(installer.read_manifest(self.target)['fsr4_build'])
         self.assertEqual(self.values()['FSR']['Fsr4Model'], '3')
 
@@ -325,9 +331,9 @@ class DeckModelTests(unittest.TestCase):
         manifest['fsr4_build'] = {'id': retired['id'], 'label': retired['label'],
                                   'file': FFX_UPSCALER_DLL, 'sha256': retired['file_sha256']}
         (self.target/MANIFEST_NAME).write_text(__import__('json').dumps(manifest))
-        (self.target/FFX_UPSCALER_DLL).write_bytes(b'stand-in for the 4.1.1b DLL')
+        (self.target/UPS).write_bytes(b'stand-in for the 4.1.1b DLL')
         installer.install(self.target, self.payload)
-        self.assertEqual(fsr4build.identify(self.target/FFX_UPSCALER_DLL)['id'], 'bundled')
+        self.assertEqual(fsr4build.identify(self.target/UPS)['id'], 'bundled')
         self.assertFalse(installer.read_manifest(self.target)['fsr4_build'])
         self.assertTrue(installer.verify_install(self.target, self.payload)['complete'])
 
@@ -339,15 +345,15 @@ class DeckModelTests(unittest.TestCase):
     def test_with_the_bundled_dll_in_place_a_running_game_only_gets_settings(self):
         # The usual case: nothing to swap, so the game may be running; the
         # model applies at its next launch.
-        dll_before = (self.target/FFX_UPSCALER_DLL).read_bytes()
+        dll_before = (self.target/UPS).read_bytes()
         with patch.object(installer.live, 'status', return_value={'attached': True}):
             result = self.enable('lite')
         self.assertTrue(result['ok'], result)
         self.assertEqual(self.values()['FSR']['Fsr4Model'], '3')
-        self.assertEqual((self.target/FFX_UPSCALER_DLL).read_bytes(), dll_before)
+        self.assertEqual((self.target/UPS).read_bytes(), dll_before)
 
     def test_swapping_a_dll_while_the_game_runs_is_refused(self):
-        (self.target/FFX_UPSCALER_DLL).write_bytes(b'some other upscaler build')
+        (self.target/UPS).write_bytes(b'some other upscaler build')
         before = self.snapshot()
         with patch.object(installer.live, 'status', return_value={'attached': True}):
             self.assertFalse(self.enable('lite')['ok'])

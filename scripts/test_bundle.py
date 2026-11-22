@@ -141,24 +141,48 @@ class DownloadTests(unittest.TestCase):
 
 
 class PayloadListTests(unittest.TestCase):
-    """What a bundle installs: OptiScaler's DLLs and the folders holding files."""
+    """What a bundle installs: OptiScaler 10's layout, its DLLs and licences in OptiScaler/."""
 
-    def test_markers_empty_folders_and_plugins_are_not_payload(self):
+    def nightly(self, root):
+        """A nightly archive's layout (20261122: marker, scripts, Licenses/ at the top)."""
+        for name in ("OptiScaler.dll", "setup_linux.sh", "setup_windows.bat",
+                     "!! EXTRACT ALL FILES TO GAME FOLDER !!"):
+            (root / name).write_bytes(b"x")
+        (root / "OptiScaler.ini").write_text("[Menu]\n")
+        (root / "Licenses").mkdir()
+        (root / "Licenses" / "XeSS_LICENSE.txt").write_bytes(b"x")
+        deps = root / "OptiScaler"
+        (deps / "D3D12_OptiScaler").mkdir(parents=True)
+        (deps / "D3D12_OptiScaler" / "D3D12Core.dll").write_bytes(b"x")
+        (deps / "plugins").mkdir()
+        (deps / "libxess.dll").write_bytes(b"x")
+        (deps / "Streamlined_fetcher_windows.bat").write_bytes(b"x")
+        (deps / "notes.txt").write_bytes(b"x")
+
+    def test_the_archive_keeps_optiscalers_folder_and_drops_what_never_goes_in_a_game(self):
         with tempfile.TemporaryDirectory() as scratch:
-            root = Path(scratch)
-            for name in ("OptiScaler.dll", "libxess.dll", "setup_linux.sh",
-                         "!! EXTRACT ALL FILES TO GAME FOLDER !!", "Streamlined_fetcher_windows.bat"):
-                (root / name).write_bytes(b"x")
-            (root / "OptiScaler.ini").write_text("[Menu]\n")
-            (root / "D3D12_OptiScaler").mkdir()
-            (root / "D3D12_OptiScaler" / "D3D12Core.dll").write_bytes(b"x")
-            (root / "Licenses").mkdir()
-            (root / "Licenses" / "XeSS_LICENSE.txt").write_bytes(b"x")
-            (root / "plugins").mkdir()
-            (root / "empty").mkdir()
+            extracted = Path(scratch)
+            self.nightly(extracted)
+            root = bundle_nightly.arrange(extracted)
+            left = sorted(p.relative_to(root).as_posix() for p in root.rglob("*"))
             files, dirs = bundle_nightly.payload_lists(root)
-        self.assertEqual(files, ["libxess.dll"])
-        self.assertEqual(dirs, ["D3D12_OptiScaler", "Licenses"])
+        self.assertEqual(left, ["OptiScaler", "OptiScaler.dll", "OptiScaler.ini", "OptiScaler/D3D12_OptiScaler",
+                                "OptiScaler/D3D12_OptiScaler/D3D12Core.dll", "OptiScaler/Licenses",
+                                "OptiScaler/Licenses/XeSS_LICENSE.txt", "OptiScaler/libxess.dll",
+                                "OptiScaler/notes.txt"])
+        # Only DLLs and licences: not the marker, the scripts, the empty
+        # plugins/ (the game's own ASIs live there), nor whatever else it holds.
+        self.assertEqual(files, ["OptiScaler/D3D12_OptiScaler/D3D12Core.dll",
+                                 "OptiScaler/Licenses/XeSS_LICENSE.txt", "OptiScaler/libxess.dll"])
+        self.assertEqual(dirs, ["OptiScaler", "OptiScaler/D3D12_OptiScaler", "OptiScaler/Licenses"])
+
+    def test_an_archive_without_optiscalers_folder_is_refused(self):
+        with tempfile.TemporaryDirectory() as scratch:
+            extracted = Path(scratch)
+            (extracted / "OptiScaler.dll").write_bytes(b"x")
+            (extracted / "libxess.dll").write_bytes(b"x")
+            with self.assertRaises(SystemExit):
+                bundle_nightly.arrange(extracted)
 
 
 class HeaderSyncTests(unittest.TestCase):

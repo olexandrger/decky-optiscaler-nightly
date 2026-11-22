@@ -21,9 +21,9 @@ from pathlib import Path
 from unittest import mock
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "py_modules"))
-from optiscaler import installer, payload as payload_mod, steam  # noqa: E402
+from optiscaler import installer, layout, payload as payload_mod, steam  # noqa: E402
 from optiscaler.constants import (  # noqa: E402
-    BACKUP_DIR, FFX_UPSCALER_DLL, INI_NAME, MANIFEST_NAME, PAYLOAD_ARCHIVE, PAYLOAD_DIRS,
+    BACKUP_DIR, FFX_UPSCALER_DLL, INI_NAME, MANIFEST_NAME, OPTI_SUBDIR, PAYLOAD_ARCHIVE, PAYLOAD_DIRS,
     PAYLOAD_FILES, PROXY_FILENAMES,
 )
 
@@ -40,12 +40,81 @@ def make_payload(root):
     payload.mkdir()
     (payload / "OptiScaler.dll").write_bytes(b"OptiScaler" + b"\0" * (5 * 1024 * 1024))
     (payload / INI_NAME).write_text("[Menu]\nShortcutKey=auto\n", encoding="utf-8")
-    for name in PAYLOAD_FILES:
-        (payload / name).write_bytes(f"payload {name}".encode())
     for name in PAYLOAD_DIRS:
-        (payload / name).mkdir()
-        (payload / name / "inside.txt").write_bytes(f"payload {name}".encode())
+        (payload / name).mkdir(parents=True, exist_ok=True)
+    for name in PAYLOAD_FILES:
+        (payload / name).parent.mkdir(parents=True, exist_ok=True)
+        (payload / name).write_bytes(f"payload {name}".encode())
     return payload
+
+
+def P(basename):
+    """Where the payload, and an install, has OptiScaler's file of this name."""
+    return layout.payload_name(basename)
+
+
+# What installs from before OptiScaler/ put in the game folder itself (up to
+# v0.0.7-nightly.20261122.38): OptiScaler's DLLs, D3D12_OptiScaler/ and
+# Licenses/ copied whole, the ASIs in plugins/.
+FLAT_FILES = sorted(Path(n).name for n in PAYLOAD_FILES if n.count("/") == 1 and n.endswith(".dll"))
+FLAT_DIRS = ["D3D12_OptiScaler", "Licenses"]
+
+
+def flat_install(game, version="flat", live_asi=b"MZ live, flat", extra_files=(), extra_dirs=()):
+    """A game folder as this plugin's installs from before OptiScaler/ left it.
+
+    The steps of that installer (_install up to 0156da5), in the same order and
+    with the same records: the game's own file of each name set aside in the
+    backup folder (an earlier install's own left alone), folders copied over
+    what is there (the game's set aside first), the manifest as it wrote it.
+    `extra_files` / `extra_dirs` are what a bundle listed besides (the .38
+    bundle: the empty marker and plugins/).
+    """
+    game = Path(game)
+    old = installer.read_manifest(game) or {}
+    old_files, old_dirs = set(old.get("files") or []), set(old.get("dirs") or [])
+    backups = dict(old.get("backups") or {})
+    stash = game / BACKUP_DIR
+    files, dirs = [], []
+
+    def put(name, data):
+        path = game / name
+        if path.exists() and name not in backups and name not in old_files \
+                and not installer._looks_like_optiscaler(path):
+            stash.mkdir(exist_ok=True)
+            shutil.move(str(path), str(stash / name))
+            backups[name] = name
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(data)
+        files.append(name)
+
+    put("dxgi.dll", b"OptiScaler, " + version.encode() + b"\0" * (5 * 1024 * 1024))
+    if not (game / INI_NAME).is_file():
+        put(INI_NAME, b"[Menu]\nShortcutKey=auto\n")
+    else:
+        files.append(INI_NAME)
+    for name in [*FLAT_FILES, *extra_files]:
+        put(name, b"" if name in extra_files else f"{version} {name}".encode())
+    for name in [*FLAT_DIRS, *extra_dirs]:
+        path = game / name
+        if path.exists() and name not in backups and name not in old_dirs:
+            stash.mkdir(exist_ok=True)
+            shutil.copytree(path, stash / name)
+            backups[name] = name
+        path.mkdir(exist_ok=True)
+        if name not in extra_dirs:
+            (path / "inside.txt").write_bytes(f"{version} {name}".encode())
+        dirs.append(name)
+    if live_asi is not None:
+        (game / "plugins").mkdir(exist_ok=True)
+        (game / "plugins" / installer.live.ASI_NAME).write_bytes(live_asi)
+        files.append(f"plugins/{installer.live.ASI_NAME}")
+    (game / MANIFEST_NAME).write_text(json.dumps({
+        "plugin": installer.PLUGIN_ID, "live_asi": live_asi is not None, "optipatcher": False,
+        "reframework": False, "reframework_revision": None, "fsr4_build": {},
+        "optiscaler_version": version, "filename": "dxgi.dll", "installed_at": 0,
+        "files": files, "dirs": dirs, "backups": backups, "backup_dir": BACKUP_DIR,
+    }, indent=2), encoding="utf-8")
 
 
 def snapshot(folder):
@@ -128,7 +197,7 @@ class InstallSafetyTests(unittest.TestCase):
     def test_a_failed_upgrade_keeps_the_previous_install_working(self):
         installer.install(self.game, self.payload, "dxgi.dll", logger=LOG)
         installed = snapshot(self.game)
-        (self.payload / "libxess.dll").write_bytes(b"a newer XeSS")
+        (self.payload / P("libxess.dll")).write_bytes(b"a newer XeSS")
         writes = self.count_writes()
         for fail_at in range(1, writes + 1):
             with self.subTest(fail_at=fail_at):
@@ -151,7 +220,7 @@ class InstallSafetyTests(unittest.TestCase):
         # Every file landed; the upscaler is only "wrong" because verify checks
         # it against the real bundled hash, which a synthetic payload lacks.
         problems = installer.verify_install(self.game, self.payload)["problems"]
-        self.assertEqual(set(problems) - {FFX_UPSCALER_DLL}, set())
+        self.assertEqual(set(problems) - {P(FFX_UPSCALER_DLL)}, set())
         installer.uninstall(self.game, logger=LOG)
         self.assertEqual(snapshot(self.game), before)
 
@@ -193,22 +262,32 @@ class InstallSafetyTests(unittest.TestCase):
                      if not k.startswith(installer.INSTALL_STAGING)}
         self.assertFalse(installer.recover_interrupted(self.game, LOG))
         self.assertEqual(snapshot(self.game), installed)
-        self.assertEqual((self.game / BACKUP_DIR / "libxess.dll").read_bytes(), b"the game's own XeSS")
+        self.assertEqual((self.game / BACKUP_DIR / "dxgi.dll").read_bytes(), b"the game's own dxgi")
 
-    def test_reinstall_merges_into_payload_folders(self):
-        # Upstream copies Licenses/ and D3D12_OptiScaler/ over what is there
-        # (copytree dirs_exist_ok); a file added inside one survives a reinstall.
+    def test_a_file_put_in_optiscalers_folders_survives_a_reinstall_and_an_uninstall(self):
+        # The folders are OptiScaler's, not this plugin's alone: the player's
+        # ASIs go in OptiScaler/plugins, and anything else put there stays.
         installer.install(self.game, self.payload, "dxgi.dll", logger=LOG)
-        (self.game / "D3D12_OptiScaler" / "extra.txt").write_bytes(b"added later")
+        extra = self.game / OPTI_SUBDIR / "D3D12_OptiScaler" / "extra.txt"
+        extra.write_bytes(b"added later")
         installer.install(self.game, self.payload, "dxgi.dll", logger=LOG)
-        self.assertEqual((self.game / "D3D12_OptiScaler" / "extra.txt").read_bytes(), b"added later")
+        self.assertEqual(extra.read_bytes(), b"added later")
+        installer.uninstall(self.game, logger=LOG)
+        self.assertEqual(extra.read_bytes(), b"added later")
+        self.assertEqual(sorted(p.relative_to(self.game).as_posix() for p in (self.game / OPTI_SUBDIR).rglob("*")),
+                         ["OptiScaler/D3D12_OptiScaler", "OptiScaler/D3D12_OptiScaler/extra.txt"])
 
     def test_a_successful_install_leaves_no_staging_behind(self):
         installer.install(self.game, self.payload, "dxgi.dll", logger=LOG)
         self.assertFalse((self.game / installer.INSTALL_STAGING).exists())
         manifest = json.loads((self.game / MANIFEST_NAME).read_text())
-        self.assertEqual(sorted(manifest["backups"]), ["Licenses", "dxgi.dll", "libxess.dll"])
-        self.assertEqual((self.game / BACKUP_DIR / "libxess.dll").read_bytes(), b"the game's own XeSS")
+        self.assertEqual(manifest["layout"], installer.LAYOUT)
+        # OptiScaler's DLLs go in OptiScaler/: the game's own of the same
+        # names, and its Licenses/, are not touched. Only the proxy displaces.
+        self.assertEqual(sorted(manifest["backups"]), ["dxgi.dll"])
+        self.assertEqual((self.game / "libxess.dll").read_bytes(), b"the game's own XeSS")
+        self.assertEqual((self.game / "Licenses" / "game.txt").read_bytes(), b"the game's licence")
+        self.assertEqual((self.game / P("libxess.dll")).read_bytes(), b"payload " + P("libxess.dll").encode())
 
     def test_a_folder_that_cannot_be_written_is_refused_untouched(self):
         before = snapshot(self.game)
@@ -310,7 +389,7 @@ class PreviousInstallTests(unittest.TestCase):
 
     def newer_nightly(self):
         (self.payload / "OptiScaler.dll").write_bytes(b"OptiScaler B" + b"\0" * (5 * 1024 * 1024))
-        (self.payload / "libxess.dll").write_bytes(b"XeSS B")
+        (self.payload / P("libxess.dll")).write_bytes(b"XeSS B")
 
     def updated(self):
         """Nightly A installed, then nightly B over it; returns the folder under A."""
@@ -334,10 +413,11 @@ class PreviousInstallTests(unittest.TestCase):
         self.updated()
         previous = installer.read_previous(self.game)
         self.assertEqual((previous["version"], previous["replaced_by"]), ("A", "B"))
-        self.assertEqual(previous["files"], ["dxgi.dll", "libxess.dll"])
+        self.assertEqual(previous["files"], sorted(["dxgi.dll", P("libxess.dll")]))
         kept = self.game / installer.PREVIOUS_DIR / "files"
-        self.assertEqual(sorted(p.name for p in kept.iterdir()), ["dxgi.dll", "libxess.dll"])
-        self.assertEqual((kept / "libxess.dll").read_bytes(), b"payload libxess.dll")
+        self.assertEqual(sorted(p.relative_to(kept).as_posix() for p in kept.rglob("*") if p.is_file()),
+                         sorted(["dxgi.dll", P("libxess.dll")]))
+        self.assertEqual((kept / P("libxess.dll")).read_bytes(), b"payload " + P("libxess.dll").encode())
         self.assertEqual(installer.detect(self.game)["previous"]["version"], "A")
 
     def test_going_back_restores_the_previous_install_byte_for_byte(self):
@@ -375,14 +455,17 @@ class PreviousInstallTests(unittest.TestCase):
 
     def test_the_next_update_replaces_it(self):
         self.updated()
-        (self.payload / "libxess.dll").write_bytes(b"XeSS C")
+        (self.payload / P("libxess.dll")).write_bytes(b"XeSS C")
         self.install("C")
         previous = installer.read_previous(self.game)
         self.assertEqual((previous["version"], previous["replaced_by"], previous["files"]),
-                         ("B", "C", ["libxess.dll"]))
+                         ("B", "C", [P("libxess.dll")]))
 
     def test_a_file_the_update_added_goes_and_the_game_file_it_displaced_comes_back(self):
+        # A game file where OptiScaler's goes (a folder named OptiScaler/ the
+        # game already had): set aside in its place under the backup folder.
         added = PAYLOAD_FILES[0]
+        (self.game / added).parent.mkdir(parents=True)
         (self.game / added).write_bytes(b"the game's own copy")
         self.original = snapshot(self.game)
         shipped = (self.payload / added).read_bytes()
@@ -446,7 +529,8 @@ class PlaceholderBundleTests(unittest.TestCase):
     Installing one wrote the marker into the game and copied the game's
     plugins/ (this plugin's ASI and the player's own) into the backup folder as
     the game's; uninstall deleted plugins/, with anything added since, before
-    moving that old copy back.
+    moving that old copy back. Those installs were laid out before OptiScaler/
+    (flat_install); the next install also moves them.
     """
 
     MARKER = "!! EXTRACT ALL FILES TO GAME FOLDER !!"
@@ -471,14 +555,8 @@ class PlaceholderBundleTests(unittest.TestCase):
 
     def install_38(self):
         """An install as the .38 bundle made it, over an earlier install of ours."""
-        self.install()
-        (self.payload / self.MARKER).write_bytes(b"")
-        (self.payload / "plugins").mkdir()
-        with mock.patch.object(installer, "PAYLOAD_FILES", [*PAYLOAD_FILES, self.MARKER]), \
-                mock.patch.object(installer, "PAYLOAD_DIRS", [*PAYLOAD_DIRS, "plugins"]):
-            self.install()
-        (self.payload / self.MARKER).unlink()
-        (self.payload / "plugins").rmdir()
+        flat_install(self.game, "A")
+        flat_install(self.game, "B", extra_files=[self.MARKER], extra_dirs=["plugins"])
 
     def test_the_38_state_is_what_the_reports_describe(self):
         self.install_38()
@@ -496,7 +574,8 @@ class PlaceholderBundleTests(unittest.TestCase):
         self.install()
         manifest = installer.read_manifest(self.game)
         self.assertEqual((self.game / "plugins" / "players_mod.asi").read_bytes(), b"the player's own ASI")
-        self.assertTrue((self.game / "plugins" / "decky_optiscaler_live.asi").is_file())
+        self.assertTrue((self.game / OPTI_SUBDIR / "plugins" / "decky_optiscaler_live.asi").is_file())
+        self.assertFalse((self.game / "plugins" / "decky_optiscaler_live.asi").exists())
         self.assertFalse((self.game / self.MARKER).exists())
         self.assertNotIn(self.MARKER, manifest["files"])
         self.assertNotIn("plugins", manifest["dirs"])
@@ -528,6 +607,211 @@ class PlaceholderBundleTests(unittest.TestCase):
         self.assertFalse((self.game / "plugins" / "decky_optiscaler_live.asi").exists())
         self.assertFalse((self.game / self.MARKER).exists())
         self.assertFalse(installer.backup_dir(self.game).exists())
+
+
+class OptiScalerFolderTests(unittest.TestCase):
+    """OptiScaler 10's own layout: its DLLs in OptiScaler/, the game's own kept.
+
+    OptiScaler reads its DLLs from an OptiScaler/ folder next to its dll, and
+    from the dll's folder when there is none (dllmain.cpp, MainDllPath); it
+    loads ASIs from that folder's plugins/. Installs from before OptiScaler/
+    (flat_install) put the DLLs in the game folder over the game's own; the
+    next install moves them, puts the game's back, and can go back.
+    """
+
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
+        self.root = Path(self.temp.name)
+        self.payload = make_payload(self.root)
+        self.asi = self.root / "live.asi"
+        self.asi.write_bytes(b"MZ live")
+        self.patcher = self.root / "OptiPatcher.asi"
+        self.patcher.write_bytes(b"MZ patcher")
+        self.game = self.root / "game"
+        self.game.mkdir()
+        (self.game / "Game.exe").write_bytes(b"MZ game")
+        (self.game / "dxgi.dll").write_bytes(b"the game's own dxgi")
+        (self.game / "libxess.dll").write_bytes(b"the game's own XeSS")
+        (self.game / FFX_UPSCALER_DLL).write_bytes(b"the game's own FSR 3.1")
+        (self.game / "Licenses").mkdir()
+        (self.game / "Licenses" / "game.txt").write_bytes(b"the game's licence")
+        self.original = snapshot(self.game)
+
+    def install(self, **kwargs):
+        return installer.install(self.game, self.payload, "dxgi.dll", logger=LOG, live_asi=self.asi, **kwargs)
+
+    def assert_in_optiscalers_folder(self):
+        for name in PAYLOAD_FILES:
+            self.assertEqual((self.game / name).read_bytes(), f"payload {name}".encode(), name)
+        self.assertEqual(installer.live.asi_path(self.game), self.game / OPTI_SUBDIR / "plugins" / installer.live.ASI_NAME)
+        self.assertEqual(installer.live.asi_path(self.game).read_bytes(), b"MZ live")
+        self.assertEqual(installer.ffx_upscaler_info(self.game)["present"], True)
+        self.assertEqual(installer.layout.ffx_upscaler(self.game), self.game / P(FFX_UPSCALER_DLL))
+
+    def test_an_install_leaves_the_games_own_dlls_alone(self):
+        self.install()
+        self.assert_in_optiscalers_folder()
+        for name in ("libxess.dll", FFX_UPSCALER_DLL, "Licenses/game.txt"):
+            self.assertEqual((self.game / name).read_bytes(), self.original[name], name)
+        self.assertFalse((self.game / "plugins").exists())
+        self.assertFalse(installer.detect(self.game)["flat_layout"])
+        installer.uninstall(self.game, logger=LOG)
+        self.assertEqual(snapshot(self.game), self.original)
+
+    def test_an_install_from_before_the_folder_moves_into_it(self):
+        flat_install(self.game, "A")
+        self.assertTrue(installer.detect(self.game)["flat_layout"])
+        self.assertEqual(installer.live.asi_path(self.game), self.game / "plugins" / installer.live.ASI_NAME)
+        self.install()
+        self.assert_in_optiscalers_folder()
+        # The game's own files of OptiScaler's names come back from the backup.
+        for name in ("libxess.dll", FFX_UPSCALER_DLL, "Licenses/game.txt"):
+            self.assertEqual((self.game / name).read_bytes(), self.original[name], name)
+        for name in [*FLAT_FILES]:
+            self.assertEqual((self.game / name).exists(), name in ("libxess.dll", FFX_UPSCALER_DLL), name)
+        self.assertFalse((self.game / "D3D12_OptiScaler").exists())
+        self.assertEqual(sorted(p.name for p in (self.game / "Licenses").iterdir()), ["game.txt"])
+        self.assertFalse((self.game / "plugins").exists())
+        manifest = installer.read_manifest(self.game)
+        self.assertEqual((manifest["layout"], sorted(manifest["backups"])), (installer.LAYOUT, ["dxgi.dll"]))
+        self.assertFalse(installer.detect(self.game)["flat_layout"])
+        self.assertEqual(installer.read_previous(self.game)["version"], "A")
+        installer.uninstall(self.game, logger=LOG)
+        self.assertEqual(snapshot(self.game), self.original)
+
+    def test_a_failure_at_any_write_of_the_move_leaves_the_old_install_as_it_was(self):
+        flat_install(self.game, "A")
+        before = snapshot(self.game)
+        clone = self.root / "count"
+        shutil.copytree(self.game, clone)
+        with FailingCopies(fail_at=10**9) as counter:
+            installer.install(clone, self.payload, "dxgi.dll", logger=LOG, live_asi=self.asi)
+        shutil.rmtree(clone)
+        self.assertGreater(counter.count, len(PAYLOAD_FILES))
+        for fail_at in range(1, counter.count + 1):
+            with self.subTest(fail_at=fail_at):
+                with FailingCopies(fail_at), self.assertRaises(OSError):
+                    self.install()
+                self.assertEqual(snapshot(self.game), before)
+
+    def test_going_back_after_the_move_restores_the_old_install(self):
+        flat_install(self.game, "A")
+        under_a = snapshot(self.game)
+        self.install()
+        installer.restore_previous(self.game, LOG)
+        self.assertEqual(snapshot(self.game), under_a)
+        self.assertTrue(installer.detect(self.game)["flat_layout"])
+        installer.uninstall(self.game, logger=LOG)
+        self.assertEqual(snapshot(self.game), self.original)
+
+    def test_a_failure_at_any_write_of_going_back_leaves_the_folder_as_it_was(self):
+        flat_install(self.game, "A")
+        self.install()
+        before = snapshot(self.game)
+        clone = self.root / "count"
+        shutil.copytree(self.game, clone)
+        with FailingCopies(fail_at=10**9) as counter:
+            installer.restore_previous(clone, LOG)
+        shutil.rmtree(clone)
+        for fail_at in range(1, counter.count + 1):
+            with self.subTest(fail_at=fail_at):
+                with FailingCopies(fail_at), self.assertRaises(OSError):
+                    installer.restore_previous(self.game, LOG)
+                self.assertEqual(snapshot(self.game), before)
+
+    def test_going_back_waits_while_the_folder_holds_the_players_files(self):
+        # The OptiScaler to go back to reads its DLLs from the game folder; an
+        # OptiScaler/ left behind would send it looking there instead.
+        flat_install(self.game, "A")
+        self.install()
+        (self.game / OPTI_SUBDIR / "plugins" / "players.asi").write_bytes(b"the player's own ASI")
+        before = snapshot(self.game)
+        with self.assertRaises(ValueError) as refused:
+            installer.restore_previous(self.game, LOG)
+        self.assertIn("OptiScaler/plugins/players.asi", str(refused.exception))
+        self.assertEqual(snapshot(self.game), before)
+
+    def test_uninstall_keeps_the_players_asis_in_the_folder(self):
+        self.install()
+        (self.game / OPTI_SUBDIR / "plugins" / "players.asi").write_bytes(b"the player's own ASI")
+        installer.uninstall(self.game, logger=LOG)
+        self.assertEqual(sorted(p.relative_to(self.game).as_posix() for p in (self.game / OPTI_SUBDIR).rglob("*")),
+                         ["OptiScaler/plugins", "OptiScaler/plugins/players.asi"])
+        rest = {k: v for k, v in snapshot(self.game).items() if not k.startswith(OPTI_SUBDIR)}
+        self.assertEqual(rest, self.original)
+
+    def test_the_players_asis_in_plugins_stay_where_they_are_and_are_reported(self):
+        (self.game / "plugins").mkdir()
+        (self.game / "plugins" / "players_mod.asi").write_bytes(b"the player's own ASI")
+        self.original = snapshot(self.game)
+        flat_install(self.game, "A")
+        self.install()
+        self.assertEqual(sorted(p.name for p in (self.game / "plugins").iterdir()), ["players_mod.asi"])
+        facts = {label: (value, tone) for label, value, tone in installer.live.folder_facts(self.game)}
+        self.assertIn("players_mod.asi", facts["plugins/ in the game folder"][0])
+        self.assertEqual(facts["OptiScaler's files"], ("OptiScaler/", "ok"))
+        installer.uninstall(self.game, logger=LOG)
+        self.assertEqual(snapshot(self.game), self.original)
+
+    def test_optipatcher_moves_too_also_when_its_toggle_put_it_there(self):
+        flat_install(self.game, "A")
+        (self.game / "plugins" / "OptiPatcher.asi").write_bytes(b"MZ patcher, flat")
+        from optiscaler.service import OptiScalerService
+        service = OptiScalerService(ROOT, self.root / "settings", self.root / "runtime", self.root / "home", LOG)
+        service.install = mock.AsyncMock(return_value={"ok": True})
+        import asyncio
+        asyncio.run(service.update_install(str(self.game)))
+        self.assertTrue(service.install.call_args.kwargs["optipatcher"])
+        self.install(optipatcher=self.patcher)
+        self.assertFalse((self.game / "plugins").exists())
+        self.assertEqual((self.game / OPTI_SUBDIR / "plugins" / "OptiPatcher.asi").read_bytes(), b"MZ patcher")
+
+    def test_a_game_file_where_optiscalers_goes_is_set_aside_and_comes_back(self):
+        (self.game / OPTI_SUBDIR).mkdir()
+        (self.game / P("libxess.dll")).write_bytes(b"left in OptiScaler/ by something else")
+        self.original = snapshot(self.game)
+        clone = self.root / "count"
+        shutil.copytree(self.game, clone)
+        with FailingCopies(fail_at=10**9) as counter:
+            installer.install(clone, self.payload, "dxgi.dll", logger=LOG, live_asi=self.asi)
+        shutil.rmtree(clone)
+        for fail_at in range(1, counter.count + 1):
+            with self.subTest(fail_at=fail_at):
+                with FailingCopies(fail_at), self.assertRaises(OSError):
+                    self.install()
+                self.assertEqual(snapshot(self.game), self.original)
+        self.install()
+        self.assertEqual((installer.backup_dir(self.game) / P("libxess.dll")).read_bytes(),
+                         b"left in OptiScaler/ by something else")
+        self.assert_in_optiscalers_folder()
+        installer.uninstall(self.game, logger=LOG)
+        self.assertEqual(snapshot(self.game), self.original)
+
+    def test_uninstall_puts_a_game_file_back_into_the_folder_past_the_players_asis(self):
+        (self.game / OPTI_SUBDIR).mkdir()
+        (self.game / P("libxess.dll")).write_bytes(b"left in OptiScaler/ by something else")
+        self.install()
+        (self.game / OPTI_SUBDIR / "plugins" / "players.asi").write_bytes(b"the player's own ASI")
+        installer.uninstall(self.game, logger=LOG)
+        self.assertEqual((self.game / P("libxess.dll")).read_bytes(), b"left in OptiScaler/ by something else")
+        self.assertEqual((self.game / OPTI_SUBDIR / "plugins" / "players.asi").read_bytes(), b"the player's own ASI")
+
+    def test_a_folder_an_earlier_bundle_had_goes_once_empty(self):
+        extra = f"{OPTI_SUBDIR}/streamline"
+        with mock.patch.object(installer, "PAYLOAD_DIRS", [*PAYLOAD_DIRS, extra]):
+            self.install()
+        self.assertTrue((self.game / extra).is_dir())
+        self.install()
+        self.assertFalse((self.game / extra).exists())
+        self.assertNotIn(extra, installer.read_manifest(self.game)["containers"])
+        installer.uninstall(self.game, logger=LOG)
+        self.assertEqual(snapshot(self.game), self.original)
+
+    def test_an_old_install_still_uninstalls_as_it_was_made(self):
+        flat_install(self.game, "A")
+        installer.uninstall(self.game, logger=LOG)
+        self.assertEqual(snapshot(self.game), self.original)
 
 
 class ExclusiveWithOtherInstallsTests(unittest.TestCase):
@@ -605,6 +889,7 @@ class ExclusiveWithOtherInstallsTests(unittest.TestCase):
         self.assertFalse(installer.detect(self.game)["foreign"])
 
     def test_the_two_plugins_keep_separate_records(self):
+        (self.game / "dxgi.dll").write_bytes(b"the game's own dxgi")
         installer.install(self.game, self.payload, "dxgi.dll", logger=LOG)
         names = {p.name for p in self.game.iterdir()}
         self.assertNotIn(".decky-optiscaler.json", names)
@@ -794,12 +1079,13 @@ class PayloadCompletenessTests(unittest.TestCase):
 
     def _fill(self, root, skip=()):
         root.mkdir(parents=True, exist_ok=True)
-        for name in [payload_mod.MARKER, INI_NAME, *PAYLOAD_FILES]:
-            if name not in skip:
-                (root / name).write_bytes(b"x")
         for name in payload_mod.PAYLOAD_DIRS:
             if name not in skip:
-                (root / name).mkdir(exist_ok=True)
+                (root / name).mkdir(parents=True, exist_ok=True)
+        for name in [payload_mod.MARKER, INI_NAME, *PAYLOAD_FILES]:
+            if name not in skip:
+                (root / name).parent.mkdir(parents=True, exist_ok=True)
+                (root / name).write_bytes(b"x")
 
     def _payload(self, temp):
         return payload_mod.Payload(Path(temp) / PAYLOAD_ARCHIVE, Path(temp) / "out")

@@ -7,12 +7,12 @@
 What it does, in order:
 
 1. Unpacks the nightly into a scratch folder.
-2. Flattens it. Since 10.0, the archive keeps every dependency DLL in an
-   ``OptiScaler/`` subfolder next to OptiScaler.dll. OptiScaler only uses that
-   folder when it exists; otherwise it falls back to the game folder itself
-   (dllmain.cpp, MainDllPath/PluginPath). Flattening keeps this plugin's
-   install layout -- proxy, INI, DLLs, ``plugins/`` -- exactly as it was, so
-   the FSR 4 build swap, verify, backup and uninstall paths keep working.
+2. Keeps OptiScaler 10's own layout: OptiScaler.dll and OptiScaler.ini at the
+   top, every DLL in the ``OptiScaler/`` folder next to them (dllmain.cpp,
+   MainDllPath), so an install leaves a game's own DLLs of the same names alone.
+   The licences move into ``OptiScaler/Licenses``; the setup scripts, the
+   Streamline fetcher, the "extract here" marker and the empty ``plugins/``
+   folder are left out (an install creates ``OptiScaler/plugins`` itself).
 3. Repacks it as ``bin/OptiScaler-<version>.7z`` (plain LZMA2, which every
    archiver the plugin looks for can read) and removes the previous archive.
    The archive is never committed (bin/.gitignore): CI bundles the newest
@@ -55,14 +55,13 @@ PACKAGE_JSON = ROOT / "package.json"
 NIGHTLY_REPO = "optiscaler/OptiScaler-nightly"
 FFX_UPSCALER_DLL = "amd_fidelityfx_upscaler_dx12.dll"
 
-# Folders the archive carries that are not payload: plugins/ is where ASIs
-# load from, the in-game plugin's and the player's own.
-NOT_PAYLOAD_DIRS = {"plugins"}
+OPTI_SUBDIR = "OptiScaler"
+LICENSES = "Licenses"
 
-# Top-level files the installer handles itself, or that never go in a game folder.
+# The two files the installer places itself, at the top of the game folder.
+TOP_LEVEL = {"OptiScaler.dll", "OptiScaler.ini"}
+# Files that never go in a game folder, wherever the archive has them.
 NOT_PAYLOAD = {
-    "OptiScaler.dll",
-    "OptiScaler.ini",
     "setup_linux.sh",
     "setup_windows.bat",
     # Windows-only helper that downloads Streamline DLLs; nothing to run on a Deck.
@@ -161,40 +160,60 @@ def download_latest(dest_dir, opener=urllib.request.urlopen, sleep=time.sleep, t
     return target
 
 
-def flatten(extracted):
-    """Return a folder laid out the way the 0.9.x releases were."""
+def arrange(extracted):
+    """The bundle root, laid out as OptiScaler 10 ships it, minus what never goes in a game.
+
+    OptiScaler.dll and OptiScaler.ini at the top, the rest in OptiScaler/. The
+    licences move in there too, so the game folder gets nothing of OptiScaler's
+    but its dll and ini. Anything else at the top (the setup scripts, the
+    empty "!! EXTRACT ALL FILES TO GAME FOLDER !!" marker) and empty folders
+    (OptiScaler/plugins) are dropped.
+    """
     root = next((p.parent for p in extracted.rglob("OptiScaler.dll")), None)
     if root is None:
         sys.exit("no OptiScaler.dll in the archive")
-    deps = root / "OptiScaler"
-    if deps.is_dir():
-        for item in deps.iterdir():
-            destination = root / item.name
-            if destination.exists():
-                sys.exit(f"{item.name} exists both at the top level and in OptiScaler/")
-            shutil.move(str(item), str(destination))
-        deps.rmdir()
-    for name in NOT_PAYLOAD - {"OptiScaler.dll", "OptiScaler.ini"}:
-        (root / name).unlink(missing_ok=True)
+    deps = root / OPTI_SUBDIR
+    if not deps.is_dir():
+        sys.exit(f"no {OPTI_SUBDIR}/ folder next to OptiScaler.dll: not an OptiScaler 10 archive")
+    licenses = root / LICENSES
+    if licenses.is_dir():
+        if (deps / LICENSES).exists():
+            sys.exit(f"{LICENSES}/ exists both at the top level and in {OPTI_SUBDIR}/")
+        shutil.move(str(licenses), str(deps / LICENSES))
+    for item in list(root.iterdir()):
+        if item.is_file() and item.name not in TOP_LEVEL:
+            item.unlink()
+    for path in list(deps.rglob("*")):
+        if path.is_file() and path.name in NOT_PAYLOAD:
+            path.unlink()
+    for path in sorted(deps.rglob("*"), key=lambda p: len(p.parts), reverse=True):
+        if path.is_dir() and not any(path.iterdir()):
+            path.rmdir()
     return root
 
 
 def payload_lists(root):
-    """(files, dirs) the installer copies into a game folder, from the bundle root.
+    """(files, dirs) an install puts in a game folder, as paths in it, from the bundle root.
 
-    An allowlist, not everything in the archive: OptiScaler's dependency DLLs
-    and the folders holding files. Nightlies also carry an empty
-    "!! EXTRACT ALL FILES TO GAME FOLDER !!" marker and an empty plugins/
-    folder, and a bundle that listed everything installed the marker into every
-    game and treated the game's plugins/ (where the in-game plugin lives) as an
-    install folder of its own.
+    An allowlist: every DLL under OptiScaler/ and the licences, never anything
+    else the archive might carry. Nightlies also ship an empty "!! EXTRACT ALL
+    FILES TO GAME FOLDER !!" marker and an empty plugins/ folder; a bundle that
+    listed everything installed the marker into every game and treated the
+    game's plugins/ as an install folder of its own. `dirs` are the folders
+    the files go in, parents first (an install creates them and an uninstall
+    removes them once empty: the player's own ASIs live in OptiScaler/plugins).
     """
-    files = sorted(p.name for p in root.iterdir()
-                   if p.is_file() and p.suffix.lower() == ".dll" and p.name not in NOT_PAYLOAD)
-    dirs = sorted(p.name for p in root.iterdir()
-                  if p.is_dir() and p.name not in NOT_PAYLOAD_DIRS
-                  and any(child.is_file() for child in p.rglob("*")))
-    return files, dirs
+    deps = root / OPTI_SUBDIR
+    files = sorted(path.relative_to(root).as_posix() for path in deps.rglob("*")
+                   if path.is_file() and (path.suffix.lower() == ".dll"
+                                          or LICENSES in path.relative_to(deps).parts[:1]))
+    dirs = set()
+    for name in files:
+        parent = Path(name).parent
+        while parent != Path("."):
+            dirs.add(parent.as_posix())
+            parent = parent.parent
+    return files, sorted(dirs, key=lambda d: (d.count("/"), d))
 
 
 def nightly_date(archive_name, tag=None, built=None):
@@ -270,7 +289,7 @@ def main():
         archive = download_latest(scratch, tag=args.tag) if args.latest else Path(args.archive).resolve()
         extracted = scratch / "x"
         run([seven, "x", "-y", f"-o{extracted}", str(archive)])
-        root = flatten(extracted)
+        root = arrange(extracted)
 
         version = version_label(root / "OptiScaler.dll", archive.name, args.tag)
         # The live-control ASI's Config layout comes from the source this dll
@@ -278,9 +297,9 @@ def main():
         import sync_optiscaler_headers
         sync_optiscaler_headers.sync((root / "OptiScaler.dll").read_bytes())
         files, dirs = payload_lists(root)
-        ffx = root / FFX_UPSCALER_DLL
+        ffx = root / OPTI_SUBDIR / FFX_UPSCALER_DLL
         if not ffx.is_file():
-            sys.exit(f"{FFX_UPSCALER_DLL} missing -- FSR 4 restore needs it")
+            sys.exit(f"{OPTI_SUBDIR}/{FFX_UPSCALER_DLL} missing -- FSR 4 restore needs it")
         ffx_version = ".".join(map(str, (pe_file_version(ffx) or (0, 0, 0))[:3]))
 
         out_name = f"OptiScaler-{version}.7z"
@@ -300,7 +319,8 @@ def main():
         old_files = read_list(source, "PAYLOAD_FILES")
         old_dirs = read_list(source, "PAYLOAD_DIRS")
         retired_files = sorted((set(old_files) | set(read_list(source, "RETIRED_PAYLOAD_FILES"))) - set(files))
-        retired_dirs = sorted((set(old_dirs) | set(read_list(source, "RETIRED_PAYLOAD_DIRS"))) - set(dirs))
+        retired_dirs = sorted((set(old_dirs) | set(read_list(source, "RETIRED_PAYLOAD_DIRS"))) - set(dirs),
+                              key=lambda d: (d.count("/"), d))
 
         source = set_value(source, "OPTISCALER_VERSION", f'"{version}"')
         source = set_value(source, "PAYLOAD_ARCHIVE", f'"{out_name}"')
@@ -308,10 +328,13 @@ def main():
         source = write_list(source, "PAYLOAD_FILES", files)
         source = write_list(source, "PAYLOAD_DIRS", dirs)
         source = write_list(source, "RETIRED_PAYLOAD_FILES", retired_files,
-                            "Shipped by an earlier bundle, not by this one. An install that owns them "
+                            "Shipped by an earlier bundle, not by this one (or not there: before "
+                            "OptiScaler/, in the game folder itself). An install that owns them "
                             "removes them on upgrade.")
         source = write_list(source, "RETIRED_PAYLOAD_DIRS", retired_dirs,
-                            "Directories an earlier bundle shipped (0.9.x spelled D3D12_Optiscaler).")
+                            "Folders an earlier bundle shipped (0.9.x spelled D3D12_Optiscaler); "
+                            "the copied ones an install owns go on upgrade, OptiScaler/ "
+                            "folders only once empty.")
         source = set_value(source, "FSR4_BUNDLED_FILE_SHA256", f'(\n    "{sha256(ffx)}"\n)')
         source = set_value(source, "FSR4_BUNDLED_FILE_BYTES", str(ffx.stat().st_size))
         CONSTANTS.write_text(source, encoding="utf-8")

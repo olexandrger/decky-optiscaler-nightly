@@ -3,7 +3,8 @@
 
 No game and no GPU: a stand-in host (asi/test_host.cpp) loads OptiScaler the
 way a game does, as dxgi.dll in a folder this plugin installed, so OptiScaler
-reads its ini and loads the live-control ASI from plugins/. The ASI is then
+reads its ini and loads the live-control ASI from OptiScaler/plugins/ (its DLLs
+from OptiScaler/, OptiScaler 10's own layout, as the installer lays it). The ASI is then
 driven through the same command files, by the same code (optiscaler.live),
 that the panel uses on the Deck.
 
@@ -236,8 +237,13 @@ def install(scratch, asi):
     check("the plugin's installer puts the ASI where OptiScaler looks",
           result.get("live", {}).get("installed") and live.installed(str(game)),
           result.get("live"))
-    check("and creates no OptiScaler/ folder (it would move OptiScaler's own lookups)",
-          not (game / "OptiScaler").exists())
+    # OptiScaler 10's layout: OptiScaler reads its DLLs from OptiScaler/ and
+    # loads ASIs from OptiScaler/plugins (dllmain.cpp). The ASI loading below
+    # is OptiScaler finding it there.
+    check("in OptiScaler 10's layout: its DLLs in OptiScaler/, the ASI in OptiScaler/plugins",
+          all((game / name).is_file() for name in constants.PAYLOAD_FILES)
+          and live.asi_path(game) == game / constants.OPTI_SUBDIR / "plugins" / live.ASI_NAME
+          and not (game / "plugins").exists())
     ini = IniFile(game / constants.INI_NAME)
     for change in live.ini_requirements():
         ini.set(change["section"], change["key"], change["value"])
@@ -387,7 +393,7 @@ def run(wine, scratch):
             print("  host output:", output.strip()[-400:])
 
     print("\nA layout that does not match")
-    shutil.copy2(broken, game / live.PLUGIN_SUBDIR / live.ASI_NAME)
+    shutil.copy2(broken, live.asi_path(game))
     for name in (live.STATUS_FILE, live.CMD_FILE, live.LOG_FILE, live.DUMP_FILE):
         (game / name).unlink(missing_ok=True)
     host = Host(wine, game, prefix, host_exe)

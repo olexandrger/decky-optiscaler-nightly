@@ -1,9 +1,11 @@
 """Install, detect and remove OptiScaler inside a game directory.
 
 Mirrors what the official setup_linux.sh does — copy the release next to the
-game executable and rename OptiScaler.dll to a proxy filename the game already
-loads — but records a manifest and stashes every displaced file in a visible
-backup folder, so an uninstall can put the game back exactly as it was.
+game executable, its DLLs in OptiScaler 10's own ``OptiScaler/`` folder, and
+rename OptiScaler.dll to a proxy filename the game already loads — but records
+a manifest and stashes every displaced file in a visible backup folder, so an
+uninstall can put the game back exactly as it was. Installs from before the
+``OptiScaler/`` folder (DLLs in the game folder) move into it on update.
 """
 
 import json
@@ -13,7 +15,7 @@ import time
 import tempfile
 from pathlib import Path
 
-from . import fsr4build, live, schema
+from . import fsr4build, layout, live, schema
 from .inifile import IniFile
 from .constants import (
     OPTIPATCHER_NAME,
@@ -32,6 +34,7 @@ from .constants import (
     PLUGIN_ID,
     PLUGIN_NAME,
     OPTISCALER_VERSION,
+    OPTI_SUBDIR,
     PAYLOAD_DIRS,
     PAYLOAD_FILES,
     PROXY_FILENAMES,
@@ -45,6 +48,10 @@ from .constants import (
 LEGACY_BACKUP_SUFFIX = ".decky-optiscaler.bak"
 DLL_MARKER = b"OptiScaler"
 MIN_OPTISCALER_SIZE = 4 * 1024 * 1024
+#: The manifest's "layout" for an install as OptiScaler 10 ships it, its DLLs
+#: in OptiScaler/. Manifests without it are from installs that put them in the
+#: game folder; the next install moves them.
+LAYOUT = "optiscaler-folder"
 
 
 def _looks_like_optiscaler(path):
@@ -143,6 +150,9 @@ def detect(target_dir):
         # its OptiScaler (and live-control ASI, compiled for it) until reapplied.
         "bundled_version": OPTISCALER_VERSION,
         "outdated": False,
+        # An install of this plugin's from before OptiScaler 10's OptiScaler/
+        # folder: its DLLs sit in the game folder, over the game's own.
+        "flat_layout": False,
         "installed_at": None,
         "ini_present": False,
         "ini_path": None,
@@ -201,6 +211,7 @@ def detect(target_dir):
                 managed=True,
                 version=manifest.get("optiscaler_version"),
                 outdated=manifest.get("optiscaler_version") != OPTISCALER_VERSION,
+                flat_layout=manifest.get("layout") != LAYOUT,
                 installed_at=manifest.get("installed_at"),
             )
             result["reframework"]["managed"] = bool(manifest.get("reframework"))
@@ -250,13 +261,14 @@ def require_not_foreign(target_dir):
 
 
 def ffx_upscaler_info(target_dir):
-    """The FidelityFX upscaler library actually sitting in the game folder.
+    """The FidelityFX upscaler library OptiScaler loads (its own, in OptiScaler/).
 
     This is the version OptiScaler's overlay prints in its FFX Settings box, and
     it is what decides whether FSR 4 is even on offer - so it belongs in front
-    of the user rather than behind a verify step.
+    of the user rather than behind a verify step. A copy the game ships in its
+    own folder is the game's; OptiScaler only hooks it for its inputs.
     """
-    dll = Path(target_dir) / FFX_UPSCALER_DLL
+    dll = layout.ffx_upscaler(target_dir)
     version = pe_file_version(dll) if dll.is_file() else None
     return {
         "present": dll.is_file(),
@@ -287,7 +299,7 @@ def fsr4_status(target_dir):
         # — or by another tool — is reported the same way one installed from
         # here is, and reported as *unknown* rather than as the released one when
         # the hash matches nothing (see fsr4build.identify).
-        "build": fsr4build.identify(target / FFX_UPSCALER_DLL),
+        "build": fsr4build.identify(layout.ffx_upscaler(target)),
     }
 
 
@@ -399,23 +411,27 @@ def _replace_fsr4(target, source, recorded, deck_model=None, replace_dll=True):
     # (OptiScaler reads it at the next launch).
     manifest = require_stopped_install(target) if replace_dll else require_managed_install(target)
     target = Path(target)
-    if FFX_UPSCALER_DLL not in manifest.get("files", []):
+    # The upscaler OptiScaler loads: in OptiScaler/, or the game folder for an
+    # install from before it.
+    upscaler = layout.relative(target, layout.ffx_upscaler(target))
+    if upscaler not in manifest.get("files", []):
         raise ValueError("Reinstall OptiScaler before changing its upscaler build.")
     # Roll back both settings and DLL if any part of the operation fails.
-    names = [FFX_UPSCALER_DLL, MANIFEST_NAME, INI_NAME]
+    names = [upscaler, MANIFEST_NAME, INI_NAME]
     with tempfile.TemporaryDirectory(prefix=".decky-fsr4-", dir=target) as staging:
         staging = Path(staging)
         existed = {name: (target / name).is_file() for name in names}
+        saved = {name: staging / f"{index}.saved" for index, name in enumerate(names)}
         for name in names:
             if existed[name]:
-                shutil.copy2(target / name, staging / name)
+                shutil.copy2(target / name, saved[name])
         try:
             if replace_dll:
-                atomic_copy(source, target / FFX_UPSCALER_DLL)
+                atomic_copy(source, target / upscaler)
             if deck_model:
                 if not existed[INI_NAME]:
                     raise FileNotFoundError("OptiScaler.ini not found")
-                ini = IniFile(staging / INI_NAME)
+                ini = IniFile(saved[INI_NAME])
                 changes = deck_preset_changes(deck_model)
                 for section, values in changes.items():
                     for key, value in values.items():
@@ -434,7 +450,7 @@ def _replace_fsr4(target, source, recorded, deck_model=None, replace_dll=True):
         except Exception:
             for name in names:
                 if existed[name]:
-                    atomic_copy(staging / name, target / name)
+                    atomic_copy(saved[name], target / name)
                 else:
                     (target / name).unlink(missing_ok=True)
             raise
@@ -448,7 +464,8 @@ def install_fsr4_build(target_dir, dll_path, build, logger=None, enable_int8=Fal
                 "file": FFX_UPSCALER_DLL, "sha256": build["file_sha256"],
                 "reaches_fsr4_by": build["reaches_fsr4_by"]}
     _replace_fsr4(target_dir, dll_path, recorded, "int8" if enable_int8 else None)
-    return {"path": str(target_dir), "file": FFX_UPSCALER_DLL, "build": recorded}
+    return {"path": str(target_dir), "file": layout.relative(target_dir, layout.ffx_upscaler(target_dir)),
+            "build": recorded}
 
 
 def enable_fsr4_deck(target_dir, payload_root, model, logger=None):
@@ -462,26 +479,26 @@ def enable_fsr4_deck(target_dir, payload_root, model, logger=None):
     """
     if model not in FSR4_DECK_MODELS:
         raise ValueError(f"Unknown Steam Deck FSR 4 model: {model}")
-    source = Path(payload_root) / FFX_UPSCALER_DLL
+    source = Path(payload_root) / layout.payload_name(FFX_UPSCALER_DLL)
     bundled = fsr4build.BUNDLED_BUILD["file_sha256"]
     if fsr4build.digest(source) != bundled:
         raise ValueError("Bundled FSR 4 DLL checksum mismatch")
-    current = Path(target_dir) / FFX_UPSCALER_DLL
+    current = layout.ffx_upscaler(target_dir)
     in_place = current.is_file() and fsr4build.digest(current) == bundled
     _replace_fsr4(target_dir, source, {}, model, replace_dll=not in_place)
     return {"path": str(target_dir), "model": model,
             "label": FSR4_DECK_MODELS[model]["label"],
-            "build": fsr4build.identify(Path(target_dir) / FFX_UPSCALER_DLL)}
+            "build": fsr4build.identify(layout.ffx_upscaler(target_dir))}
 
 
 def restore_fsr4_build(target_dir, payload_root, logger=None):
     """Restore the bundled DLL; upscaler and frame-generation settings stay intact."""
-    source = Path(payload_root) / FFX_UPSCALER_DLL
+    source = Path(payload_root) / layout.payload_name(FFX_UPSCALER_DLL)
     if fsr4build.digest(source) != fsr4build.BUNDLED_BUILD["file_sha256"]:
         raise ValueError("Bundled FSR 4 DLL checksum mismatch")
     _replace_fsr4(target_dir, source, {})
     return {"path": str(target_dir), "restored": FFX_UPSCALER_DLL,
-            "build": fsr4build.identify(Path(target_dir) / FFX_UPSCALER_DLL)}
+            "build": fsr4build.identify(layout.ffx_upscaler(target_dir))}
 
 
 def add_files(target_dir, sources, logger=None, reframework_revision=None):
@@ -682,13 +699,19 @@ class _Journal:
         self.prepare(path)
 
     def stash(self, name):
-        """Set the game's own `name` aside in the backup folder, as _stash does."""
+        """Set the game's own `name` aside in the backup folder, as _stash does.
+
+        A name in a subfolder (OptiScaler/libxess.dll) keeps its place under
+        the backup folder.
+        """
         path = self.target / name
         self.prepare(path)
         original = self.saved_path(path)
         stash_dir = backup_dir(self.target)
-        self.ensure_dir(stash_dir)
         destination = stash_dir / name
+        self.ensure_dir(stash_dir)
+        for parent in reversed(destination.relative_to(stash_dir).parents[:-1]):
+            self.ensure_dir(stash_dir / parent)
         # An earlier install already preserved the original; keep the oldest.
         if not destination.exists():
             self.prepare(destination)
@@ -702,9 +725,33 @@ class _Journal:
             return False
         self.prepare(stashed)
         original = self.saved_path(stashed)
+        # Folders it was kept in under the backup folder (OptiScaler/...) go
+        # once empty, as they came.
+        folder = stashed.parent
+        while folder != backup_dir(self.target) and self.remove_if_empty(folder):
+            folder = folder.parent
         path = self.target / name
+        self.ensure_dirs(path.parent)
         self.prepare(path)
         (shutil.copytree if original.is_dir() else shutil.copy2)(original, path)
+        return True
+
+    def ensure_dirs(self, path):
+        """ensure_dir for `path` and each missing folder above it in the game folder."""
+        path = Path(path)
+        missing = []
+        while path != self.target and not path.is_dir():
+            missing.append(path)
+            path = path.parent
+        for folder in reversed(missing):
+            self.ensure_dir(folder)
+
+    def remove_if_empty(self, path):
+        """Remove a folder only when nothing is left in it; True when it went."""
+        path = Path(path)
+        if not path.is_dir() or path.is_symlink() or any(path.iterdir()):
+            return False
+        self.prepare(path)
         return True
 
     def commit(self, keep=None):
@@ -934,6 +981,7 @@ def restore_previous(target_dir, logger=None):
     old = record["manifest"]
     kept = target / PREVIOUS_DIR / "files"
     old_names = set((old.get("files") or []) + (old.get("dirs") or []))
+    old_containers = set(old.get("containers") or [])
     old_backups = dict(old.get("backups") or {})
     backups = dict(manifest.get("backups") or {})
     journal = _Journal(target)
@@ -949,6 +997,20 @@ def restore_previous(target_dir, logger=None):
             if name in backups and name not in old_backups:
                 backups.pop(name)
                 journal.unstash(name)
+        # Its folders the previous install did not have, once empty. Back to an
+        # install from before OptiScaler/, that folder must go: OptiScaler
+        # would look for its DLLs in it.
+        for name in sorted(set(manifest.get("containers") or []) - old_containers,
+                           key=lambda n: n.count("/"), reverse=True):
+            path = target / name
+            if not journal.remove_if_empty(path) and name == OPTI_SUBDIR and path.is_dir():
+                left = sorted(layout.relative(target, p) for p in path.rglob("*")
+                              if not p.is_dir() or not any(p.iterdir()))
+                raise ValueError(
+                    f"{OPTI_SUBDIR}/ holds files this plugin did not put there ({', '.join(left[:3])}"
+                    f"{', ...' if len(left) > 3 else ''}). The OptiScaler to go back to reads its "
+                    f"DLLs from the game folder, and would look in {OPTI_SUBDIR}/ instead: move "
+                    "them out first.")
         # What it replaced comes back. A file the update retired had the
         # game's own original put back in its place: that goes aside again.
         for name in record.get("files") or []:
@@ -956,14 +1018,16 @@ def restore_previous(target_dir, logger=None):
             destination = target / name
             if name in old_backups and name not in backups and destination.exists():
                 backups[name] = journal.stash(name)
-            journal.ensure_dir(destination.parent)
+            journal.ensure_dirs(destination.parent)
             if source.is_dir():
                 journal.prepare(destination)
                 shutil.copytree(source, destination)
             else:
                 journal.write_file(source, destination)
         restored = dict(old)
-        restored["backups"] = backups
+        # In the old manifest's order: the record it was is the record it is.
+        restored["backups"] = {**{name: backups[name] for name in old_backups if name in backups},
+                               **{name: value for name, value in backups.items() if name not in old_backups}}
         journal.write_text(target / MANIFEST_NAME, json.dumps(restored, indent=2))
     except BaseException:
         journal.rollback()
@@ -1016,9 +1080,9 @@ def _merge_stashed_plugins(target, own, journal=None, logger=None):
 
 def _own_plugin_files(manifest):
     """This plugin's files in plugins/: the in-game plugin, and OptiPatcher when it put it there."""
-    prefix = f"{live.PLUGIN_SUBDIR}/"
-    return {live.ASI_NAME} | {name[len(prefix):] for name in (manifest.get("files") or [])
-                              if name.startswith(prefix)}
+    prefixes = (f"{live.PLUGIN_SUBDIR}/", f"{OPTI_SUBDIR}/{live.PLUGIN_SUBDIR}/")
+    return {live.ASI_NAME} | {Path(name).name for name in (manifest.get("files") or [])
+                              if name.startswith(prefixes)}
 
 
 def _install(target, payload, filename, preserve_ini, logger, live_asi, optipatcher,
@@ -1035,16 +1099,26 @@ def _install(target, payload, filename, preserve_ini, logger, live_asi, optipatc
         if logger:
             logger.info("dropping retired FSR 4 build %s", selected_build.get("id"))
         selected_build = {}
+    upscaler = layout.payload_name(FFX_UPSCALER_DLL)
+    if selected_build and layout.relative(target, layout.ffx_upscaler(target)) != upscaler:
+        # An install from before OptiScaler/: its selected build is in the game
+        # folder, which the move takes out. The bundled upscaler goes in.
+        if logger:
+            logger.info("FSR 4 build %s stays behind with the old layout", selected_build.get("id"))
+        selected_build = {}
     if selected_build:
         build = fsr4build.find(selected_build.get("id"))
-        if not build or not (target / FFX_UPSCALER_DLL).is_file() or fsr4build.digest(
-                target / FFX_UPSCALER_DLL) != build["file_sha256"]:
+        current = target / upscaler
+        if not build or not current.is_file() or fsr4build.digest(current) != build["file_sha256"]:
             raise ValueError("Selected FSR 4 build is missing or changed. Enable it again or restore the bundled build first.")
     old_files = set(old_manifest.get("files") or [])
     old_dirs = set(old_manifest.get("dirs") or [])
+    old_containers = list(old_manifest.get("containers") or [])
+    # This plugin's own install from before OptiScaler/: it moves.
+    moving = old_manifest.get("plugin") == PLUGIN_ID and old_manifest.get("layout") != LAYOUT
     backups = dict(old_manifest.get("backups") or {})
     created = []
-    created_dirs = []
+    containers = []
 
     # Remove a previous install under a different filename so the game does not
     # end up loading OptiScaler twice.
@@ -1100,6 +1174,24 @@ def _install(target, payload, filename, preserve_ini, logger, live_asi, optipatc
         if logger:
             logger.info("removed retired payload dir %s/", name)
 
+    # This plugin's ASIs in plugins/ in the game folder, where installs from
+    # before OptiScaler/ put them: OptiScaler loads them from OptiScaler/plugins
+    # now, where this install puts its copies. The player's own stay where they
+    # are (another ASI loader may read that folder too).
+    legacy_plugins = target / live.PLUGIN_SUBDIR
+    if moving:
+        replaced = {live.ASI_NAME: bool(live_asi), OPTIPATCHER_NAME: bool(optipatcher)}
+        for name in sorted({*(n for n in old_files if n.startswith(f"{live.PLUGIN_SUBDIR}/")),
+                            *(f"{live.PLUGIN_SUBDIR}/{n}" for n, new in replaced.items() if new)}):
+            path = target / name
+            if path.is_file() or path.is_symlink():
+                journal.remove(path)
+                if logger:
+                    logger.info("moved %s into %s/%s", name, OPTI_SUBDIR, live.PLUGIN_SUBDIR)
+            if backups.pop(name, None):
+                journal.unstash(name)
+        journal.remove_if_empty(legacy_plugins)
+
     ini_path = target / INI_NAME
     if ini_path.is_file() and INI_NAME not in old_files and INI_NAME not in backups:
         # An OptiScaler.ini this plugin did not put there (left by an earlier
@@ -1114,24 +1206,21 @@ def _install(target, payload, filename, preserve_ini, logger, live_asi, optipatc
     if INI_NAME not in created:
         created.append(INI_NAME)
 
+    # OptiScaler's folders, parents first. Only ever removed once empty: the
+    # player's own ASIs go in OptiScaler/plugins too.
+    for name in PAYLOAD_DIRS:
+        if (target / name).exists() and not (target / name).is_dir():
+            backups[name] = journal.stash(name)
+        journal.ensure_dirs(target / name)
+        containers.append(name)
+
     for name in PAYLOAD_FILES:
-        if name == FFX_UPSCALER_DLL and selected_build:
+        if name == upscaler and selected_build:
             created.append(name)
             continue
         src = payload / name
         if src.is_file():
             place(src, name)
-
-    for name in PAYLOAD_DIRS:
-        src = payload / name
-        if not src.is_dir():
-            continue
-        dest = target / name
-        if dest.exists() and name not in backups and name not in old_dirs:
-            backups[name] = journal.stash(name)
-        journal.write_tree(src, dest)
-        if name not in created_dirs:
-            created_dirs.append(name)
 
     # REFramework, for the games whose wiki entry says OptiScaler does nothing
     # without it. One file (plus the revision stamp REF itself writes), placed
@@ -1149,14 +1238,15 @@ def _install(target, payload, filename, preserve_ini, logger, live_asi, optipatc
 
     # The live-control plugin: an .asi OptiScaler loads into the game process so
     # frame generation and the upscaler can be changed without a restart.
+    plugins = f"{OPTI_SUBDIR}/{live.PLUGIN_SUBDIR}"
     live_result = {"installed": False, "error": None}
     if live_asi:
-        journal.ensure_dir(target / live.PLUGIN_SUBDIR)
-        journal.prepare(target / live.PLUGIN_SUBDIR / live.ASI_NAME)
-        outcome = live.install_asi(target, live_asi, logger)
+        journal.ensure_dirs(target / plugins)
+        journal.prepare(target / plugins / live.ASI_NAME)
+        outcome = live.install_plugin_asi(target, live_asi, live.ASI_NAME, logger, folder=target / plugins)
         if outcome.get("ok"):
             live_result["installed"] = True
-            created.append(f"{live.PLUGIN_SUBDIR}/{live.ASI_NAME}")
+            created.append(f"{plugins}/{live.ASI_NAME}")
         else:
             live_result["error"] = outcome.get("error")
             if logger:
@@ -1166,16 +1256,22 @@ def _install(target, payload, filename, preserve_ini, logger, live_asi, optipatc
     # (Red Dead Redemption 2 among them) need it to expose their DLSS inputs.
     patcher_result = {"installed": False, "error": None}
     if optipatcher:
-        journal.ensure_dir(target / live.PLUGIN_SUBDIR)
-        journal.prepare(target / live.PLUGIN_SUBDIR / OPTIPATCHER_NAME)
-        outcome = live.install_plugin_asi(target, optipatcher, OPTIPATCHER_NAME, logger)
+        journal.ensure_dirs(target / plugins)
+        journal.prepare(target / plugins / OPTIPATCHER_NAME)
+        outcome = live.install_plugin_asi(target, optipatcher, OPTIPATCHER_NAME, logger, folder=target / plugins)
         if outcome.get("ok"):
             patcher_result["installed"] = True
-            created.append(f"{live.PLUGIN_SUBDIR}/{OPTIPATCHER_NAME}")
+            created.append(f"{plugins}/{OPTIPATCHER_NAME}")
         else:
             patcher_result["error"] = outcome.get("error")
             if logger:
                 logger.warning("optipatcher unavailable: %s", outcome.get("error"))
+    if (target / plugins).is_dir():
+        containers.append(plugins)
+
+    # Folders an earlier install created that this one does not use, once empty.
+    for name in sorted(set(old_containers) - set(containers), key=lambda n: n.count("/"), reverse=True):
+        journal.remove_if_empty(target / name)
 
     manifest = {
         "plugin": PLUGIN_ID,
@@ -1187,8 +1283,11 @@ def _install(target, payload, filename, preserve_ini, logger, live_asi, optipatc
         "optiscaler_version": OPTISCALER_VERSION,
         "filename": filename,
         "installed_at": time.time(),
+        "layout": LAYOUT,
         "files": created,
-        "dirs": created_dirs,
+        # Folders copied whole; installs from before OptiScaler/ had some.
+        "dirs": [],
+        "containers": containers,
         "backups": backups,
         "backup_dir": BACKUP_DIR,
     }
@@ -1203,7 +1302,7 @@ def _install(target, payload, filename, preserve_ini, logger, live_asi, optipatc
         "reframework": ref_result,
         "launch_option": launch_option(filename),
         "files": created,
-        "dirs": created_dirs,
+        "dirs": containers,
         "backups": backups,
         "backup_dir": str(backup_dir(target)),
         "live": live_result,
@@ -1274,13 +1373,24 @@ def uninstall(target_dir, remove_ini=True, logger=None):
         if kept.is_file() and (target / INI_NAME).is_file():
             kept.unlink()
 
-    restored.extend(restore_backups(target, logger))
-
     # The live-control plugin and its command/status/log files are ours, so they
     # go too -- uninstall should leave nothing of this plugin behind.
     for name in live.remove_asi(target, logger).get("removed", []):
         if name not in removed:
             removed.append(name)
+
+    # OptiScaler's folders, once empty: the player's own ASIs in
+    # OptiScaler/plugins (and anything else put there) keep them.
+    for name in sorted((manifest or {}).get("containers") or [], key=lambda n: n.count("/"), reverse=True):
+        path = target / name
+        try:
+            if path.is_dir() and not any(path.iterdir()):
+                path.rmdir()
+                removed.append(name + "/")
+        except OSError:
+            pass
+
+    restored.extend(restore_backups(target, logger))
 
     manifest_path = target / MANIFEST_NAME
     if manifest_path.is_file():
@@ -1303,6 +1413,23 @@ def uninstall(target_dir, remove_ini=True, logger=None):
     }
 
 
+def _put_back(item, destination):
+    """Move a backed-up file or folder to `destination`, into a folder that is there."""
+    if destination.is_dir() and not destination.is_symlink() and item.is_dir():
+        # A folder an install keeps using (OptiScaler/): the game's files go
+        # back into it one by one, past anything of the player's in it.
+        for child in sorted(item.iterdir()):
+            _put_back(child, destination / child.name)
+        item.rmdir()
+        return
+    if destination.is_dir() and not destination.is_symlink():
+        shutil.rmtree(destination, ignore_errors=True)
+    elif destination.exists() or destination.is_symlink():
+        destination.unlink()
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    shutil.move(str(item), str(destination))
+
+
 def restore_backups(target_dir, logger=None):
     """Move everything in the backup folder back, then drop the folder."""
     target = Path(target_dir)
@@ -1311,13 +1438,7 @@ def restore_backups(target_dir, logger=None):
     stash = backup_dir(target)
     if stash.is_dir():
         for item in sorted(stash.iterdir()):
-            destination = target / item.name
-            if destination.exists():
-                if destination.is_dir():
-                    shutil.rmtree(destination, ignore_errors=True)
-                else:
-                    destination.unlink()
-            shutil.move(str(item), str(destination))
+            _put_back(item, target / item.name)
             restored.append(item.name)
             if logger:
                 logger.info("restored %s from %s/", item.name, BACKUP_DIR)
@@ -1388,7 +1509,7 @@ def verify_install(target_dir, payload_root):
         }
         if record["present"] and source.is_file():
             record["matches_payload"] = record["size"] == record["expected_size"]
-        if name == FFX_UPSCALER_DLL:
+        if name == layout.payload_name(FFX_UPSCALER_DLL):
             selected = (manifest or {}).get("fsr4_build") or {}
             build = fsr4build.find(selected.get("id", "bundled"))
             record["matches_payload"] = bool(
@@ -1408,7 +1529,7 @@ def verify_install(target_dir, payload_root):
             "expected_size": 0,
         })
 
-    ffx = target / FFX_UPSCALER_DLL
+    ffx = layout.ffx_upscaler(target)
     version = pe_file_version(ffx) if ffx.is_file() else None
     fsr4_capable = bool(version and version[:3] >= FSR4_MIN_SDK_VERSION[:3])
 

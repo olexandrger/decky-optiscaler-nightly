@@ -226,11 +226,16 @@ async def run():
         from optiscaler.constants import BACKUP_DIR
         stash = target / BACKUP_DIR
         check("backup folder created", stash.is_dir(), stash.name)
-        check("game's own FidelityFX dll set aside",
-              (stash / "amd_fidelityfx_upscaler_dx12.dll").is_file())
-        check("game's own Licenses folder set aside", (stash / "Licenses").is_dir())
-        check("OptiScaler's FidelityFX dll actually replaced it",
-              (target / "amd_fidelityfx_upscaler_dx12.dll").read_bytes() != game_upscaler)
+        # OptiScaler 10's layout: its DLLs in OptiScaler/, which it reads them
+        # from; the game's own of the same names are not touched.
+        check("game's own FidelityFX dll left where it is",
+              (target / "amd_fidelityfx_upscaler_dx12.dll").read_bytes() == game_upscaler
+              and not (stash / "amd_fidelityfx_upscaler_dx12.dll").exists())
+        check("game's own Licenses folder left where it is",
+              (target / "Licenses" / "game.txt").read_text() == "GAME LICENSE" and not (stash / "Licenses").exists())
+        check("OptiScaler's FidelityFX dll is in OptiScaler/, where OptiScaler loads it from",
+              installer.layout.ffx_upscaler(target) == target / "OptiScaler" / "amd_fidelityfx_upscaler_dx12.dll"
+              and installer.layout.ffx_upscaler(target).read_bytes() != game_upscaler)
 
         info = installer.detect(str(target))
         check("install detected", info["installed"] and info["filename"] == "dxgi.dll")
@@ -285,8 +290,9 @@ async def run():
         from optiscaler import live as live_mod
         asi_shipped = (ROOT / "bin" / live_mod.ASI_NAME).is_file()
         if asi_shipped:
-            check("live-control asi installed alongside OptiScaler",
-                  (target / "plugins" / live_mod.ASI_NAME).is_file())
+            check("live-control asi installed where OptiScaler loads ASIs (OptiScaler/plugins)",
+                  (target / "OptiScaler" / "plugins" / live_mod.ASI_NAME).is_file()
+                  and live_mod.asi_path(target) == target / "OptiScaler" / "plugins" / live_mod.ASI_NAME)
             ini_after = IniFile(target / "OptiScaler.ini").to_dict()
             check("OptiScaler told to load asi plugins",
                   ini_after.get("Plugins", {}).get("LoadAsiPlugins") == "true",
@@ -295,8 +301,7 @@ async def run():
                   result.get("asi_loading_enabled") is True,
                   result.get("asi_loading_error"))
             # Path is deliberately left at auto: OptiScaler resolves that to
-            # <dll folder>/plugins, whereas a relative "plugins" would be read
-            # against the game's working directory instead.
+            # its own folder's plugins/ (OptiScaler/plugins).
             check("asi plugin path is left for OptiScaler to resolve",
                   ini_after.get("Plugins", {}).get("Path") in (None, "auto"),
                   ini_after.get("Plugins", {}).get("Path"))
@@ -359,7 +364,7 @@ async def run():
               fsr4build.reaches_fsr4_by([4, 1, 1, 2740]) == "int8"
               and fsr4build.reaches_fsr4_by([4, 0, 2, 0]) == "upgrade")
         check("the released upscaler is identified by its bytes",
-              (fsr4build.identify(target / installer.FFX_UPSCALER_DLL) or {}).get("id")
+              (fsr4build.identify(installer.layout.ffx_upscaler(target)) or {}).get("id")
               == "bundled")
         check("a build that is not one of ours says so",
               (fsr4build.identify(source / "amdxc64.dll") or {}).get("known") is False)
@@ -1757,53 +1762,58 @@ def check_bundled_payload_upgrade():
               and (expected.group(4) is None or build == int(expected.group(4))),
               f"{dll_version} vs {constants.OPTISCALER_VERSION}")
 
-        # Flat layout: no OptiScaler/ subfolder, so OptiScaler 10 resolves its
-        # dependencies and plugins/ from the game folder (dllmain.cpp falls back
-        # to the exe folder when .\OptiScaler is missing).
-        check("the payload is flattened (no OptiScaler/ subfolder)",
-              not (root / "OptiScaler").exists())
-        top_dlls = {p.name for p in root.iterdir() if p.is_file() and p.suffix.lower() == ".dll"}
-        missing = sorted(set(constants.PAYLOAD_FILES) - {p.name for p in root.iterdir()})
-        unlisted = sorted(top_dlls - set(constants.PAYLOAD_FILES) - {"OptiScaler.dll"})
+        # OptiScaler 10's own layout: its dll and ini at the top, every other
+        # file in OptiScaler/, which it reads its DLLs from (dllmain.cpp,
+        # MainDllPath). An install then leaves a game's own DLLs alone.
+        top = sorted(p.name for p in root.iterdir() if not p.name.startswith("."))
+        check("the payload is OptiScaler 10's layout: its dll and ini, and OptiScaler/",
+              top == ["OptiScaler", "OptiScaler.dll", INI_NAME], top)
+        shipped = sorted(p.relative_to(root).as_posix() for p in (root / constants.OPTI_SUBDIR).rglob("*")
+                         if p.is_file())
+        missing = sorted(set(constants.PAYLOAD_FILES) - set(shipped))
+        unlisted = sorted(n for n in set(shipped) - set(constants.PAYLOAD_FILES) if n.lower().endswith(".dll"))
         check("every payload file is in the archive", not missing, missing)
         check("every DLL in the archive is installed", not unlisted, unlisted)
-        check("every payload dir is in the archive",
+        check("every payload folder is in the archive",
               all((root / d).is_dir() for d in constants.PAYLOAD_DIRS), constants.PAYLOAD_DIRS)
         check("the bundled FSR upscaler is the one restore puts back",
-              hashlib.sha256((root / constants.FFX_UPSCALER_DLL).read_bytes()).hexdigest()
-              == constants.FSR4_BUNDLED_FILE_SHA256)
+              hashlib.sha256((root / installer.layout.payload_name(constants.FFX_UPSCALER_DLL)).read_bytes()
+                             ).hexdigest() == constants.FSR4_BUNDLED_FILE_SHA256)
 
-        # A game folder as the 0.9.x plugin left it, one of whose files had
-        # displaced something of the game's.
+        # A game folder as this plugin left it before OptiScaler/ (and the 0.9.x
+        # plugin before that): OptiScaler's DLLs in the game folder, one of
+        # them over the game's own, the in-game plugin in plugins/.
         game = work / "game"
         game.mkdir()
         (game / "Game.exe").write_bytes(b"MZ")
-        old_files = ["dxgi.dll", INI_NAME, "libxess.dll"] + list(constants.RETIRED_PAYLOAD_FILES)
+        old_files = sorted({"dxgi.dll", INI_NAME, "libxess.dll", *constants.RETIRED_PAYLOAD_FILES})
         for name in old_files:
             (game / name).write_bytes(b"0.9.x")
         shutil.copy2(root / "OptiScaler.dll", game / "dxgi.dll")
         for name in constants.RETIRED_PAYLOAD_DIRS:
             (game / name).mkdir()
             (game / name / "D3D12Core.dll").write_bytes(b"0.9.x")
-        displaced = constants.RETIRED_PAYLOAD_FILES[0] if constants.RETIRED_PAYLOAD_FILES else None
-        backups = {}
-        if displaced:
-            (game / constants.BACKUP_DIR).mkdir()
-            (game / constants.BACKUP_DIR / displaced).write_bytes(b"the game's own")
-            backups[displaced] = True
+        (game / "plugins").mkdir()
+        (game / "plugins" / "decky_optiscaler_live.asi").write_bytes(b"MZ 0.9.x")
+        displaced = "libxess.dll"
+        (game / constants.BACKUP_DIR).mkdir()
+        (game / constants.BACKUP_DIR / displaced).write_bytes(b"the game's own")
         (game / constants.MANIFEST_NAME).write_text(json.dumps({
             "plugin": constants.PLUGIN_ID, "optiscaler_version": "0.9.4", "filename": "dxgi.dll",
-            "files": old_files, "dirs": list(constants.RETIRED_PAYLOAD_DIRS) + ["Licenses"],
-            "backups": backups, "fsr4_build": {},
+            "files": old_files + ["plugins/decky_optiscaler_live.asi"],
+            "dirs": list(constants.RETIRED_PAYLOAD_DIRS), "backups": {displaced: displaced}, "fsr4_build": {},
         }), encoding="utf-8")
 
-        installer.install(game, root, "dxgi.dll", preserve_ini=True)
+        asi = ROOT / "bin" / "decky_optiscaler_live.asi"
+        installer.install(game, root, "dxgi.dll", preserve_ini=True, live_asi=asi if asi.is_file() else None)
         leftovers = [n for n in list(constants.RETIRED_PAYLOAD_FILES) + list(constants.RETIRED_PAYLOAD_DIRS)
                      if (game / n).exists() and n != displaced]
-        check("upgrading removes what this build no longer ships", not leftovers, leftovers)
-        if displaced:
-            check("and puts back the game file one of those had displaced",
-                  (game / displaced).read_bytes() == b"the game's own")
+        check("upgrading removes what this build no longer ships, or ships in OptiScaler/", not leftovers, leftovers)
+        check("and puts back the game file one of those had displaced",
+              (game / displaced).read_bytes() == b"the game's own")
+        check("the in-game plugin moves where OptiScaler loads ASIs",
+              not (game / "plugins").exists()
+              and (not asi.is_file() or (game / "OptiScaler" / "plugins" / asi.name).read_bytes() == asi.read_bytes()))
         check("the proxy is this build's OptiScaler",
               (game / "dxgi.dll").read_bytes() == (root / "OptiScaler.dll").read_bytes())
         check("the 0.9.x ini is kept", (game / INI_NAME).read_bytes() == b"0.9.x")
@@ -1811,13 +1821,14 @@ def check_bundled_payload_upgrade():
         check("verify calls the upgraded folder complete", verify["complete"], verify["problems"])
         check("and finds an FSR 4 capable upscaler", verify["ffx_upscaler"]["fsr4_capable"],
               verify["ffx_upscaler"])
-        check("the manifest records this build",
-              installer.read_manifest(game)["optiscaler_version"] == constants.OPTISCALER_VERSION)
+        manifest = installer.read_manifest(game)
+        check("the manifest records this build, in OptiScaler's layout",
+              manifest["optiscaler_version"] == constants.OPTISCALER_VERSION
+              and manifest["layout"] == installer.LAYOUT and not installer.detect(game)["flat_layout"])
 
         installer.uninstall(game, remove_ini=True)
         remaining = sorted(p.name for p in game.iterdir())
-        check("uninstall leaves only the game's files",
-              remaining == sorted(["Game.exe"] + ([displaced] if displaced else [])), remaining)
+        check("uninstall leaves only the game's files", remaining == sorted(["Game.exe", displaced]), remaining)
     finally:
         shutil.rmtree(work, ignore_errors=True)
 
@@ -1902,8 +1913,8 @@ def check_debug_report():
     root = Path(tempfile.mkdtemp(prefix="optiscaler-debug-"))
     try:
         target = root / "Some Game (2026)"
-        (target / live.PLUGIN_SUBDIR).mkdir(parents=True)
-        (target / live.PLUGIN_SUBDIR / live.ASI_NAME).write_bytes(b"MZ" + b"\0" * 64)
+        (target / "OptiScaler" / live.PLUGIN_SUBDIR).mkdir(parents=True)
+        live.asi_path(target).write_bytes(b"MZ" + b"\0" * 64)
         (target / "OptiScaler.ini").write_text("[Plugins]\nLoadAsiPlugins=true\n[Log]\nLogToFile=true\n")
         (target / "OptiScaler.log").write_text(
             "[info] OptiScaler v10.0.0-dev (1e568bb3) (20261116_122736)\n"
@@ -1928,10 +1939,32 @@ def check_debug_report():
         check("a working setup has no warning or failure in it",
               all(t == "ok" for t in tones.values()), tones)
         for label in ("OptiScaler installed here", "OptiScaler that last ran",
-                      "In-game plugin built for", "In-game plugin file",
+                      "In-game plugin built for", "In-game plugin file", "OptiScaler's files",
                       "LoadAsiPlugins in OptiScaler.ini", "OptiScaler loaded it",
                       "In-game plugin status", "Last command from the panel"):
             check(f"the diagnostics show: {label}", label in facts, sorted(facts))
+        check("the in-game plugin is named where OptiScaler loads it from",
+              facts.get("In-game plugin file", ("",))[0].startswith(f"OptiScaler/plugins/{live.ASI_NAME}"),
+              facts.get("In-game plugin file"))
+
+        # Where OptiScaler looks when the ini sends it elsewhere, and ASIs left
+        # where installs from before OptiScaler/ had them.
+        ini_before = (target / "OptiScaler.ini").read_text()
+        (target / "OptiScaler.ini").write_text(
+            ini_before.replace("LoadAsiPlugins=true\n", "LoadAsiPlugins=true\nPath=plugins\n")
+            + "[Libraries]\nOptiDllPath=Elsewhere\n")
+        (target / live.PLUGIN_SUBDIR).mkdir()
+        (target / live.PLUGIN_SUBDIR / "players.asi").write_bytes(b"MZ")
+        sent = {label: (value, tone) for label, value, tone in live.folder_facts(target)}
+        check("an ini that points OptiScaler's DLLs or ASIs elsewhere is called out",
+              sent.get("[Libraries] OptiDllPath", ("", ""))[1] == "bad"
+              and sent.get("[Plugins] Path", ("", ""))[1] == "bad"
+              and "plugins/ in the game folder" not in sent, sent)
+        (target / "OptiScaler.ini").write_text(ini_before)
+        strays = {label: (value, tone) for label, value, tone in live.folder_facts(target)}
+        check("and ASIs in the game folder's plugins/, which OptiScaler 10 no longer loads",
+              "players.asi" in strays.get("plugins/ in the game folder", ("", ""))[0], strays)
+        shutil.rmtree(target / live.PLUGIN_SUBDIR)
 
         (target / live.STATUS_FILE).write_text(
             f"schema {live.STATUS_SCHEMA}\nbuilt_for e7e3872d\nstatus failed\napi 3\n"

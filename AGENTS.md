@@ -35,8 +35,9 @@ What the fork adds on top of upstream:
 ## Live editing (keep it on the plugin API)
 
 Some panel edits apply in the running game; the rest when it restarts. The
-live ones go through `asi/live.cpp`, an ASI OptiScaler loads from the game's
-`plugins/` folder (`[Plugins] LoadAsiPlugins=true`, which the installer sets).
+live ones go through `asi/live.cpp`, an ASI OptiScaler loads from
+`OptiScaler/plugins/` in the game (`[Plugins] LoadAsiPlugins=true`, which the
+installer sets).
 
 - OptiScaler 10 calls `OptiPluginInit` in every ASI and hands it its plugin API
   (`asi/plugin_sdk/optiscaler_plugin.h`, append-only, version-checked with
@@ -220,6 +221,25 @@ the update had uncovered aside again, and uses the restore point up; uninstall
 removes it. `scripts/test_install.py` (PreviousInstallTests) fails every write
 of the way back in turn.
 
+Installs follow OptiScaler 10's own layout: the proxy and `OptiScaler.ini` in
+the game folder, everything else in `OptiScaler/` (dllmain.cpp: MainDllPath is
+`OptiScaler` next to its dll, the dll's folder when that is missing; ASIs load
+from its `plugins/`). So a game's own `libxess.dll` or FidelityFX DLLs stay
+untouched, and only the proxy displaces anything. `py_modules/optiscaler/layout.py`
+is OptiScaler's rule, and every path to OptiScaler's files goes through it (the
+upscaler the FSR 4 presets check, the in-game plugin, OptiPatcher). The
+folders in `OptiScaler/` are the manifest's `containers`: created by the
+install, removed only once empty (the player's own ASIs go in
+`OptiScaler/plugins` too). An install from before that layout (manifest
+without `layout`, DLLs and `D3D12_OptiScaler/`, `Licenses/` in the game folder,
+the ASIs in `plugins/`) moves on update: its files are retired payload, the
+game's own originals come back from the backup, this plugin's ASIs move, the
+player's in `plugins/` stay (another ASI loader may read that folder; the
+diagnostics list them). Going back across the move needs `OptiScaler/` empty
+of anything this plugin did not put there, or OptiScaler would look in it.
+`scripts/test_install.py` (OptiScalerFolderTests, `flat_install` rebuilds such
+an install) fails every write of the move and of the way back.
+
 ## The OptiScaler archive is not committed
 
 `bin/` holds no OptiScaler archive and no built ASI in git (`bin/.gitignore`);
@@ -234,11 +254,12 @@ python3 scripts/generate_schema.py
 bash asi/build.sh                            # zig, or x86_64-w64-mingw32-g++
 ```
 
-`bundle_nightly.py` flattens OptiScaler 10's `OptiScaler/` dependency folder into
-the game-folder layout this plugin installs (OptiScaler 10 falls back to the exe
-folder when that subfolder is missing), repacks the archive into `bin/`, and
-rewrites every pinned value: version, archive name and SHA-256, payload file and
-dir lists (retiring files a previous bundle shipped), the bundled FidelityFX
+`bundle_nightly.py` keeps OptiScaler 10's layout (`arrange`: its dll and ini at
+the top, the DLLs in `OptiScaler/`, the licences moved in there, the setup
+scripts, Streamline fetcher, "extract here" marker and empty folders left out),
+repacks the archive into `bin/`, and rewrites every pinned value: version,
+archive name and SHA-256, payload file and folder lists as paths in the game
+folder (retiring what a previous bundle shipped, or shipped elsewhere), the bundled FidelityFX
 upscaler hash, and the plugin version (`<base>-nightly.<date>`); and it syncs
 `asi/optiscaler_ref/` (`Config.{h,cpp}`, `OptiTypes.{h,cpp}`, `State.h`) to the
 commit the dll was built from. Do not

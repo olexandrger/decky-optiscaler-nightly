@@ -36,6 +36,7 @@ sys.path.insert(0, str(ROOT / "py_modules"))
 
 from optiscaler import installer, keys, live, running  # noqa: E402
 from optiscaler.inifile import IniFile  # noqa: E402
+from optiscaler.constants import OPTI_SUBDIR  # noqa: E402
 from optiscaler.service import OptiScalerService  # noqa: E402
 
 KIND = {"OPTI_BOOL": "bool", "OPTI_I32": "i32", "OPTI_U32": "u32", "OPTI_U8": "u8", "OPTI_FLOAT": "f32"}
@@ -193,10 +194,11 @@ class Backend:
         self.pressed = []
         self.service = OptiScalerService(ROOT, self.root / "settings", self.root / "runtime", self.root / "home",
                                          logging.getLogger("harness"))
-        # A plugins/ copy of the shipped in-game plugin, so status reads it as current.
+        # A copy of the shipped in-game plugin where the installer puts it
+        # (OptiScaler/plugins), so status reads it as current.
         source = self.service.live_asi_path()
-        (self.game_dir / live.PLUGIN_SUBDIR).mkdir()
-        target = self.game_dir / live.PLUGIN_SUBDIR / live.ASI_NAME
+        (self.game_dir / OPTI_SUBDIR / live.PLUGIN_SUBDIR).mkdir(parents=True)
+        target = live.asi_path(self.game_dir)
         target.write_bytes(Path(source).read_bytes() if source else b"MZ")
 
     def reset(self, entries=None):

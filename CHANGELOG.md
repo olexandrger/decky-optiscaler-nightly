@@ -8,6 +8,19 @@ Newest first. Each release ships `Decky OptiScaler.zip` for Decky Loader's
 
 ### Nightly fork
 
+- OptiScaler goes into games as OptiScaler 10 lays itself out: OptiScaler.dll
+  (as the proxy) and OptiScaler.ini in the game folder, every other file in an
+  `OptiScaler/` folder next to them, the in-game plugin and OptiPatcher in
+  `OptiScaler/plugins/`. A game's own `libxess.dll`, FidelityFX DLLs or
+  `Licenses/` are no longer set aside and replaced: OptiScaler reads its own
+  from `OptiScaler/`. Games set up before move on **Update OptiScaler in this
+  game** (the panel says so): the game's own DLLs come back, and **Go back**
+  returns to the old layout. ASIs of the player's in `plugins/` stay where they
+  are, and the diagnostics say OptiScaler 10 no longer loads them from there, or
+  when OptiScaler.ini points its DLLs (`[Libraries] OptiDllPath`) or ASIs
+  (`[Plugins] Path`) elsewhere. The bundle no longer flattens the nightly; it
+  leaves out the setup scripts, the Streamline fetcher and the "extract here"
+  marker.
 - OptiScaler's own sharpener is live from All settings: `[CAS] Enabled`,
   `[Sharpness] Shader` (RCAS, the depth-aware ones, BaBa and OptiSharpen, named
   as in OptiScaler's menu, now a list instead of a text field) and `[CAS]

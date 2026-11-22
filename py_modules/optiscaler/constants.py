@@ -2,7 +2,7 @@
 
 OPTISCALER_VERSION = "10.0.0-pre1-20261122"
 PAYLOAD_ARCHIVE = "OptiScaler-10.0.0-pre1-20261122.7z"
-PAYLOAD_SHA256 = "86af60079a9ee05055ae7ebca84c4ec0193a0e656f81ed5140c2412dba53d9d0"
+PAYLOAD_SHA256 = "5d06a34106413b7ecba046a944e0b0718799a6646a8d2f64f27850326a4105d8"
 
 # This fork is a separate plugin from upstream's "Decky OptiScaler" and the two
 # never share a game: each keeps its own manifest, backups and launch-options
@@ -135,37 +135,66 @@ PROXY_FILENAMES = [
 ]
 DEFAULT_PROXY = "dxgi.dll"
 
-# Support libraries copied next to the proxy dll.
+# OptiScaler 10 keeps every file but itself and its ini in this folder next to
+# its dll (dllmain.cpp: MainDllPath, "OptiScaler" unless [Libraries] OptiDllPath
+# says otherwise, the dll's own folder when it is missing), and its ASI
+# plugins in OPTI_SUBDIR/plugins. A game's own DLLs of the same names stay.
+OPTI_SUBDIR = "OptiScaler"
+
+# What an install copies, as paths in the game folder (scripts/bundle_nightly.py
+# writes these lists from the archive). Installs made before OptiScaler/ had
+# these files in the game folder itself; their names are retired below.
 PAYLOAD_FILES = [
+    "OptiScaler/D3D12_OptiScaler/D3D12Core.dll",
+    "OptiScaler/Licenses/DirectX_LICENSE.txt",
+    "OptiScaler/Licenses/FidelityFX_v1_LICENSE.md",
+    "OptiScaler/Licenses/FidelityFX_v2_LICENSE.md",
+    "OptiScaler/Licenses/XeSS_LICENSE.txt",
+    "OptiScaler/amd_fidelityfx_framegeneration_dx12.dll",
+    "OptiScaler/amd_fidelityfx_framegeneration_vk.dll",
+    "OptiScaler/amd_fidelityfx_loader_dx12.dll",
+    "OptiScaler/amd_fidelityfx_loader_vk.dll",
+    "OptiScaler/amd_fidelityfx_upscaler_dx12.dll",
+    "OptiScaler/amd_fidelityfx_upscaler_vk.dll",
+    "OptiScaler/dlssg_to_fsr3_amd_is_better.dll",
+    "OptiScaler/libxell.dll",
+    "OptiScaler/libxess.dll",
+    "OptiScaler/libxess_dx11.dll",
+    "OptiScaler/libxess_fg.dll",
+]
+PAYLOAD_DIRS = [
+    "OptiScaler",
+    "OptiScaler/D3D12_OptiScaler",
+    "OptiScaler/Licenses",
+]
+
+# Folders an earlier bundle shipped (0.9.x spelled D3D12_Optiscaler); the copied
+# ones an install owns go on upgrade, OptiScaler/ folders only once empty.
+RETIRED_PAYLOAD_DIRS = [
+    "D3D12_OptiScaler",
+    "D3D12_Optiscaler",
+    "Licenses",
+]
+
+# Shipped by an earlier bundle, not by this one (or not there: before OptiScaler/,
+# in the game folder itself). An install that owns them removes them on upgrade.
+RETIRED_PAYLOAD_FILES = [
+    "!! EXTRACT ALL FILES TO GAME FOLDER !!",
+    "amd_fidelityfx_dx12.dll",
     "amd_fidelityfx_framegeneration_dx12.dll",
     "amd_fidelityfx_framegeneration_vk.dll",
     "amd_fidelityfx_loader_dx12.dll",
     "amd_fidelityfx_loader_vk.dll",
     "amd_fidelityfx_upscaler_dx12.dll",
     "amd_fidelityfx_upscaler_vk.dll",
+    "amd_fidelityfx_vk.dll",
     "dlssg_to_fsr3_amd_is_better.dll",
+    "fakenvapi.dll",
+    "fakenvapi.ini",
     "libxell.dll",
     "libxess.dll",
     "libxess_dx11.dll",
     "libxess_fg.dll",
-]
-PAYLOAD_DIRS = [
-    "D3D12_OptiScaler",
-    "Licenses",
-]
-
-# Directories an earlier bundle shipped (0.9.x spelled D3D12_Optiscaler).
-RETIRED_PAYLOAD_DIRS = [
-    "D3D12_Optiscaler",
-]
-
-# Shipped by an earlier bundle, not by this one. An install that owns them removes them on upgrade.
-RETIRED_PAYLOAD_FILES = [
-    "!! EXTRACT ALL FILES TO GAME FOLDER !!",
-    "amd_fidelityfx_dx12.dll",
-    "amd_fidelityfx_vk.dll",
-    "fakenvapi.dll",
-    "fakenvapi.ini",
 ]
 
 # Extra files OptiScaler or its helpers create at runtime; removed on uninstall.
