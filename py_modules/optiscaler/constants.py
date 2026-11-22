@@ -1,8 +1,8 @@
 """Shared constants for the Decky OptiScaler plugin."""
 
-OPTISCALER_VERSION = "10.0.0-pre1-20261030"
-PAYLOAD_ARCHIVE = "OptiScaler-10.0.0-pre1-20261030.7z"
-PAYLOAD_SHA256 = "840b93fe0bcbfad2ee1fd9dc9568d56d4d50bd73f555f60cd48784cae9a2ad9a"
+OPTISCALER_VERSION = "10.0.0-pre1-20261122"
+PAYLOAD_ARCHIVE = "OptiScaler-10.0.0-pre1-20261122.7z"
+PAYLOAD_SHA256 = "86af60079a9ee05055ae7ebca84c4ec0193a0e656f81ed5140c2412dba53d9d0"
 
 # This fork is a separate plugin from upstream's "Decky OptiScaler" and the two
 # never share a game: each keeps its own manifest, backups and launch-options

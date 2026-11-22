@@ -631,6 +631,7 @@ def check_live_control():
     import re
     from unittest import mock
     from optiscaler import live
+    from optiscaler.schema import SCHEMA
 
     print("\nLive in-game control")
 
@@ -652,6 +653,23 @@ def check_live_control():
     )
     check("every live field maps to the ini key OptiScaler reads it from",
           not mismatched, mismatched)
+
+    def encodes(field, value):
+        try:
+            field.encode(value)
+            return True
+        except (TypeError, ValueError):
+            return False
+    # The ini's value list and OptiScaler's own token table (OptiTypes.h) are
+    # two sources; a choice All settings offers that the live path cannot send
+    # would quietly wait for a restart.
+    unsendable = sorted(f"{key}={option}" for key, field in live.LIVE_FIELDS.items()
+                        for option in (SCHEMA.get(tuple(key.split(".", 1))) or {}).get("options") or []
+                        if not encodes(field, option))
+    shader = SCHEMA.get(("Sharpness", "Shader"), {})
+    check("every choice the ini lists for a live setting can be sent live",
+          not unsendable and shader.get("type") == "enum" and "opti" in (shader.get("options") or []),
+          unsendable or shader.get("options"))
     # Switching to another backend or FFX frame generator takes OptiScaler's
     # State internals, which the ASI does not touch: those stay restart-only.
     check("the upscaler backends and the ffx frame generator are not live",
@@ -703,6 +721,27 @@ def check_live_control():
         check("HUD fix is not live (OptiScaler's menu also rebuilds the generator for it)",
               "OptiFG.HUDFix" not in live.LIVE_FIELDS)
         check("a plain setting asks for no upscaler re-init", not result["reinit"])
+
+        # OptiScaler's own sharpener, as its menu's "Method" and OptiSharpen
+        # "Model" combos set it: plain writes, read at every dispatch.
+        shader_codes = json.loads((ROOT / "py_modules" / "optiscaler" / "live_fields.json").read_text())[
+            "enums"].get("SharpenShader", {})
+        opti = shader_codes.get("values", {}).get("OptiSharpen")
+        sharp = live.apply_changes(str(target), [
+            {"section": "CAS", "key": "Enabled", "value": "true"},
+            {"section": "Sharpness", "key": "Shader", "value": "opti"},
+            {"section": "CAS", "key": "OptiSharpenModel", "value": "auto"},
+        ])
+        sharp_body = (target / live.CMD_FILE).read_text().splitlines()
+        check("the sharpener goes in live: enabled, the shader as OptiScaler's enum number, the model reset",
+              opti is not None and sharp_body[1:] == ["set RcasEnabled bool 1", f"set SharpnessShader i32 {opti}",
+                                                      "unset OptiSharpenModel"] and not sharp["reinit"],
+              sharp_body)
+        consume()
+        unknown = live.apply_changes(str(target), [{"section": "Sharpness", "key": "Shader", "value": "nosuch"},
+                                                   {"section": "CAS", "key": "OptiSharpenModel", "value": "7"}])
+        check("a shader OptiScaler has no token for, or a model it has not, waits for the next launch",
+              unknown["deferred"] == ["Sharpness.Shader", "CAS.OptiSharpenModel"] and not unknown["sent"], unknown)
 
         # The FSR version is read when the upscaler creates its context: written,
         # then re-created through OptiPluginApi::ReInitUpscalers.

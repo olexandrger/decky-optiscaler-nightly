@@ -368,8 +368,8 @@ function StatusInfo({ live }: Readonly<{ live: LiveStatus | null }>) {
   }
   return (
     <>
-      Live: frame generation and its multiplier, the upscaler&apos;s model or version, sharpness and the FPS
-      overlay apply at once. Turning frame generation on closes this menu to press OptiScaler&apos;s FG key.
+      Live: frame generation and its multiplier, the upscaler&apos;s model or version, sharpness, the
+      sharpener and the FPS overlay apply at once. Turning frame generation on closes this menu to press OptiScaler&apos;s FG key.
       A different upscaler or frame generator applies at the next launch, or at once from the OptiScaler
       menu.
     </>

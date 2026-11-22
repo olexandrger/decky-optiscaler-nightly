@@ -26,6 +26,7 @@ struct Config
     CustomOptional<bool> LogSingleFile;
     CustomOptional<bool> LogAsync;
     CustomOptional<int32_t> LogAsyncThreads;
+    CustomOptional<bool> CreateDumps;
     CustomOptional<bool> BuildPipelines;
     CustomOptional<int32_t> NetworkModel;
     CustomOptional<bool> CreateHeaps;
@@ -73,6 +74,11 @@ struct Config
     CustomOptional<float> DADepthScale;
     CustomOptional<float> DADepthBias;
     CustomOptional<bool> DAClampOutput;
+    CustomOptional<int32_t> BabaNeuralModel;
+    CustomOptional<float> BabaNeuralEdgeResponse;
+    CustomOptional<int32_t> BabaNeuralDebugView;
+    CustomOptional<int32_t> OptiSharpenModel;
+    CustomOptional<int32_t> OptiSharpenDebugView;
     CustomOptional<bool> MotionSharpnessEnabled;
     CustomOptional<bool> MotionSharpnessDebug;
     CustomOptional<float> MotionSharpness;
@@ -193,8 +199,12 @@ struct Config
     CustomOptional<uint32_t> OutputScalingDownscaler;
     CustomOptional<bool> FsrDebugView;
     CustomOptional<int32_t> FfxUpscalerIndex;
+    CustomOptional<msvc_string> CustomUpscalerDx11;
     CustomOptional<msvc_string> CustomUpscaler;
     CustomOptional<msvc_string> CustomUpscalerVk;
+    CustomOptional<msvc_string> CustomRRUpscaler;
+    CustomOptional<int32_t> RRRegularUpscaler;
+    CustomOptional<bool> RRAllowRegularUpscalers;
     CustomOptional<int32_t> FfxFGIndex;
     CustomOptional<bool> FsrUseMaskForTransparency;
     CustomOptional<bool> FsrNonLinearColorSpace;
@@ -273,6 +283,7 @@ struct Config
     CustomOptional<bool> FGMakeDepthCopy;
     CustomOptional<bool> FGResourceFlip;
     CustomOptional<bool> FGResourceFlipOffset;
+    CustomOptional<bool> FGHudlessFlip;
     CustomOptional<bool> FGAlwaysCaptureFSRFGSwapchain;
     CustomOptional<int32_t> FGRectLeft;
     CustomOptional<int32_t> FGRectTop;
@@ -317,6 +328,7 @@ struct Config
     CustomOptional<bool> FSRFGSkipConfigForHudless;
     CustomOptional<bool> FSRFGSkipDispatchForHudless;
     CustomOptional<bool> FSRFGEnableWatermark;
+    CustomOptional<msvc_string> FSRFGProvider;
     CustomOptional<bool> FGXeFGIgnoreInitChecks;
     CustomOptional<int32_t> FGXeFGInterpolationCount;
     CustomOptional<bool> FGXeFGDynamicMFG;
@@ -337,6 +349,7 @@ struct Config
     CustomOptional<bool> FGDLSSGOverrideForceDMFG;
     CustomOptional<bool> FGDLSSGForceDMFG;
     CustomOptional<float> FGDLSSGFramerateTargetDMFG;
+    CustomOptional<int32_t> FGFlipMeterInterpolationCount;
     CustomOptional<uint32_t> ReprojectionFillMode;
     CustomOptional<float> ReprojectionDepthCutoff;
     CustomOptional<uint32_t> ReprojectionCutoffExpand;
@@ -347,7 +360,6 @@ struct Config
     CustomOptional<bool> ReprojectionThirdPersonDetection;
     CustomOptional<uint32_t> NvngxFGDispatchFlags;
     CustomOptional<bool> NvngxFGShowDebug;
-    CustomOptional<bool> NvngxFGDisableHudless;
     CustomOptional<bool> UseFakenvapi;
     CustomOptional<bool> ForceXeLL;
     CustomOptional<bool> FN_ForceLatencyFlex;
@@ -375,6 +387,7 @@ struct Config
     CustomOptional<bool> OverrideVsync;
     CustomOptional<bool> ForceVsync;
     CustomOptional<uint32_t> VsyncInterval;
+    CustomOptional<int32_t> VulkanPresentMode;
     CustomOptional<bool> _DONTUSE_Fsr4ForceEnableInt8;
     msvc_path absoluteFileName;
     msvc_wstring fileName;
@@ -403,6 +416,7 @@ struct Config
     X(LogSingleFile, bool, OPTI_BOOL) \
     X(LogAsync, bool, OPTI_BOOL) \
     X(LogAsyncThreads, int32_t, OPTI_I32) \
+    X(CreateDumps, bool, OPTI_BOOL) \
     X(BuildPipelines, bool, OPTI_BOOL) \
     X(NetworkModel, int32_t, OPTI_I32) \
     X(CreateHeaps, bool, OPTI_BOOL) \
@@ -450,6 +464,11 @@ struct Config
     X(DADepthScale, float, OPTI_FLOAT) \
     X(DADepthBias, float, OPTI_FLOAT) \
     X(DAClampOutput, bool, OPTI_BOOL) \
+    X(BabaNeuralModel, int32_t, OPTI_I32) \
+    X(BabaNeuralEdgeResponse, float, OPTI_FLOAT) \
+    X(BabaNeuralDebugView, int32_t, OPTI_I32) \
+    X(OptiSharpenModel, int32_t, OPTI_I32) \
+    X(OptiSharpenDebugView, int32_t, OPTI_I32) \
     X(MotionSharpnessEnabled, bool, OPTI_BOOL) \
     X(MotionSharpnessDebug, bool, OPTI_BOOL) \
     X(MotionSharpness, float, OPTI_FLOAT) \
@@ -570,8 +589,12 @@ struct Config
     X(OutputScalingDownscaler, uint32_t, OPTI_U32) \
     X(FsrDebugView, bool, OPTI_BOOL) \
     X(FfxUpscalerIndex, int32_t, OPTI_I32) \
+    X(CustomUpscalerDx11, msvc_string, OPTI_STR) \
     X(CustomUpscaler, msvc_string, OPTI_STR) \
     X(CustomUpscalerVk, msvc_string, OPTI_STR) \
+    X(CustomRRUpscaler, msvc_string, OPTI_STR) \
+    X(RRRegularUpscaler, int32_t, OPTI_I32) \
+    X(RRAllowRegularUpscalers, bool, OPTI_BOOL) \
     X(FfxFGIndex, int32_t, OPTI_I32) \
     X(FsrUseMaskForTransparency, bool, OPTI_BOOL) \
     X(FsrNonLinearColorSpace, bool, OPTI_BOOL) \
@@ -650,6 +673,7 @@ struct Config
     X(FGMakeDepthCopy, bool, OPTI_BOOL) \
     X(FGResourceFlip, bool, OPTI_BOOL) \
     X(FGResourceFlipOffset, bool, OPTI_BOOL) \
+    X(FGHudlessFlip, bool, OPTI_BOOL) \
     X(FGAlwaysCaptureFSRFGSwapchain, bool, OPTI_BOOL) \
     X(FGRectLeft, int32_t, OPTI_I32) \
     X(FGRectTop, int32_t, OPTI_I32) \
@@ -694,6 +718,7 @@ struct Config
     X(FSRFGSkipConfigForHudless, bool, OPTI_BOOL) \
     X(FSRFGSkipDispatchForHudless, bool, OPTI_BOOL) \
     X(FSRFGEnableWatermark, bool, OPTI_BOOL) \
+    X(FSRFGProvider, msvc_string, OPTI_STR) \
     X(FGXeFGIgnoreInitChecks, bool, OPTI_BOOL) \
     X(FGXeFGInterpolationCount, int32_t, OPTI_I32) \
     X(FGXeFGDynamicMFG, bool, OPTI_BOOL) \
@@ -714,6 +739,7 @@ struct Config
     X(FGDLSSGOverrideForceDMFG, bool, OPTI_BOOL) \
     X(FGDLSSGForceDMFG, bool, OPTI_BOOL) \
     X(FGDLSSGFramerateTargetDMFG, float, OPTI_FLOAT) \
+    X(FGFlipMeterInterpolationCount, int32_t, OPTI_I32) \
     X(ReprojectionFillMode, uint32_t, OPTI_U32) \
     X(ReprojectionDepthCutoff, float, OPTI_FLOAT) \
     X(ReprojectionCutoffExpand, uint32_t, OPTI_U32) \
@@ -724,7 +750,6 @@ struct Config
     X(ReprojectionThirdPersonDetection, bool, OPTI_BOOL) \
     X(NvngxFGDispatchFlags, uint32_t, OPTI_U32) \
     X(NvngxFGShowDebug, bool, OPTI_BOOL) \
-    X(NvngxFGDisableHudless, bool, OPTI_BOOL) \
     X(UseFakenvapi, bool, OPTI_BOOL) \
     X(ForceXeLL, bool, OPTI_BOOL) \
     X(FN_ForceLatencyFlex, bool, OPTI_BOOL) \
@@ -752,6 +777,7 @@ struct Config
     X(OverrideVsync, bool, OPTI_BOOL) \
     X(ForceVsync, bool, OPTI_BOOL) \
     X(VsyncInterval, uint32_t, OPTI_U32) \
+    X(VulkanPresentMode, int32_t, OPTI_I32) \
     X(_DONTUSE_Fsr4ForceEnableInt8, bool, OPTI_BOOL) \
     /* end */
 

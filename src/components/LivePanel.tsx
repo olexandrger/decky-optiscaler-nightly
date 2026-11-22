@@ -53,8 +53,9 @@ export function LivePanel({ targetDir, status, onChanged }: Props) {
     chain
   ) : status.ready ? (
     <Notice tone="success" title="Connected to the running game">
-      Frame generation on/off, HUD fix, debug view, depth copy, the XeFG multiplier, sharpness,
-      the FPS overlay{status.can_reinit ? " and the FSR version" : ""} apply immediately.
+      Frame generation on/off, extended HUD fix, debug view, depth copy, the XeFG multiplier and
+      Dynamic MFG, sharpness and the sharpener (OptiSharpen and its model), the FPS overlay
+      {status.can_reinit ? " and the FSR version" : ""} apply immediately.
       Switching the upscaler or the frame generator is done in OptiScaler&apos;s own overlay
       (<b>OptiScaler menu</b>); here it applies at the next launch.
     </Notice>

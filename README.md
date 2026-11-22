@@ -25,8 +25,9 @@ from it one at a time ([docs/upstream-review.md](docs/upstream-review.md)).
   tested daily. The plugin updates itself (**Update to …**); a game gets the new OptiScaler
   with **Update OptiScaler in this game**.
 - **Live editing through OptiScaler 10's plugin API.** Frame generation and its multiplier
-  (Dynamic MFG too, only the steps XeFG can do on the GPU), the FSR version, the FSR 4, XeSS and DLSS models, sharpness and the FPS overlay apply in the
-  running game. Another upscaler backend applies at the next launch, or live from OptiScaler's
+  (Dynamic MFG too, only the steps XeFG can do on the GPU), the FSR version, the FSR 4, XeSS
+  and DLSS models, sharpness, OptiScaler's sharpener (OptiSharpen and its model) and the FPS
+  overlay apply in the running game. Another upscaler backend applies at the next launch, or live from OptiScaler's
   own menu (a button on the panel).
 - **The running game's real settings.** The panel shows what OptiScaler holds now, including
   changes made in its own menu, and can keep them in `OptiScaler.ini`.

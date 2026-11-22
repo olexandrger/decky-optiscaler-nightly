@@ -143,6 +143,23 @@ def _is_auto(value):
     return str(value).strip().lower() in ("auto", "")
 
 
+def _enum_code(enum):
+    """An ini token of one of OptiScaler's enums ("opti") as the number Config holds.
+
+    The tokens are OptiScaler's own (EnumConfig<...> in OptiTypes.h, synced at
+    the bundled dll's commit and generated into live_fields.json), so a token
+    another nightly drops or adds follows it.
+    """
+    def encode(value):
+        codes = _GENERATED.get("enums", {}).get(enum, {}).get("codes", {})
+        text = str(value).strip().lower()
+        for number, code in codes.items():
+            if code.lower() == text:
+                return str(int(number))
+        raise ValueError(f"not a {enum} token: {value!r}")
+    return encode
+
+
 def _ffx_upscaler_index(value):
     """An index into the FFX upscaler versions OptiScaler offers."""
     index = int(float(str(value).strip()))
@@ -216,6 +233,15 @@ LIVE_FIELDS = {
     # menu rebuilds for it; rebuilding always is the same thing, one frame later.
     "Sharpness.OverrideSharpness": LiveField("OverrideSharpness", "bool", _bool, needs_reinit=True),
     "Sharpness.Sharpness": LiveField("Sharpness", "f32", _float),
+    # OptiScaler's own sharpener, the menu's "Method" combo and the OptiSharpen
+    # model under it, all plain writes there. The upscaler's Evaluate reads
+    # RcasEnabled every frame (IFeature_Dx12/Dx11/Vk; the RCAS pass always
+    # exists), and RCAS_Dx12/Dx11/Vk::Dispatch read the shader and the model at
+    # every dispatch, creating a neural shader the first time it runs.
+    "CAS.Enabled": LiveField("RcasEnabled", "bool", _bool),
+    "Sharpness.Shader": LiveField("SharpnessShader", "i32", _enum_code("SharpenShader")),
+    "CAS.OptiSharpenModel": LiveField("OptiSharpenModel", "i32", _index(4, "an OptiSharpen model"),
+                                      resettable=True),
     # The FPS overlay: exactly what OptiScaler's FPS and FPS-cycle keys write.
     "Menu.ShowFps": LiveField("ShowFps", "bool", _bool),
     "Menu.FpsOverlayType": LiveField("FpsOverlayType", "u32", _fps_overlay_type, resettable=True),

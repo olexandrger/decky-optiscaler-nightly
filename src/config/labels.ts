@@ -86,6 +86,15 @@ export const VALUE_LABELS: Record<string, Record<string, string>> = {
   "FSR.Fsr4Preset": FSR4_PRESET_LABELS,
   "FSR.FGIndex": { "0": "FSR 4.0.0", "1": "FSR 3.1.6" },
   "XeFG.InterpolationCount": { "1": "2X", "2": "3X", "3": "4X" },
+  // OptiScaler's menu names for its sharpeners (the "Method" combo).
+  "Sharpness.Shader": {
+    rcas: "RCAS",
+    da: "Depth Aware (RCAS)",
+    das: "Depth Aware (DAS)",
+    lcda: "Depth Aware (DAS)",
+    baba: "Neural (BaBa)",
+    opti: "OptiSharpen",
+  },
 };
 
 export function curatedLabel(optionId: string, value: string): string | undefined {

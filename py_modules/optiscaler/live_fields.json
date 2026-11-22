@@ -1,15 +1,20 @@
 {
  "defaults": {
-  "Anisotropy.AFModifyComparison": "true",
-  "Anisotropy.AFModifyMinMax": "true",
+  "Anisotropy.ModifyComparison": "true",
+  "Anisotropy.ModifyMinMax": "true",
   "Anisotropy.SkipPointFilter": "true",
-  "CAS.Contrast": "-0.3",
+  "CAS.BabaDebugView": "0",
+  "CAS.BabaEdgeResponse": "0",
+  "CAS.BabaModel": "0",
+  "CAS.Contrast": "0",
   "CAS.ContrastEnabled": "false",
   "CAS.Enabled": "false",
   "CAS.MotionScaleLimit": "10",
   "CAS.MotionSharpness": "0.2",
   "CAS.MotionSharpnessEnabled": "false",
   "CAS.MotionThreshold": "0",
+  "CAS.OptiSharpenDebugView": "0",
+  "CAS.OptiSharpenModel": "0",
   "CAS.SharpenerDebug": "false",
   "DLSS.Enabled": "true",
   "DLSS.RenderPresetBalanced": "0",
@@ -52,13 +57,13 @@
   "FSR.FsrNonLinearPQ": "false",
   "FSR.FsrNonLinearSRGB": "false",
   "FSR.HorizontalFov": "0",
-  "FSR.MinDisOccAcc": "-0.333",
-  "FSR.ReactiveScale": "1",
-  "FSR.ShadingScale": "1",
+  "FSR.MinDisOccAcc": "0",
+  "FSR.ReactiveScale": "0.333",
+  "FSR.ShadingScale": "0.5",
   "FSR.UpscalerIndex": "0",
   "FSR.UseFsrInputValues": "true",
   "FSR.UseReactiveMaskForTransparency": "true",
-  "FSR.VelocityFactor": "1",
+  "FSR.VelocityFactor": "0.5",
   "FSR.VerticalFov": "60",
   "FSRFG.AllowAsync": "false",
   "FSRFG.DebugPacingLines": "false",
@@ -75,6 +80,7 @@
   "FSRFG.UseMutexForSwapchain": "true",
   "FSRFGInputs.SkipConfigForHudless": "false",
   "FSRFGInputs.SkipDispatchForHudless": "false",
+  "FlipMeter.InterpolationCount": "1",
   "FrameGen.AllowedFrameAhead": "1",
   "FrameGen.DebugView": "false",
   "FrameGen.DepthValidNow": "false",
@@ -83,7 +89,7 @@
   "FrameGen.DrawUIOverFG": "false",
   "FrameGen.Enabled": "false",
   "FrameGen.FGInput": "NoFG",
-  "FrameGen.FGNvngxReplacement": "nukems",
+  "FrameGen.FGNvngxReplacement": "Nukems",
   "FrameGen.FGOutput": "NoFG",
   "FrameGen.FTInput": "0",
   "FrameGen.HudCutoff": "0",
@@ -126,6 +132,7 @@
   "Inputs.UseFsr2Inputs": "true",
   "Inputs.UseFsr2VulkanInputs": "false",
   "Inputs.UseFsr3Inputs": "true",
+  "Log.CreateDumps": "false",
   "Log.DebugWait": "false",
   "Log.LogAsync": "false",
   "Log.LogAsyncThreads": "4",
@@ -216,6 +223,7 @@
   "OptiFG.HudfixDisableSGR": "true",
   "OptiFG.HudfixDisableSRV": "false",
   "OptiFG.HudfixDisableUAV": "false",
+  "OptiFG.HudlessFlip": "false",
   "OptiFG.MakeDepthCopy": "true",
   "OptiFG.MakeMVCopy": "true",
   "OptiFG.ResourceBlocking": "false",
@@ -264,6 +272,7 @@
   "UpscaleRatio.UpscaleRatioOverrideValue": "1.3",
   "Upscalers.Dx11Upscaler": "fsr22",
   "Upscalers.Dx12Upscaler": "xess",
+  "Upscalers.RRAllowRegularUpscalers": "false",
   "Upscalers.VulkanUpscaler": "fsr22",
   "V-Sync.OverrideVsync": "false",
   "V-Sync.SyncInterval": "0",
@@ -316,11 +325,11 @@
   },
   "FGNvngxReplacement": {
    "codes": {
-    "0": "none",
-    "1": "nukems",
-    "2": "arturs",
-    "3": "ffx",
-    "4": "combo"
+    "0": "None",
+    "1": "Nukems",
+    "2": "Arturs",
+    "3": "FFX",
+    "4": "Combo"
    },
    "values": {
     "Arturs": 2,
@@ -337,11 +346,13 @@
     "1": "FSRFG",
     "2": "DLSSG",
     "3": "XeFG",
-    "4": "Reprojection"
+    "4": "Reprojection",
+    "5": "FlipMeter"
    },
    "values": {
     "DLSSG": 2,
     "FSRFG": 1,
+    "FlipMeter": 5,
     "NoFG": 0,
     "Reprojection": 4,
     "XeFG": 3
@@ -500,11 +511,15 @@
    "codes": {
     "0": "rcas",
     "1": "da",
-    "2": "lcda"
+    "2": "das",
+    "3": "baba",
+    "4": "opti"
    },
    "values": {
+    "BabaNeural": 3,
     "DepthAware": 1,
-    "LocalContrastDepthAware": 2,
+    "DepthAwareDAS": 2,
+    "OptiSharpen": 4,
     "RCAS": 0
    }
   },
@@ -541,25 +556,40 @@
   }
  },
  "fields": {
-  "Anisotropy.AFModifyComparison": {
-   "kind": "bool",
-   "member": "AnisotropyModifyComp",
-   "read": "Bool"
-  },
-  "Anisotropy.AFModifyMinMax": {
-   "kind": "bool",
-   "member": "AnisotropyModifyMinMax",
-   "read": "Bool"
-  },
   "Anisotropy.AnisotropyOverride": {
    "kind": "int",
    "member": "AnisotropyOverride",
    "read": "Int"
   },
+  "Anisotropy.ModifyComparison": {
+   "kind": "bool",
+   "member": "AnisotropyModifyComp",
+   "read": "Bool"
+  },
+  "Anisotropy.ModifyMinMax": {
+   "kind": "bool",
+   "member": "AnisotropyModifyMinMax",
+   "read": "Bool"
+  },
   "Anisotropy.SkipPointFilter": {
    "kind": "bool",
    "member": "AnisotropySkipPointFilter",
    "read": "Bool"
+  },
+  "CAS.BabaDebugView": {
+   "kind": "int",
+   "member": "BabaNeuralDebugView",
+   "read": "Int"
+  },
+  "CAS.BabaEdgeResponse": {
+   "kind": "float",
+   "member": "BabaNeuralEdgeResponse",
+   "read": "Float"
+  },
+  "CAS.BabaModel": {
+   "kind": "int",
+   "member": "BabaNeuralModel",
+   "read": "Int"
   },
   "CAS.Contrast": {
    "kind": "float",
@@ -610,6 +640,16 @@
    "kind": "float",
    "member": "MotionThreshold",
    "read": "Float"
+  },
+  "CAS.OptiSharpenDebugView": {
+   "kind": "int",
+   "member": "OptiSharpenDebugView",
+   "read": "Int"
+  },
+  "CAS.OptiSharpenModel": {
+   "kind": "int",
+   "member": "OptiSharpenModel",
+   "read": "Int"
   },
   "CAS.SharpenerDebug": {
    "kind": "bool",
@@ -754,7 +794,7 @@
   "Dx11withDx12.UseDelayedInit": {
    "kind": "bool",
    "member": "Dx11DelayedInit",
-   "read": "Int"
+   "read": "Bool"
   },
   "FSR.AccAddPerFrame": {
    "kind": "float",
@@ -941,6 +981,11 @@
    "member": "FGFramePacingTuning",
    "read": "Bool"
   },
+  "FSRFG.Provider": {
+   "kind": "std::string",
+   "member": "FSRFGProvider",
+   "read": "String"
+  },
   "FSRFG.UseMutexForSwapchain": {
    "kind": "bool",
    "member": "FGUseMutexForSwapchain",
@@ -955,6 +1000,11 @@
    "kind": "bool",
    "member": "FSRFGSkipDispatchForHudless",
    "read": "Bool"
+  },
+  "FlipMeter.InterpolationCount": {
+   "kind": "int",
+   "member": "FGFlipMeterInterpolationCount",
+   "read": "Int"
   },
   "FrameGen.AllowedFrameAhead": {
    "kind": "int",
@@ -1373,12 +1423,12 @@
   },
   "Libraries.XeFGPath": {
    "kind": "std::wstring",
-   "member": "XeSSLibrary",
+   "member": "XeFGLibrary",
    "read": "WString"
   },
   "Libraries.XeLLPath": {
    "kind": "std::wstring",
-   "member": "XeSSLibrary",
+   "member": "XeLLLibrary",
    "read": "WString"
   },
   "Libraries.XeSSDx11Path": {
@@ -1390,6 +1440,11 @@
    "kind": "std::wstring",
    "member": "XeSSLibrary",
    "read": "WString"
+  },
+  "Log.CreateDumps": {
+   "kind": "bool",
+   "member": "CreateDumps",
+   "read": "Bool"
   },
   "Log.DebugWait": {
    "kind": "bool",
@@ -1793,7 +1848,7 @@
   },
   "NvngxFG.DisableHudless": {
    "kind": "bool",
-   "member": "NvngxFGDisableHudless",
+   "member": "FGDisableHudless",
    "read": "Bool"
   },
   "NvngxFG.DispatchFlags": {
@@ -1924,6 +1979,11 @@
   "OptiFG.HudfixDisableUAV": {
    "kind": "bool",
    "member": "FGHudfixDisableUAV",
+   "read": "Bool"
+  },
+  "OptiFG.HudlessFlip": {
+   "kind": "bool",
+   "member": "FGHudlessFlip",
    "read": "Bool"
   },
   "OptiFG.MakeDepthCopy": {
@@ -2216,6 +2276,16 @@
    "member": "Dx12Upscaler",
    "read": "String"
   },
+  "Upscalers.RRAllowRegularUpscalers": {
+   "kind": "bool",
+   "member": "RRAllowRegularUpscalers",
+   "read": "Bool"
+  },
+  "Upscalers.RRUpscaler": {
+   "kind": "enum:Upscaler",
+   "member": "RRRegularUpscaler",
+   "read": "String"
+  },
   "Upscalers.VulkanUpscaler": {
    "kind": "enum:Upscaler",
    "member": "VulkanUpscaler",
@@ -2234,6 +2304,11 @@
   "V-Sync.SyncInterval": {
    "kind": "UINT",
    "member": "VsyncInterval",
+   "read": "Int"
+  },
+  "V-Sync.VulkanPresentMode": {
+   "kind": "int",
+   "member": "VulkanPresentMode",
    "read": "Int"
   },
   "XeFG.DebugView": {

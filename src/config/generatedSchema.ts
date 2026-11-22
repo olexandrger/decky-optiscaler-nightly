@@ -7,7 +7,7 @@ export const GENERATED_OPTIONS: OptionMeta[] = [
     "section": "Upscalers",
     "key": "Dx11Upscaler",
     "label": "Dx11 Upscaler",
-    "description": "Select Upscaler for Dx11 games",
+    "description": "Select Upscaler for Dx11 games or the name of a custom upscaler with 'ffx' or 'dlss', run through dx11on12",
     "default": "fsr22",
     "type": "enum",
     "options": [
@@ -34,7 +34,7 @@ export const GENERATED_OPTIONS: OptionMeta[] = [
     "section": "Upscalers",
     "key": "Dx12Upscaler",
     "label": "Dx12 Upscaler",
-    "description": "Select Upscaler for Dx12 games or the name of a folder in the 'custom' folder",
+    "description": "Select Upscaler for Dx12 games or the name of a custom upscaler: a folder in the 'custom' folder or one registered by an ASI plugin",
     "default": "DLSS when capable gpu, FSR4 when capable gpu, XeSS otherwise",
     "type": "enum",
     "options": [
@@ -52,7 +52,7 @@ export const GENERATED_OPTIONS: OptionMeta[] = [
     "section": "Upscalers",
     "key": "VulkanUpscaler",
     "label": "Vulkan Upscaler",
-    "description": "Select Upscaler for Vulkan games or the name of a folder in the 'custom' folder",
+    "description": "Select Upscaler for Vulkan games or the name of a custom upscaler with 'ffx_vk', 'ffx' (VKon12) or 'dlss', the first one it has is used",
     "default": "fsr22",
     "type": "enum",
     "options": [
@@ -72,6 +72,22 @@ export const GENERATED_OPTIONS: OptionMeta[] = [
       "fsr21_12": "fsr21_12 \u2014 VKon12",
       "ffx_12": "ffx_12 \u2014 FSR 2.3; 3.1; 4.x"
     }
+  },
+  {
+    "section": "Upscalers",
+    "key": "RRUpscaler",
+    "label": "RR Upscaler",
+    "description": "DLSSD for the game's ray reconstruction (DX12 and Vulkan, DLSS inputs only) dlssd, a custom one (a 'custom' subfolder with a dlssd folder, or one added by an ASI plugin) or a regular upscaler: xess, fsr21, fsr22, ffx, dlss (needs RRAllowRegularUpscalers, no denoising) The game's ray reconstruction option shows up when any of these can run",
+    "default": "NVIDIA's DLSSD when the gpu can run it, the first custom one otherwise",
+    "type": "string"
+  },
+  {
+    "section": "Upscalers",
+    "key": "RRAllowRegularUpscalers",
+    "label": "RR Allow Regular Upscalers",
+    "description": "Lets regular upscalers be picked for the game's ray reconstruction In most cases will cause the image to be noisy",
+    "default": "false",
+    "type": "bool"
   },
   {
     "section": "FrameGen",
@@ -102,21 +118,22 @@ export const GENERATED_OPTIONS: OptionMeta[] = [
     "section": "FrameGen",
     "key": "FGOutput",
     "label": "FG Output",
-    "description": "Selected FG Output fsrfg          - requires amd_fidelityfx_dx12.dll OR amd_fidelityfx_loader_dx12.dll + amd_fidelityfx_framegeneration_dx12.dll xefg           - requires libxess_fg.dll and libxell.dll dlssg          - requires streamline dlls inside 'OptiScaler/streamline' folder + nvngx_dlssg.dll",
+    "description": "Selected FG Output fsrfg          - requires amd_fidelityfx_dx12.dll OR amd_fidelityfx_loader_dx12.dll + amd_fidelityfx_framegeneration_dx12.dll xefg           - requires libxess_fg.dll and libxell.dll dlssg          - requires streamline dlls inside 'OptiScaler/streamline' folder + nvngx_dlssg.dll flipmeter      - DX12 on AMD, requires driver flip metering and an FGNvngxReplacement",
     "default": "nofg",
     "type": "enum",
     "options": [
       "nofg",
       "fsrfg",
       "xefg",
-      "dlssg"
+      "dlssg",
+      "flipmeter"
     ]
   },
   {
     "section": "FrameGen",
     "key": "FGNvngxReplacement",
     "label": "FG Nvngx Replacement",
-    "description": "Selected FG Nvngx Replacement Nvngx FG is the lower level DLSSG provider. FGInput=NvngxFG or FGOutput=DLSSG need to be used for this setting to do anything For example to use Nukems in a game that only has upscaling: FGInput=upscaler, FGOutput=dlssg, FGNvngxReplacement=Nukems To use Arturs in a game that already supports DLSSG: FGInput=nvngxfg, FGOutput=auto, FGNvngxReplacement=Arturs None      - No replacement Nukems    - requires dlssg_to_fsr3_amd_is_better.dll, FSR 3 FG Arturs    - requires dlss-enabler-headless.dll, FSR 3 MFG FFX       - requires amd_fidelityfx_dx12.dll OR amd_fidelityfx_loader_dx12.dll + amd_fidelityfx_framegeneration_dx12.dll, FSRFG 3 or 4 Combo     - requires the same as FFX AND Arturs, uses FFX for middle frames and Enabler for the rest. Allow for combining FSR 4 FG and Enabler in 4x and 6x modes Or the name of a folder in the 'custom' folder that has a 'dlssg' folder with an nvngx_dlssg replacement dll",
+    "description": "Selected FG Nvngx Replacement Nvngx FG is the lower level DLSSG provider. FGInput=NvngxFG or FGOutput=DLSSG need to be used for this setting to do anything For example to use Nukems in a game that only has upscaling: FGInput=upscaler, FGOutput=dlssg, FGNvngxReplacement=Nukems To use Arturs in a game that already supports DLSSG: FGInput=nvngxfg, FGOutput=auto, FGNvngxReplacement=Arturs None      - No replacement Nukems    - requires dlssg_to_fsr3_amd_is_better.dll, FSR 3 FG Arturs    - requires dlss-enabler-headless.dll, FSR 3 MFG FFX       - requires amd_fidelityfx_dx12.dll OR amd_fidelityfx_loader_dx12.dll + amd_fidelityfx_framegeneration_dx12.dll, FSRFG 3 or 4 Combo     - requires the same as FFX AND Arturs, uses FFX for middle frames and Enabler for the rest. Allow for combining FSR 4 FG and Enabler in 4x and 6x modes Or the name of a custom FG with 'dlssg', an nvngx_dlssg replacement",
     "default": "Nukems",
     "type": "enum",
     "options": [
@@ -133,7 +150,7 @@ export const GENERATED_OPTIONS: OptionMeta[] = [
     "label": "FT Input",
     "description": "Frametime source, would affect frame pacing 0: Input (DLSSG/FSRFG/OptiFG) | 1: Time between Present calls | 2: Zero (Only for XeFG)",
     "default": "0",
-    "type": "bool"
+    "type": "string"
   },
   {
     "section": "FrameGen",
@@ -163,7 +180,7 @@ export const GENERATED_OPTIONS: OptionMeta[] = [
     "section": "FrameGen",
     "key": "DisableHudless",
     "label": "Disable Hudless",
-    "description": "Control Hudless, even if FG source provides one",
+    "description": "Control Hudless, even if FG source provides one With DLSSG via Nvngx as FG Input, it might be required for some sets of [NvngxFG] DispatchFlags",
     "default": "false",
     "type": "bool"
   },
@@ -172,7 +189,7 @@ export const GENERATED_OPTIONS: OptionMeta[] = [
     "key": "DisableUI",
     "label": "Disable UI",
     "description": "Control a UI texture, even if FG source provides one",
-    "default": "true",
+    "default": "false",
     "type": "bool"
   },
   {
@@ -273,7 +290,7 @@ export const GENERATED_OPTIONS: OptionMeta[] = [
     "key": "SkipResizeBuffers",
     "label": "Skip Resize Buffers",
     "description": "Skip ResizeBuffers call to swapchain If old and new descriptions are the same Prevents crashes after ResizeBuffers calls",
-    "default": "true",
+    "default": "false",
     "type": "bool"
   },
   {
@@ -349,6 +366,14 @@ export const GENERATED_OPTIONS: OptionMeta[] = [
     "description": "Disables AMD hardware flip metering requested by the FSR ML FG swapchain",
     "default": "false",
     "type": "bool"
+  },
+  {
+    "section": "FSRFG",
+    "key": "Provider",
+    "label": "Provider",
+    "description": "FFX frame generation and swapchain used by FSR FG The name of a custom FG with 'ffx_fg' (DX11/12) or 'ffx_fg_vk' (Vulkan), a folder in the 'custom' folder",
+    "default": "the regular FFX one",
+    "type": "string"
   },
   {
     "section": "FSRFG",
@@ -542,6 +567,28 @@ export const GENERATED_OPTIONS: OptionMeta[] = [
     "type": "bool"
   },
   {
+    "section": "FlipMeter",
+    "key": "InterpolationCount",
+    "label": "Interpolation Count",
+    "description": "Sets interpolated frame count (MFG) of the Flip Meter output, limited by what the FG Nvngx Replacement supports and by the driver: more than 1 needs the DWORD Gmx_DriverFramePacingMaxGenFrames in the GPU's key under HKLM\\SYSTEM\\CurrentControlSet\\Control\\Class\\{4d36e968-e325-11ce-bfc1-08002be10318} and a restart",
+    "default": "1",
+    "type": "enum",
+    "options": [
+      "1",
+      "2",
+      "3",
+      "4",
+      "5"
+    ],
+    "optionLabels": {
+      "1": "2X",
+      "2": "3X",
+      "3": "4X",
+      "4": "5X",
+      "5": "6X"
+    }
+  },
+  {
     "section": "DLSSG",
     "key": "InterpolationCount",
     "label": "Interpolation Count",
@@ -648,7 +695,7 @@ export const GENERATED_OPTIONS: OptionMeta[] = [
     "section": "OptiFG",
     "key": "HUDFixUIUnblend",
     "label": "HUD Fix UI Unblend",
-    "description": "Vulkan, rebuild the hudless by removing that UI texture from the frame FSR-FG only gets the UI this way, DLSSG also takes the UI texture directly",
+    "description": "Vulkan, rebuild the hudless by removing that UI texture from the frame FSR-FG only gets the UI this way. Not used with DLSSG, it takes the UI texture directly",
     "default": "true",
     "type": "bool"
   },
@@ -825,6 +872,14 @@ export const GENERATED_OPTIONS: OptionMeta[] = [
     "key": "ResourceFlipOffset",
     "label": "Resource Flip Offset",
     "description": "Flip Depth & Velocity textures according to interpolation area This should fix OptiFG issues with Unity games",
+    "default": "false",
+    "type": "bool"
+  },
+  {
+    "section": "OptiFG",
+    "key": "HudlessFlip",
+    "label": "Hudless Flip",
+    "description": "Flip the HUDless texture, uses ResourceFlipOffset too Games can also request it with the Opti.Hudless.Flip NGX parameter",
     "default": "false",
     "type": "bool"
   },
@@ -1038,7 +1093,7 @@ export const GENERATED_OPTIONS: OptionMeta[] = [
     "key": "CameraFar",
     "label": "Camera Far",
     "description": "Sets camera far value for FSR and FSR FG",
-    "default": "10000.0",
+    "default": "100000.0",
     "type": "float",
     "min": 0.0
   },
@@ -1815,19 +1870,11 @@ export const GENERATED_OPTIONS: OptionMeta[] = [
     "type": "bool"
   },
   {
-    "section": "NvngxFG",
-    "key": "DisableHudless",
-    "label": "Disable Hudless",
-    "description": "Disable hudless resource being sent to DLSSG Might be required for some sets of DispatchFlags, see the reference",
-    "default": "false",
-    "type": "bool"
-  },
-  {
     "section": "Libraries",
     "key": "OptiDllPath",
     "label": "Opti Dll Path",
-    "description": "Main folder for OptiScaler to check dll files below",
-    "default": ".\\OptiScaler",
+    "description": "Relative paths in this section are based on OptiScaler's folder Main folder for OptiScaler to check dll files below",
+    "default": ".\\OptiScaler, or OptiScaler's folder if it doesn't exist",
     "type": "string"
   },
   {
@@ -1842,7 +1889,7 @@ export const GENERATED_OPTIONS: OptionMeta[] = [
     "section": "Libraries",
     "key": "NvngxDlssPath",
     "label": "Nvngx Dlss Path",
-    "description": "nvngx_dlss.dll",
+    "description": "nvngx_dlss.dll or its folder",
     "default": "auto",
     "type": "string"
   },
@@ -1963,7 +2010,7 @@ export const GENERATED_OPTIONS: OptionMeta[] = [
     "key": "OverlayMenu",
     "label": "Overlay Menu",
     "description": "Enables new Overlay ImGui menus without this option OptiScaler will disable all FG features",
-    "default": "when OptiScaler is nvngx.dll false otherwise true",
+    "default": "true",
     "type": "bool"
   },
   {
@@ -2803,9 +2850,16 @@ export const GENERATED_OPTIONS: OptionMeta[] = [
     "section": "Sharpness",
     "key": "Shader",
     "label": "Shader",
-    "description": "Options are: RCAS - AMD's Robust Contrast-Adaptive Sharpening DA - Enables Depth-based edge detection for sharpening. Reduces sharpening across object boundaries to prevent halos and artifacts. The farther away is the object, the more sharpening is applied (limited to 1.0) Recommended for scenes with complex geometry or upscaling. LCDA - Local contrast version of the above DA",
+    "description": "Options are: RCAS - AMD's Robust Contrast-Adaptive Sharpening DA - Enables Depth-based edge detection for sharpening. Reduces sharpening across object boundaries to prevent halos and artifacts. The farther away is the object, the more sharpening is applied (limited to 1.0) Recommended for scenes with complex geometry or upscaling. DAS - Depth-aware directional adaptive luma sharpener. Uses the same depth rejection as DA, smarter sharpening with fewer artifacts but heavier. BABA - Small neural network sharpener ported from BaBa_Sharpen_Neural.fx (ReShade Baba). Only touches luma, skips aliased edges and fireflies. Strength 0.5 matches the Intensity 1.0 of the ReShade shader. Dx11, Dx12 & Vulkan OPTI - OptiSharpen, small neural network sharpener trained for OptiScaler. Only touches luma, same maths for SDR and HDR. Strength 0.5 is the trained strength. Dx11, Dx12 & Vulkan",
     "default": "rcas",
-    "type": "string"
+    "type": "enum",
+    "options": [
+      "rcas",
+      "da",
+      "das",
+      "baba",
+      "opti"
+    ]
   },
   {
     "section": "Sharpness",
@@ -2820,7 +2874,7 @@ export const GENERATED_OPTIONS: OptionMeta[] = [
     "key": "Sharpness",
     "label": "Sharpness",
     "description": "Strength of Sharpening,",
-    "default": "0.3",
+    "default": "0.4",
     "type": "float",
     "min": 0.0,
     "max": 1.0
@@ -2892,7 +2946,7 @@ export const GENERATED_OPTIONS: OptionMeta[] = [
     "key": "MotionSharpness",
     "label": "Motion Sharpness",
     "description": "Sharpening will be added or removed according to motion length",
-    "default": "0.4",
+    "default": "0.2",
     "type": "float",
     "min": -1.3,
     "max": 1.3
@@ -2929,7 +2983,7 @@ export const GENERATED_OPTIONS: OptionMeta[] = [
     "section": "CAS",
     "key": "Contrast",
     "label": "Contrast",
-    "description": "Contrast based sharpening value Higher values increases sharpness at high contrast areas. High values might cause graphical GLITCHES when used with high sharpness values !!!",
+    "description": "Contrast based sharpening value Lowers sharpness at high contrast areas. High values might cause graphical GLITCHES when used with high sharpness values !!!",
     "default": "0.0",
     "type": "float",
     "min": 0.0,
@@ -2970,6 +3024,60 @@ export const GENERATED_OPTIONS: OptionMeta[] = [
     "description": "Clamps the final image to the [0, 1] range. Prevents overshoot artifacts such as bright halos or negative colors. Recommended for LDR pipelines; optional for HDR depending on tone-mapping.",
     "default": "false",
     "type": "bool"
+  },
+  {
+    "section": "CAS",
+    "key": "BabaModel",
+    "label": "Baba Model",
+    "description": "Neural model used by the BABA sharpener 0 - Model A, standard sharpening 1 - Model B, edge-enhanced",
+    "default": "0",
+    "type": "string"
+  },
+  {
+    "section": "CAS",
+    "key": "BabaEdgeResponse",
+    "label": "Baba Edge Response",
+    "description": "How BABA adapts the sharpening to detected edges Negative values smooth edges, positive values enhance them, 0 is uniform",
+    "default": "0.0",
+    "type": "float",
+    "min": -1.0,
+    "max": 1.0
+  },
+  {
+    "section": "CAS",
+    "key": "BabaDebugView",
+    "label": "Baba Debug View",
+    "description": "Debug view of the BABA sharpener 0 - Normal, 1 - Sharpening map only, 2 - Residual map",
+    "default": "0",
+    "type": "enum",
+    "options": [
+      "0",
+      "1",
+      "2"
+    ]
+  },
+  {
+    "section": "CAS",
+    "key": "OptiSharpenModel",
+    "label": "Opti Sharpen Model",
+    "description": "Neural model used by the OPTI sharpener 0 - Natural D10, natural sharpening 1 - Crisp D10 p50, stronger 2 - Natural D10 in half precision written for packed math (fp16 packed, faster on Dx12 / Vulkan) 3 - Crisp D10 p50 in half precision written for packed math (fp16 packed, faster on Dx12 / Vulkan) Each precision is its own shader. Dx11 runs the fp16 packed ones in fp32. All use a 25 tap (5x5) window and overshoot the local range by up to 15%. Each model scales the strength (Natural x0.75, Crisp x1.0), the top of the slider is its best point",
+    "default": "0",
+    "type": "int",
+    "min": 0,
+    "max": 3
+  },
+  {
+    "section": "CAS",
+    "key": "OptiSharpenDebugView",
+    "label": "Opti Sharpen Debug View",
+    "description": "Debug view of the OPTI sharpener 0 - Normal, 1 - Sharpening map, 2 - Change magnitude",
+    "default": "0",
+    "type": "enum",
+    "options": [
+      "0",
+      "1",
+      "2"
+    ]
   },
   {
     "section": "Magnifier",
@@ -3132,7 +3240,7 @@ export const GENERATED_OPTIONS: OptionMeta[] = [
     "key": "LogAsync",
     "label": "Log Async",
     "description": "Enables Async logging",
-    "default": "true",
+    "default": "false",
     "type": "bool"
   },
   {
@@ -3140,10 +3248,18 @@ export const GENERATED_OPTIONS: OptionMeta[] = [
     "key": "LogAsyncThreads",
     "label": "Log Async Threads",
     "description": "Async logging threads",
-    "default": "1",
+    "default": "4",
     "type": "int",
     "min": 1,
     "max": 8
+  },
+  {
+    "section": "Log",
+    "key": "CreateDumps",
+    "label": "Create Dumps",
+    "description": "Writes a dump next to the log (or to the temp folder when it can't) on a crash or when the game ends itself with an error code. Crashes are caught before the game's own handlers, a game that handles them itself can get a dump that isn't a crash (at most 3)",
+    "default": "false",
+    "type": "bool"
   },
   {
     "section": "InitFlags",
@@ -3345,6 +3461,28 @@ export const GENERATED_OPTIONS: OptionMeta[] = [
     "max": 3
   },
   {
+    "section": "V-Sync",
+    "key": "VulkanPresentMode",
+    "label": "Vulkan Present Mode",
+    "description": "Vulkan present mode override, VkPresentModeKHR value. Can be changed live from the menu.",
+    "default": "the game's",
+    "type": "enum",
+    "options": [
+      "0",
+      "1",
+      "2",
+      "3",
+      "1000361000"
+    ],
+    "optionLabels": {
+      "0": "Immediate (V-Sync Off)",
+      "1": "Mailbox",
+      "2": "FIFO (V-Sync On)",
+      "3": "FIFO Relaxed",
+      "1000361000": "FIFO Latest Ready - Default (auto) is the game's"
+    }
+  },
+  {
     "section": "Anisotropy",
     "key": "AnisotropyOverride",
     "label": "Anisotropy Override",
@@ -3450,14 +3588,6 @@ export const GENERATED_OPTIONS: OptionMeta[] = [
   },
   {
     "section": "Hotfix",
-    "key": "ManualInputPolling",
-    "label": "Manual Input Polling",
-    "description": "Use manual input polling instead of hooking WndProc Might help games which does not capture inputs properly As a downside it will not be able to block inputs when menu is open",
-    "default": "false",
-    "type": "bool"
-  },
-  {
-    "section": "Hotfix",
     "key": "SimulateWaitableObject",
     "label": "Simulate Waitable Object",
     "description": "Simulate waitable object event signals for FG swapchain",
@@ -3477,7 +3607,7 @@ export const GENERATED_OPTIONS: OptionMeta[] = [
     "key": "PreferDedicatedGpu",
     "label": "Prefer Dedicated Gpu",
     "description": "OptiScaler will try to force High Performance GPU",
-    "default": "false",
+    "default": "true",
     "type": "bool"
   },
   {

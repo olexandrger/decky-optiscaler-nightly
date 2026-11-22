@@ -82,10 +82,14 @@ def split_top_level(text):
 
 
 def parse_enum(value_part):
-    """Parse 'a (note), b, c' into (tokens, {token: label})."""
+    """Parse 'a (note), b, c' or 'a, b or c' into (tokens, {token: label})."""
     pieces = split_top_level(value_part)
     if len(pieces) < 2:
         return None
+    # 10.x also writes "rcas, da, das, baba or opti - Default (auto) is rcas".
+    last = re.match(r"^([A-Za-z0-9_.]+)\s+or\s+([A-Za-z0-9_.]+)$", pieces[-1])
+    if last:
+        pieces = pieces[:-1] + [last.group(1), last.group(2)]
     tokens, labels = [], {}
     for piece in pieces:
         m = re.match(r"^([A-Za-z0-9_.]+)\s*(?:\((.+)\))?$", piece)

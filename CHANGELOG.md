@@ -8,6 +8,14 @@ Newest first. Each release ships `Decky OptiScaler.zip` for Decky Loader's
 
 ### Nightly fork
 
+- OptiScaler's own sharpener is live from All settings: `[CAS] Enabled`,
+  `[Sharpness] Shader` (RCAS, the depth-aware ones, BaBa and OptiSharpen, named
+  as in OptiScaler's menu, now a list instead of a text field) and `[CAS]
+  OptiSharpenModel`, which OptiScaler reads at every sharpening pass. Value
+  lists written "a, b or c" in OptiScaler's ini (the shader, the BaBa and
+  OptiSharpen debug views) are lists in All settings. The snapshot of
+  OptiScaler's headers and ini moves to nightly 20261122 (ab1f3d49), which has
+  OptiSharpen.
 - Dynamic MFG from the panel, live: the frame multiplier lists each step once
   more as "Dynamic: up to ..." (on a Steam Deck the one "Dynamic: FG on/off"),
   OptiScaler's checkbox next to its Frame Gen slider. It writes `[XeFG]

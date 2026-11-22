@@ -1,7 +1,7 @@
-e7e3872d
+ab1f3d49
 
-Version:  v10.0.0-dev (built 20261030_104415)
-Source:   https://github.com/optiscaler/OptiScaler/tree/e7e3872d/OptiScaler
+Version:  v10.0.0-dev (built 20261122_121824)
+Source:   https://github.com/optiscaler/OptiScaler/tree/ab1f3d49/OptiScaler
 
 Config.h, Config.cpp, OptiTypes.h, OptiTypes.cpp, State.h, menu/menu_common.cpp at the commit the bundled OptiScaler.dll
 names in its startup banner. scripts/generate_asi_layout.py turns them
