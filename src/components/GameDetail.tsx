@@ -410,6 +410,7 @@ export function GameDetail({
                   onAutoChange={(enabled) => void changeAuto(enabled)}
                   fsr4Build={config.fsr4Build}
                   onEnableFsr4={config.enableFsr4}
+                  xefgMax={runningCfg.running?.xefg_max ?? detail.xefg_max}
                   onApply={applyOptions}
                 />
                 <PanelSection>

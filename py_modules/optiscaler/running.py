@@ -29,6 +29,9 @@ ENUMS = _MAP.get("enums", {})
 # What OptiScaler logs when it creates the upscaler the game ends up with:
 #   TryCreateOptiFeature Creating FSR 3.X upscaler feature
 _CREATED_RE = re.compile(r"\[(\d\d:\d\d:\d\d)[.\d]*\].*?TryCreateOptiFeature Creating (.+?) feature")
+# What XeFG reports when OptiScaler asks it (XeFG_Dx12.cpp):
+#   Max supported interpolations: 1
+_XEFG_MAX_RE = re.compile(r"Max supported interpolations: (\d+)")
 
 
 def read_fields(path):
@@ -90,21 +93,43 @@ def same(a, b):
         return a == b
 
 
-def created_upscaler(target_dir):
-    """("FSR 3.X upscaler", "18:18:13") from the last creation OptiScaler logged."""
+def _log_tail(target_dir):
+    """The end of OptiScaler.log (OptiScaler starts it afresh at each launch), or None."""
     path = Path(target_dir) / "OptiScaler.log"
     try:
         with path.open("rb") as handle:
             handle.seek(0, 2)
             size = handle.tell()
             handle.seek(max(0, size - 4_000_000))
-            text = handle.read().decode("utf-8", errors="replace")
+            return handle.read().decode("utf-8", errors="replace")
     except OSError:
         return None
+
+
+def _last(pattern, text):
     last = None
-    for match in _CREATED_RE.finditer(text):
+    for match in pattern.finditer(text or ""):
         last = match
+    return last
+
+
+def created_upscaler(target_dir, text=None):
+    """("FSR 3.X upscaler", "18:18:13") from the last creation OptiScaler logged."""
+    last = _last(_CREATED_RE, _log_tail(target_dir) if text is None else text)
     return (last.group(2), last.group(1)) if last else None
+
+
+def xefg_max(target_dir, text=None):
+    """How many frames XeFG can generate per real one on this GPU, or None if not known.
+
+    XeFG reports it when OptiScaler asks (``Max supported interpolations: 1``
+    on a Steam Deck: 2X at most). OptiScaler's menu offers no step above it
+    (0 counts as 1 there, with no Dynamic MFG), and runs a higher
+    InterpolationCount as that maximum. While no game runs the log is the last
+    session's; the GPU is the same one.
+    """
+    last = _last(_XEFG_MAX_RE, _log_tail(target_dir) if text is None else text)
+    return int(last.group(1)) if last else None
 
 
 def effective_int(target_dir, ini_key):
@@ -169,7 +194,7 @@ def snapshot(target_dir):
     """
     target = Path(target_dir)
     status = live.status(target_dir)
-    empty = {"ok": True, "ready": False, "values": {}, "unsaved": [], "created": None}
+    empty = {"ok": True, "ready": False, "values": {}, "unsaved": [], "created": None, "xefg_max": None}
     if not status.get("ready"):
         return empty
     now = read_fields(target / VALUES_FILE)
@@ -200,11 +225,13 @@ def snapshot(target_dir):
         if (not same(current, on_disk) and (at_load is None or not same(current, at_load))
                 and (at_load is None or same(on_disk, at_load))):
             unsaved.append(ini_key)
-    created = created_upscaler(target_dir)
+    log = _log_tail(target_dir)
+    created = created_upscaler(target_dir, log)
     return {
         "ok": True,
         "ready": True,
         "values": values,
         "unsaved": sorted(unsaved),
         "created": {"upscaler": created[0], "at": created[1]} if created else None,
+        "xefg_max": xefg_max(target_dir, log),
     }

@@ -9,6 +9,7 @@ import {
   UPSCALER_PRESETS,
   activeFgPreset,
   activeUpscalerPreset,
+  multiplierChoices,
   disableFrameGenChanges,
   enableFrameGenChanges,
   enableFrameGenWith,
@@ -70,6 +71,8 @@ interface Props {
   fsr4Build?: string | null;
   /** Apply a Steam Deck FSR 4 preset; takes its model ("lite", "rdna2"). */
   onEnableFsr4?: (model: string) => Promise<void>;
+  /** Frames XeFG can generate per real one on this GPU (null: not known). */
+  xefgMax?: number | null;
   onApply: (changes: OptionChange[]) => void;
 }
 
@@ -202,6 +205,7 @@ export function BasicPanel({
   onAutoChange,
   onApply,
   onEnableFsr4,
+  xefgMax,
 }: Readonly<Props>) {
   // Which upscaler the user just picked, if it is not the one the game is
   // running. Cleared once the game has taken it, so the switch is offered only
@@ -229,6 +233,7 @@ export function BasicPanel({
   const rawFgOutput = (values.FrameGen?.FGOutput ?? AUTO).toLowerCase();
   const multiplierOption = optionById(MULTIPLIER_ID);
   const multiplierUsable = supportsMultiplier(values);
+  const multiplier = multiplierOption ? multiplierChoices(multiplierOption, values, xefgMax) : null;
 
   // Automatic mode is only on offer when the wiki actually matched this game.
   const planned = plan?.available ? plan : null;
@@ -486,22 +491,20 @@ export function BasicPanel({
           </PanelSectionRow>
         ) : null}
 
-        {multiplierOption ? (
+        {multiplierOption && multiplier ? (
           <PanelSectionRow>
             <ValueDropdown
               label="Frame multiplier"
               description={
                 multiplierUsable
-                  ? hint("How many frames to present per rendered frame.")
+                  ? hint("How many frames to present per rendered frame." +
+                    (multiplier.limitLabel ? ` XeFG goes up to ${multiplier.limitLabel} on this GPU.` : ""))
                   : "Only XeSS Frame Generation can do more than 2X."
               }
               disabled={busy || !fgOn || !multiplierUsable}
               bottomSeparator="standard"
-              options={(multiplierOption.options ?? []).map((value) => ({
-                data: value,
-                label: labelFor(multiplierOption, value),
-              }))}
-              selected={effectiveValue(values, multiplierOption)}
+              options={multiplier.options}
+              selected={multiplier.selected}
               describe={(value) => labelFor(multiplierOption, value)}
               onPick={(value) =>
                 onApply([

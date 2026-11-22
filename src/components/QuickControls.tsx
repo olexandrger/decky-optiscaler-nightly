@@ -14,6 +14,7 @@ import {
   isFsr4Version,
   MULTIPLIER_KEY,
   MULTIPLIER_SECTION,
+  multiplierChoices,
   needsForcedInt8,
   supportsInt8Override,
   supportsMultiplier,
@@ -75,6 +76,7 @@ export function QuickControls({
   plan,
   auto,
   busy,
+  xefgMax,
   onApply,
   onEnableFsr4,
 }: Readonly<{
@@ -93,6 +95,8 @@ export function QuickControls({
   plan?: AutoPlan | null;
   auto?: boolean;
   busy?: boolean;
+  /** Frames XeFG can generate per real one on this GPU (null: not known). */
+  xefgMax?: number | null;
   onApply: (changes: OptionChange[]) => void;
   onEnableFsr4?: (model: string) => Promise<void>;
 }>) {
@@ -112,6 +116,7 @@ export function QuickControls({
   const fgUnavailable = plannedFg?.input === "nofg";
   const multiplierOption = optionById(`${MULTIPLIER_SECTION}.${MULTIPLIER_KEY}`);
   const multiplierUsable = supportsMultiplier(setUp);
+  const multiplier = multiplierOption ? multiplierChoices(multiplierOption, values, xefgMax) : null;
   const rawFgInput = (setUp.FrameGen?.FGInput ?? AUTO).toLowerCase();
   const rawFgOutput = (setUp.FrameGen?.FGOutput ?? AUTO).toLowerCase();
   const fgPair = activeFgPreset(setUp)?.label ??
@@ -252,17 +257,14 @@ export function QuickControls({
             onChange={(checked) => (checked ? turnFrameGenOn() : onApply(disableFrameGenChanges()))}
           />
         </PanelSectionRow>
-        {multiplierOption ? (
+        {multiplierOption && multiplier ? (
           <PanelSectionRow>
             <ValueDropdown
               label="Frame multiplier"
               disabled={disabled || !fgOn || !multiplierUsable}
-              options={(multiplierOption.options ?? []).map((value) => ({
-                data: value,
-                label: labelFor(multiplierOption, value),
-              }))}
+              options={multiplier.options}
               // Not XeFG: OptiScaler generates one frame, so that is what it shows.
-              selected={multiplierUsable ? effectiveValue(values, multiplierOption) : (multiplierOption.options ?? ["1"])[0]}
+              selected={multiplierUsable ? multiplier.selected : (multiplierOption.options ?? ["1"])[0]}
               describe={(value) => labelFor(multiplierOption, value)}
               onPick={(value) => onApply([change(MULTIPLIER_SECTION, MULTIPLIER_KEY, value)])}
             />

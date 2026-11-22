@@ -402,6 +402,8 @@ class OptiScalerService:
                 "launch_option": installer.launch_option(info["filename"] or DEFAULT_PROXY),
                 "reframework": reframework.status(target),
                 "writable": os.access(target, os.W_OK) if Path(target).is_dir() else False,
+                # From the last session's log, for a game that is not running.
+                "xefg_max": running.xefg_max(target),
             }
 
         return await self._run(work)

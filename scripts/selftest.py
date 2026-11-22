@@ -2085,6 +2085,15 @@ def check_running_config():
             "[18:25:01.000000] [I] TryCreateOptiFeature Creating XeSS upscaler feature\n")
         check("the upscaler OptiScaler last created is read from its log",
               running.snapshot(str(target))["created"] == {"upscaler": "XeSS upscaler", "at": "18:25:01"})
+        check("XeFG's maximum is not known before XeFG reports it",
+              running.snapshot(str(target))["xefg_max"] is None and running.xefg_max(str(target)) is None)
+        with (target / "OptiScaler.log").open("a") as log:
+            # XeFG_Dx12.cpp, once when OptiScaler asks and again at swapchain creation.
+            log.write("[18:25:02.000000] [I] XeFG_Dx12::QueryMaxInterpolationCount Max supported interpolations: 3\n"
+                      "[18:25:03.000000] [I] XeFG_Dx12::CreateSwapchain Max supported interpolations: 1\n")
+        check("XeFG's maximum is the last one it reported (a Steam Deck: 1, 2X at most)",
+              running.snapshot(str(target))["xefg_max"] == 1 and running.xefg_max(str(target)) == 1,
+              running.snapshot(str(target))["xefg_max"])
 
         service = OptiScalerService(ROOT, root / "s", root / "r", root / "h", logging.getLogger("t"))
         kept = asyncio.run(service.keep_running_changes(str(target), []))
@@ -3171,8 +3180,9 @@ def check_frontend_types_match_backend():
         replies = {
             "LiveStatus": asyncio.run(service.get_live_status(str(target))),
             "RunningConfig": asyncio.run(service.get_running_config(str(target))),
+            "GameDetail": asyncio.run(service.get_game(str(target), "Game")),
         }
-        where = {"LiveStatus": "src/types.ts", "RunningConfig": "src/api.ts"}
+        where = {"LiveStatus": "src/types.ts", "RunningConfig": "src/api.ts", "GameDetail": "src/types.ts"}
         for interface, reply in replies.items():
             declared = _ts_fields(where[interface], interface)
             missing = [name for name in declared if name not in reply]

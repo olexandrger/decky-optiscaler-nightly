@@ -64,6 +64,8 @@ function call(method: string, ...args: any[]): Promise<any> {
 
 const DECK_GPU = { name: "Van Gogh (Steam Deck)", vendor: "amd", generation: "RDNA2", fsr4: "experimental" };
 let gameDir = "";
+// What the game page read from the last session's OptiScaler.log.
+let detailXefgMax: number | null = null;
 const detail = () => ({
   path: gameDir, name: "Stellar Blade", target: gameDir,
   install: {
@@ -74,6 +76,7 @@ const detail = () => ({
   },
   gpu: DECK_GPU,
   wiki_entry: null,
+  xefg_max: detailXefgMax,
 });
 for (const name of ["read_config", "write_config", "get_live_status", "get_running_config", "press_live_keys",
   "keep_running_changes", "set_fsr4_build", "toggle_menu"]) {
@@ -135,6 +138,12 @@ interface Case {
   leftover?: string[];
   /** [text, whether the panel shows it]. */
   text?: [string, boolean][];
+  /** XeFG runs in this session and reports this maximum in OptiScaler.log. */
+  xefg_max?: number;
+  /** The maximum the game page read from the last session's log. */
+  detail_xefg_max?: number;
+  /** [control label, option value, whether the control offers it]. */
+  offers?: [string, string, boolean][];
 }
 
 const iniValue = (ini: Ini, key: string) => {
@@ -147,8 +156,9 @@ async function run(c: Case) {
   current = c.name;
   gameDir = (await call("reset", c.ini)).dir;
   forgetWrites(gameDir);
+  detailXefgMax = c.detail_xefg_max ?? null;
   if (c.leftover) await call("leftover", c.leftover);
-  await call("game.start");
+  await call("game.start", c.xefg_max ?? null);
   for (const [key, value, vol] of c.game ?? []) await call("game.set", key, value, Boolean(vol));
   const node = document.createElement("div");
   document.body.appendChild(node);
@@ -167,6 +177,11 @@ async function run(c: Case) {
     check(`shows ${label} = ${value}`, shown, value);
   }
   if (c.overlay !== undefined) check("the overlay button says", buttonText(node, "fps-overlay"), c.overlay);
+  for (const [label, value, present] of c.offers ?? []) {
+    const ctl = control(node, label);
+    check(`${label} offers ${value}: ${present}`,
+      ctl ? all(ctl, `[data-opt-value="${value}"]`).length > 0 : "no such control", present);
+  }
   const ini: Ini = await call("ini");
   for (const [key, value] of c.ini_has ?? []) check(`ini ${key} = ${value}`, iniValue(ini, key), value);
   const game = await call("game.values");
@@ -372,6 +387,44 @@ cases.push(
     act: (node) => pick(node, "Frame multiplier", "1"),
     shows: [["Frame multiplier", "1"]],
     game_has: [["XeFG.InterpolationCount", "1"]],
+  },
+  // XeFG reports how many frames it can generate (a Steam Deck: 1, so 2X);
+  // OptiScaler's menu stops there, and runs a higher count as that maximum.
+  {
+    name: "Deck, XeFG reports 2X at most: the multiplier offers 2X only",
+    ini: { ...DECK_LITE, ...XEFG_ON, XeFG: { InterpolationCount: "1" } }, xefg_max: 1,
+    act: (node) => pick(node, "Frame multiplier", "1"),
+    shows: [["Frame multiplier", "1"]],
+    offers: [["Frame multiplier", "1", true], ["Frame multiplier", "2", false], ["Frame multiplier", "3", false]],
+    game_has: [["XeFG.InterpolationCount", "1"]],
+  },
+  {
+    name: "Deck, ini at 4X from elsewhere, XeFG runs 2X: shows the 2X it runs",
+    ini: { ...DECK_LITE, ...XEFG_ON, XeFG: { InterpolationCount: "3" } }, xefg_max: 1,
+    act: async () => {},
+    shows: [["Frame multiplier", "1"]],
+    offers: [["Frame multiplier", "3", false]],
+  },
+  {
+    name: "XeFG reports 4X: every step is offered, and 3X goes in live",
+    ini: { ...DECK_LITE, ...XEFG_ON, XeFG: { InterpolationCount: "1" } }, xefg_max: 3,
+    act: (node) => pick(node, "Frame multiplier", "2"),
+    shows: [["Frame multiplier", "2"]],
+    offers: [["Frame multiplier", "3", true]],
+    ini_has: [["XeFG.InterpolationCount", "2"]],
+    game_has: [["XeFG.InterpolationCount", "2"]],
+  },
+  {
+    name: "XeFG has not reported yet: every step is offered",
+    ini: { ...DECK_LITE, ...XEFG_ON, XeFG: { InterpolationCount: "1" } },
+    act: async () => {},
+    offers: [["Frame multiplier", "1", true], ["Frame multiplier", "3", true]],
+  },
+  {
+    name: "not reported this session, the last one's log said 2X: 2X only",
+    ini: { ...DECK_LITE, ...XEFG_ON, XeFG: { InterpolationCount: "1" } }, detail_xefg_max: 1,
+    act: async () => {},
+    offers: [["Frame multiplier", "1", true], ["Frame multiplier", "2", false]],
   },
   {
     name: "XeSS model changed in OptiScaler's menu, ini KPSS: the panel sets KPSS again",

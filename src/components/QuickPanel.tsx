@@ -299,6 +299,7 @@ function NowPlayingTab({
               ffx={detail.install.fsr4?.ffx}
               plan={plan}
               auto={auto}
+              xefgMax={runningCfg.running?.xefg_max ?? detail.xefg_max}
               onApply={applyOptions}
               onEnableFsr4={config.enableFsr4}
             />

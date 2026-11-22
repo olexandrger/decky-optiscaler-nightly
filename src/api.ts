@@ -188,6 +188,8 @@ export interface RunningConfig {
   unsaved: string[];
   /** The upscaler OptiScaler last created, from OptiScaler.log. */
   created?: { upscaler: string; at: string } | null;
+  /** Frames XeFG can generate per real one on this GPU, as it reported (null: not yet). */
+  xefg_max: number | null;
 }
 export const getRunningConfig = callable<[targetDir: string], RunningConfig>("get_running_config");
 /** Press OptiScaler's own shortcut for settings turned on that need it (FG on). */

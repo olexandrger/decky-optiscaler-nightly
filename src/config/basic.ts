@@ -6,8 +6,8 @@
  * generation is an input plus an output. Basic mode presents the combination.
  */
 
-import type { ConfigValues, GpuInfo, OptionChange } from "../types";
-import { AUTO, isAuto } from "./values";
+import type { ConfigValues, GpuInfo, OptionChange, OptionMeta } from "../types";
+import { AUTO, effectiveValue, isAuto, labelFor } from "./values";
 
 export interface Preset {
   id: string;
@@ -438,6 +438,49 @@ export function activeUpscalerPreset(values: ConfigValues): Preset | undefined {
 
 export function supportsMultiplier(values: ConfigValues): boolean {
   return get(values, "FrameGen", "FGOutput") === "xefg";
+}
+
+export interface MultiplierChoices {
+  options: { data: string; label: string }[];
+  /** The choice in effect (always one of `options` when XeFG's maximum is known). */
+  selected: string;
+  /** The highest multiplier XeFG reported, as a label ("2X"), when it cuts the list. */
+  limitLabel: string | null;
+}
+
+/**
+ * The frame multiplier's choices on this GPU, and which is in effect.
+ *
+ * XeFG reports how many frames it can generate per real one (`xefgMax`, read
+ * from OptiScaler.log: 1 on a Steam Deck, so 2X at most). OptiScaler's menu
+ * offers no step above it (0 counts as 1) and runs a higher InterpolationCount
+ * as that maximum, so the list stops there too and a higher count shows as
+ * the one in effect. Not known yet (XeFG never ran here): every step.
+ */
+export function multiplierChoices(
+  option: OptionMeta,
+  values: ConfigValues,
+  xefgMax: number | null | undefined
+): MultiplierChoices {
+  const steps = option.options ?? [];
+  const limit = xefgMax == null ? Number.POSITIVE_INFINITY : Math.max(xefgMax, 1);
+  const within = steps.filter((value) => Number(value) <= limit);
+  const offered = within.length > 0 ? within : steps.slice(0, 1);
+  const raw = effectiveValue(values, option);
+  const count = Number(raw);
+  let selected = raw;
+  if (Number.isFinite(limit) && offered.length > 0) {
+    const top = offered[offered.length - 1];
+    selected = Number.isFinite(count) && count >= 1 ? (count > Number(top) ? top : raw) : offered[0];
+    if (!offered.includes(selected)) selected = offered[0];
+  }
+  return {
+    options: offered.map((value) => ({ data: value, label: labelFor(option, value) })),
+    selected,
+    limitLabel: offered.length < steps.length && offered.length > 0
+      ? labelFor(option, offered[offered.length - 1])
+      : null,
+  };
 }
 
 /**

@@ -8,6 +8,16 @@ Newest first. Each release ships `Decky OptiScaler.zip` for Decky Loader's
 
 ### Nightly fork
 
+- The frame multiplier offers only what XeFG can do on this GPU: XeFG reports
+  its maximum in `OptiScaler.log` (a Steam Deck: 2X), OptiScaler's menu stops
+  there and runs a higher count as that maximum, and so does the panel (Quick
+  Access and the game page), showing such a count as the one in effect. Until
+  XeFG has run in a game, every step is offered.
+- Fixed: releases through `v0.0.7-nightly.20261122.38` installed the nightly's
+  empty "!! EXTRACT ALL FILES TO GAME FOLDER !!" marker into games and treated
+  `plugins/` as part of the payload, so uninstalling deleted ASIs added to
+  `plugins/` since the install and put back an older copy. The next install or
+  uninstall removes the marker and puts the player's own ASIs back.
 - Live in-game control is back, rebuilt: a new ASI on OptiScaler 10's plugin API
   (`OptiPluginInit`, `ReInitUpscalers`) writes only Config, with the layout
   generated from the bundled nightly's own `Config.h` (fetched at the commit the

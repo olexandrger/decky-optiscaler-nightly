@@ -134,6 +134,7 @@ export function NowPlaying({
           auto={auto}
           fsr4Build={config.fsr4Build}
           onEnableFsr4={config.enableFsr4}
+          xefgMax={detail!.xefg_max}
           onApply={config.setOptions}
         />
       )}

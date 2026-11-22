@@ -177,6 +177,8 @@ export interface GameDetail {
   launch_option: string;
   reframework: ReframeworkStatus;
   writable: boolean;
+  /** Frames XeFG can generate per real one on this GPU, from the last session's log (null: not known). */
+  xefg_max: number | null;
 }
 
 export interface VerifyResult {

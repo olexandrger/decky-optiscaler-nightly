@@ -57,6 +57,7 @@ class Game:
         self.volatile = set()
         self.seq = 0
         self.running = False
+        self.xefg_max = None  # what XeFG reports on this GPU; None: XeFG has not run
 
     # -- ini values <-> Config values ---------------------------------
     def _encode(self, ini_key, text):
@@ -81,8 +82,19 @@ class Game:
         except ValueError:
             return None
 
-    def start(self):
-        """Launch: Config loads the ini; the plugin writes as-loaded and status."""
+    def start(self, xefg_max=None):
+        """Launch: Config loads the ini; the plugin writes as-loaded and status.
+
+        With ``xefg_max``, XeFG runs and reports that maximum in OptiScaler.log
+        (which OptiScaler starts afresh at each launch).
+        """
+        self.xefg_max = xefg_max
+        log = self.dir / "OptiScaler.log"
+        if xefg_max is None:
+            log.unlink(missing_ok=True)
+        else:
+            log.write_text("[12:00:00.000000] [I] XeFG_Dx12::CreateSwapchain Max supported interpolations: "
+                           f"{xefg_max}\n", encoding="utf-8")
         ini = IniFile(self.dir / "OptiScaler.ini").to_dict()
         self.config.clear()
         self.volatile.clear()
@@ -133,6 +145,7 @@ class Game:
                         applied += 1
                     elif parts:
                         error = f"unknown command: {line}"
+        self._clamp_xefg()
         self._write(running.VALUES_FILE)
         (self.dir / live.STATUS_FILE).write_text(
             f"schema {live.STATUS_SCHEMA}\nbuilt_for test\nstatus ready\napi 3\nreinit_available 1\n"
@@ -140,6 +153,13 @@ class Game:
             f"pid 1\ndir {self.dir}\nheartbeat {int(time.time())}\nerror {error}\n", encoding="utf-8")
 
     # -- what the game does by itself ----------------------------------
+    def _clamp_xefg(self):
+        """XeFG_Dx12.cpp at present: a count above its maximum is set to the maximum."""
+        member = running.FIELDS["XeFG.InterpolationCount"]["member"]
+        engaged, value = self.config.get(member, (False, "-"))
+        if self.xefg_max is not None and engaged and int(value) > max(self.xefg_max, 1):
+            self.config[member] = (True, str(max(self.xefg_max, 1)))
+
     def set(self, ini_key, value, volatile=False):
         """Its menu, its keys, or OptiScaler adjusting a value itself."""
         encoded = self._encode(ini_key, value)
@@ -188,7 +208,7 @@ class Backend:
             for key, value in values.items():
                 ini.set(section, key, value)
         ini.save()
-        for name in (live.CMD_FILE, live.STATUS_FILE, running.VALUES_FILE, running.LOADED_FILE):
+        for name in (live.CMD_FILE, live.STATUS_FILE, running.VALUES_FILE, running.LOADED_FILE, "OptiScaler.log"):
             (self.game_dir / name).unlink(missing_ok=True)
         self.game.running = False
         self.game.seq = 0
@@ -216,7 +236,7 @@ class Backend:
         if method.startswith("game."):
             name = method[5:]
             if name == "start":
-                return self.game.start()
+                return self.game.start(*args)
             if name == "set":
                 return self.game.set(*args)
             if name == "values":
