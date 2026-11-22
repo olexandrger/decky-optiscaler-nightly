@@ -505,16 +505,29 @@ class OptiScalerService:
             self.log.exception("FSR 4 setup failed for %s", target_dir)
             return {"ok": False, "error": str(exc)}
 
-    def _push_preset(self, target_dir, preset):
-        """A Steam Deck FSR 4 preset into the running game, the way OptiScaler's menu would.
+    # FSR4Model values (OptiTypes.h) and which of them FSR4Models::CanGpuRun
+    # lets run whatever the GPU support: INT8 Lite always; INT8 and the RDNA2
+    # INT8 model whenever the support is not None.
+    _FSR4_MODEL_LITE = "3"
+    _FSR4_SUPPORT_NONE = ("auto", "0", "", None)
 
-        OptiScaler's menu changes the FSR 4 model and the FSR version live: it
-        writes them and rebuilds the upscaler on the same backend (live.py's
-        LIVE_FIELDS). The rest of the preset, the backend and Fsr4GpuSupport,
-        OptiScaler reads at startup. So the live part goes in only when the
-        running game already holds the rest; otherwise the whole preset waits
-        for the next launch, rather than one model running under the GPU
-        support another was set up with.
+    def _push_preset(self, target_dir, preset):
+        """A Steam Deck FSR 4 preset into the running game, as OptiScaler's menu switches models.
+
+        The menu's "FSR4 Model" combo writes Fsr4Model and rebuilds the upscaler
+        on the same backend; OptiScaler's FSR 4 support check reads Fsr4Model at
+        every rebuild (FSR4Models.cpp, hkIsSupported). So the model and the FSR
+        version (live.py's LIVE_FIELDS) go in now, the way write_config pushes
+        any live key, and whatever else differs from the running game waits for
+        the next launch: a backend (a rebuild keeps the one running) or the GPU
+        support (read once, when OptiScaler identifies the GPU).
+
+        The GPU support of a Deck preset only waits when it would matter. With a
+        model named, it decides nothing but whether that model may run
+        (CanGpuRun): INT8 Lite always may, the RDNA2 model whenever the support
+        is not None. Lite and RDNA2 set different supports (4 and 3), and
+        demanding a restart for that blocked the switch between them, which
+        OptiScaler's own menu does live.
         """
         state = live.status(target_dir)
         if not state.get("ready"):
@@ -527,16 +540,23 @@ class OptiScalerService:
         def ini_key(entry):
             return f"{entry['section']}.{entry['key']}"
 
-        waits = sorted(ini_key(entry) for entry in entries if ini_key(entry) not in live.LIVE_FIELDS
-                       and not running.same(held.get(ini_key(entry)), entry["value"]))
-        if waits:
-            return {"ok": True, "sent": False, "attached": True, "deferred": waits}
+        model = str(preset.get("FSR", {}).get("Fsr4Model", "auto"))
+        support = held.get("FSR.Fsr4GpuSupport")
+        model_runs = model == self._FSR4_MODEL_LITE or (
+            model not in self._FSR4_SUPPORT_NONE and str(support).lower() not in self._FSR4_SUPPORT_NONE)
+        waits = sorted(
+            ini_key(entry) for entry in entries
+            if ini_key(entry) not in live.LIVE_FIELDS
+            and not running.same(held.get(ini_key(entry)), entry["value"])
+            and not (ini_key(entry) == "FSR.Fsr4GpuSupport" and model_runs))
         moved = [entry for entry in entries if ini_key(entry) in live.LIVE_FIELDS
                  and not running.same(held.get(ini_key(entry)), entry["value"])]
         if not moved:
-            return {"ok": True, "sent": False, "unchanged": True}
+            return ({"ok": True, "sent": False, "attached": True, "deferred": waits} if waits
+                    else {"ok": True, "sent": False, "unchanged": True})
         outcome = live.apply_changes(target_dir, moved, can_reinit=state.get("can_reinit", False))
         outcome["attached"] = True
+        outcome["deferred"] = sorted(set(outcome.get("deferred") or []) | set(waits))
         return outcome
 
     async def restore_fsr4_build(self, target_dir):

@@ -226,14 +226,69 @@ cases.push(
     shows: [["Upscaler", "fsr4"], ["FSR 4 model", "fsr4-lite"]],
     game_has: [["FSR.Fsr4Model", "3"], ["FSR.UpscalerIndex", "0"]],
   },
+  // OptiScaler's menu switches the FSR 4 model live, and its support check
+  // lets the RDNA2 model run whenever the GPU support is not None: Lite's
+  // support (4) runs it. Seen on a Deck: INT8 <-> INT8 Lite never applied.
   {
-    name: "Deck FSR 4 Lite, FSR 3 from OptiScaler's menu: RDNA2 needs its GPU support, so a restart",
+    name: "Deck FSR 4 Lite → RDNA2: applies live under Lite's GPU support, no restart",
+    ini: { ...DECK_LITE, ...XEFG_ON },
+    act: (node) => pick(node, "FSR 4 model", "fsr4-rdna2"),
+    shows: [["FSR 4 model", "fsr4-rdna2"]],
+    ini_has: [["FSR.Fsr4Model", "2"], ["FSR.Fsr4GpuSupport", "3"]],
+    game_has: [["FSR.Fsr4Model", "2"], ["FSR.UpscalerIndex", "0"]],
+    text: [["Restart game to apply", false]],
+  },
+  {
+    name: "Deck FSR 4 RDNA2 → Lite: applies live, no restart",
+    ini: { ...DECK_LITE, FSR: { ...DECK_LITE.FSR, Fsr4GpuSupport: "3", Fsr4Model: "2" }, ...XEFG_ON },
+    act: (node) => pick(node, "FSR 4 model", "fsr4-lite"),
+    shows: [["FSR 4 model", "fsr4-lite"]],
+    ini_has: [["FSR.Fsr4Model", "3"], ["FSR.Fsr4GpuSupport", "4"]],
+    game_has: [["FSR.Fsr4Model", "3"], ["FSR.UpscalerIndex", "0"]],
+    text: [["Restart game to apply", false]],
+  },
+  {
+    name: "Deck FSR 4 Lite, FSR 3 from OptiScaler's menu → RDNA2: the model is back live",
     ini: { ...DECK_LITE, ...XEFG_ON }, game: [["FSR.Fsr4Model", "auto"], ["FSR.UpscalerIndex", "1"]],
     act: (node) => pick(node, "FSR 4 model", "fsr4-rdna2"),
     shows: [["FSR 4 model", "fsr4-rdna2"]],
     ini_has: [["FSR.Fsr4Model", "2"], ["FSR.Fsr4GpuSupport", "3"]],
-    game_has: [["FSR.Fsr4Model", "auto"], ["FSR.UpscalerIndex", "1"]],
+    game_has: [["FSR.Fsr4Model", "2"], ["FSR.UpscalerIndex", "0"]],
+    text: [["Restart game to apply", false]],
+  },
+  {
+    name: "Deck, a game started without GPU support → RDNA2: the model goes in, the support waits",
+    ini: { ...DECK_LITE, ...XEFG_ON }, game: [["FSR.Fsr4GpuSupport", "auto"]],
+    act: (node) => pick(node, "FSR 4 model", "fsr4-rdna2"),
+    ini_has: [["FSR.Fsr4Model", "2"], ["FSR.Fsr4GpuSupport", "3"]],
+    game_has: [["FSR.Fsr4Model", "2"]],
     text: [["Restart game to apply", true]],
+  },
+  {
+    name: "Deck, a game started on FSR 3 → FSR 4: Lite's model goes in live",
+    ini: { ...FSR3, ...XEFG_ON },
+    act: (node) => pick(node, "Upscaler", "fsr4"),
+    shows: [["Upscaler", "fsr4"], ["FSR 4 model", "fsr4-lite"]],
+    ini_has: [["FSR.Fsr4Model", "3"], ["FSR.UpscalerIndex", "0"]],
+    game_has: [["FSR.Fsr4Model", "3"], ["FSR.UpscalerIndex", "0"]],
+  },
+  // A rebuild keeps the backend the game runs; only OptiScaler's menu starts
+  // another. The panel says which upscaler waits and where to switch it now.
+  {
+    name: "XeSS over a running FSR game waits for the next launch, and says so",
+    ini: { ...DECK_LITE, ...XEFG_ON },
+    act: (node) => pick(node, "Upscaler", "xess"),
+    shows: [["Upscaler", "xess"]],
+    ini_has: [["Upscalers.Dx12Upscaler", "xess"]],
+    game_has: [["Upscalers.Dx12Upscaler", "ffx"]],
+    text: [["Restart game to apply", true], ["XeSS starts at the next launch", true],
+      ["OptiScaler menu (top) switches it now", true]],
+  },
+  {
+    name: "a model change inside the running backend does not claim an upscaler waits",
+    ini: { ...DECK_LITE, ...XEFG_ON }, game: [["FSR.Fsr4GpuSupport", "auto"]],
+    act: (node) => pick(node, "FSR 4 model", "fsr4-rdna2"),
+    text: [["starts at the next launch", false]],
   },
   {
     name: "Deck: back to the model whose GPU support the game runs: applies live",

@@ -123,7 +123,9 @@ def main():
     out = []
     out.append(f"> [!WARNING]\n> **Experimental fork build for tinkering, not intended for real use.** "
                f"Use [{UPSTREAM_PLUGIN}](https://github.com/{UPSTREAM_PLUGIN}) instead. "
-               "Live in-game control is unavailable in these builds.")
+               "Some settings apply live in the running game (frame generation, the FSR "
+               "version and FSR 4 model, the FPS overlay); switching to another upscaler "
+               "backend applies at the next launch, or live from OptiScaler's own menu.")
     out.append("")
     if repo:
         out.append("**Install on Steam Deck:** Decky → Settings → Developer mode → Install Plugin from URL →")

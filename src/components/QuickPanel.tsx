@@ -19,7 +19,8 @@ import { GamesList } from "./GamesList";
 import { TabStrip } from "./TabStrip";
 import { UpdateBanner } from "./UpdateBanner";
 import { Centered, Notice, Pill } from "./Common";
-import { curatedLabel } from "../config/labels";
+import { UPSCALER_LABELS, curatedLabel } from "../config/labels";
+import { sameBackend } from "../config/basic";
 
 /**
  * The Quick Access panel: the plugin's front door, opened over a running game.
@@ -157,6 +158,13 @@ function NowPlayingTab({
   }
 
   const overlay = fpsOverlayLabel(values, live);
+  // An upscaler the running game cannot switch to: a rebuild keeps the backend
+  // it runs, and only OptiScaler's own menu starts another one. The presets
+  // keep the three backend keys in one family, so the DX12 key says which.
+  const ranUpscaler = runningCfg.running?.values?.["Upscalers.Dx12Upscaler"];
+  const pickedUpscaler = config.values?.Upscalers?.Dx12Upscaler;
+  const upscalerWaits = Boolean(config.dirty && ranUpscaler && pickedUpscaler &&
+    pickedUpscaler.toLowerCase() !== "auto" && !sameBackend(ranUpscaler, pickedUpscaler));
 
   const openOptiScalerMenu = () => {
     if (!detail) return;
@@ -301,6 +309,10 @@ function NowPlayingTab({
               <PanelSectionRow>
                 <ButtonItem
                   layout="below"
+                  description={upscalerWaits
+                    ? `${UPSCALER_LABELS[pickedUpscaler!] ?? pickedUpscaler} starts at the next launch. ` +
+                      "OptiScaler menu (top) switches it now."
+                    : undefined}
                   onClick={() => {
                     if (restartGame(runningGame)) {
                       config.clearDirty();

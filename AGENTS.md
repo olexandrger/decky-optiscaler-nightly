@@ -67,10 +67,20 @@ live ones go through `asi/live.cpp`, an ASI OptiScaler loads from the game's
   just loaded), and `live._send` carries an unapplied command into the next only
   while it is seconds old (`PENDING_MAX_AGE_MS`).
 - A Steam Deck FSR 4 preset (`set_fsr4_build`) goes live the way OptiScaler's
-  menu switches the model: its FSR 4 model and FSR version are written and the
-  upscaler rebuilt, but only when the running game already holds the rest of
-  the preset (backend, `Fsr4GpuSupport`, read at startup); otherwise the whole
-  preset waits for the next launch (`OptiScalerService._push_preset`).
+  menu switches the model ("FSR4 Model": write `Fsr4Model`, rebuild on the same
+  backend; OptiScaler's support check reads it at every rebuild,
+  `fsr4/FSR4Models.cpp`): the model and FSR version are pushed like any live
+  key, and what else differs from the running game is reported as waiting for
+  the next launch (`OptiScalerService._push_preset`). `Fsr4GpuSupport` (read
+  once, when OptiScaler identifies the GPU) only waits when it would matter:
+  with a model named it decides nothing but whether that model may run
+  (`FSR4Models::CanGpuRun`: INT8 Lite always, the RDNA2 model whenever the
+  support is not None), so Lite (support 4) and RDNA2 (3) switch live.
+- Another upscaler backend (XeSS, DLSS, FSR 2.2) is never live: a rebuild keeps
+  the backend the running feature has (`MenuCommon::ReInitUpscaler` takes
+  `feature->GetUpscalerType()`, not `Config`), and only OptiScaler's menu starts
+  another one, through `State`. The Quick Access restart button names the
+  upscaler that waits and points at the OptiScaler menu.
 - OptiScaler's own menu (`asi/optiscaler_ref/menu_common.cpp`, synced at the
   dll's commit) is the reference for each live key: the panel does what the
   menu does when it changes that setting, or the key is not live.

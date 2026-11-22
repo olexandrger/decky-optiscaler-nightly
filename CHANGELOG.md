@@ -20,6 +20,18 @@ Newest first. Each release ships `Decky OptiScaler.zip` for Decky Loader's
   menu) never reached the game and flipped back; turning FG on rewrote the FG
   pair from an output OptiScaler had reset at runtime; the upscaler read as
   plain FFX when the game held another FSR 4 model than the ini.
+- Steam Deck FSR 4 INT8 Lite ↔ INT8 RDNA2 switch live again: the panel waited
+  for a restart because the two presets set different `Fsr4GpuSupport`, which
+  OptiScaler only uses, with a model named, to decide whether that model may
+  run (Lite always, RDNA2 whenever support is not None). A game started on
+  FSR 3 now gets the FSR 4 model live as well; only the keys that really wait
+  (another API's backend, GPU support that would matter) ask for a restart.
+- Picking XeSS (or another backend) over a running game: the restart button
+  now says the upscaler starts at the next launch and that OptiScaler's own
+  menu switches it now. Live switching from the panel stays impossible: a
+  rebuild keeps the running backend, and starting another needs OptiScaler's
+  State.
+- Release notes no longer claim live in-game control is unavailable.
 - **Go back to OptiScaler <version>** (game page → Manual setup →
   Installation, game closed): an update now keeps the previous OptiScaler's
   files it changed, so a nightly that breaks one game can be undone there
