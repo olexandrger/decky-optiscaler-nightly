@@ -8,6 +8,11 @@ Newest first. Each release ships `Decky OptiScaler.zip` for Decky Loader's
 
 ### Nightly fork
 
+- Dynamic MFG from the panel, live: the frame multiplier lists each step once
+  more as "Dynamic: up to ..." (on a Steam Deck the one "Dynamic: FG on/off"),
+  OptiScaler's checkbox next to its Frame Gen slider. It writes `[XeFG]
+  DynamicMFG` with the step, which XeFG reads every present; a fixed step ends
+  it, also in the ini when only the game had it off.
 - The frame multiplier offers only what XeFG can do on this GPU: XeFG reports
   its maximum in `OptiScaler.log` (a Steam Deck: 2X), OptiScaler's menu stops
   there and runs a higher count as that maximum, and so does the panel (Quick

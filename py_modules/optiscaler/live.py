@@ -176,6 +176,9 @@ LIVE_FIELDS = {
     # XeFG applies it per frame (SetNumInterpolatedFrames); the menu's extra
     # fgChanged only pauses the generator for a few frames.
     "XeFG.InterpolationCount": LiveField("FGXeFGInterpolationCount", "i32", _int),
+    # Dynamic MFG reads it every present (XeFG_DynamicMFG::Update) and the menu's
+    # checkbox writes nothing else; off, the next present is back at the count.
+    "XeFG.DynamicMFG": LiveField("FGXeFGDynamicMFG", "bool", _bool),
     # Not here: [OptiFG] HUDFix. On the FSR FG and XeFG outputs OptiScaler's
     # menu also clears the captured HUDless frames and rebuilds the generator
     # (State), so it waits for a restart or OptiScaler's menu.

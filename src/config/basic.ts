@@ -446,7 +446,15 @@ export interface MultiplierChoices {
   selected: string;
   /** The highest multiplier XeFG reported, as a label ("2X"), when it cuts the list. */
   limitLabel: string | null;
+  /** What picking one of `options` writes. */
+  changes: (value: string) => OptionChange[];
+  /** The label of one of `options`. */
+  describe: (value: string) => string;
 }
+
+export const DYNAMIC_MFG_KEY = "DynamicMFG";
+/** A Dynamic MFG choice: `dynamic:<the most interpolated frames it may use>`. */
+const DYNAMIC = "dynamic:";
 
 /**
  * The frame multiplier's choices on this GPU, and which is in effect.
@@ -456,11 +464,20 @@ export interface MultiplierChoices {
  * offers no step above it (0 counts as 1) and runs a higher InterpolationCount
  * as that maximum, so the list stops there too and a higher count shows as
  * the one in effect. Not known yet (XeFG never ran here): every step.
+ *
+ * Dynamic MFG ([XeFG] DynamicMFG, with `dynamicOption`) is OptiScaler's
+ * checkbox next to its Frame Gen slider: the multiplier follows the frame
+ * rate, up to the slider's step, and at 2X it turns frame generation on and
+ * off. Here each step comes once more as "Dynamic: up to ..." (on a Deck the
+ * one "Dynamic: FG on/off"); not offered when XeFG reports 0, as in the menu.
+ * A pick writes both keys, so a fixed step also ends Dynamic MFG wherever it
+ * was set.
  */
 export function multiplierChoices(
   option: OptionMeta,
   values: ConfigValues,
-  xefgMax: number | null | undefined
+  xefgMax: number | null | undefined,
+  dynamicOption?: OptionMeta
 ): MultiplierChoices {
   const steps = option.options ?? [];
   const limit = xefgMax == null ? Number.POSITIVE_INFINITY : Math.max(xefgMax, 1);
@@ -474,12 +491,33 @@ export function multiplierChoices(
     selected = Number.isFinite(count) && count >= 1 ? (count > Number(top) ? top : raw) : offered[0];
     if (!offered.includes(selected)) selected = offered[0];
   }
+
+  const withDynamic = Boolean(dynamicOption) && xefgMax !== 0;
+  const dynamicOn = Boolean(dynamicOption) && effectiveValue(values, dynamicOption!).toLowerCase() === "true";
+  const dynamicLabel = (value: string) =>
+    value === "1" ? "Dynamic: FG on/off" : `Dynamic: up to ${labelFor(option, value)}`;
+  const options = offered.map((value) => ({ data: value, label: labelFor(option, value) }));
+  if (withDynamic) {
+    options.push(...offered.map((value) => ({ data: `${DYNAMIC}${value}`, label: dynamicLabel(value) })));
+  }
+  if (withDynamic && dynamicOn) selected = `${DYNAMIC}${selected}`;
+
+  const labels = new Map(options.map((choice) => [choice.data, choice.label]));
   return {
-    options: offered.map((value) => ({ data: value, label: labelFor(option, value) })),
+    options,
     selected,
     limitLabel: offered.length < steps.length && offered.length > 0
       ? labelFor(option, offered[offered.length - 1])
       : null,
+    changes: (value) => {
+      const dynamic = value.startsWith(DYNAMIC);
+      const picked = dynamic ? value.slice(DYNAMIC.length) : value;
+      const out = [change(MULTIPLIER_SECTION, MULTIPLIER_KEY, picked)];
+      if (dynamicOption) out.push(change(MULTIPLIER_SECTION, DYNAMIC_MFG_KEY, dynamic ? "true" : "false"));
+      return out;
+    },
+    describe: (value) =>
+      labels.get(value) ?? (value.startsWith(DYNAMIC) ? dynamicLabel(value.slice(DYNAMIC.length)) : labelFor(option, value)),
   };
 }
 

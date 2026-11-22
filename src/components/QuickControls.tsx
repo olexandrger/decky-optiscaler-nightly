@@ -5,6 +5,7 @@ import {
   activeUpscalerPreset,
   DECK_FSR4_PRESETS,
   disableFrameGenChanges,
+  DYNAMIC_MFG_KEY,
   enableFrameGenChanges,
   enableFrameGenWith,
   ffxUpscalerChanges,
@@ -116,7 +117,9 @@ export function QuickControls({
   const fgUnavailable = plannedFg?.input === "nofg";
   const multiplierOption = optionById(`${MULTIPLIER_SECTION}.${MULTIPLIER_KEY}`);
   const multiplierUsable = supportsMultiplier(setUp);
-  const multiplier = multiplierOption ? multiplierChoices(multiplierOption, values, xefgMax) : null;
+  const multiplier = multiplierOption
+    ? multiplierChoices(multiplierOption, values, xefgMax, optionById(`${MULTIPLIER_SECTION}.${DYNAMIC_MFG_KEY}`))
+    : null;
   const rawFgInput = (setUp.FrameGen?.FGInput ?? AUTO).toLowerCase();
   const rawFgOutput = (setUp.FrameGen?.FGOutput ?? AUTO).toLowerCase();
   const fgPair = activeFgPreset(setUp)?.label ??
@@ -265,8 +268,8 @@ export function QuickControls({
               options={multiplier.options}
               // Not XeFG: OptiScaler generates one frame, so that is what it shows.
               selected={multiplierUsable ? multiplier.selected : (multiplierOption.options ?? ["1"])[0]}
-              describe={(value) => labelFor(multiplierOption, value)}
-              onPick={(value) => onApply([change(MULTIPLIER_SECTION, MULTIPLIER_KEY, value)])}
+              describe={multiplier.describe}
+              onPick={(value) => onApply(multiplier.changes(value))}
             />
           </PanelSectionRow>
         ) : null}

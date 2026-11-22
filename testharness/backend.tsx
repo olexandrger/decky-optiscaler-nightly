@@ -426,6 +426,63 @@ cases.push(
     act: async () => {},
     offers: [["Frame multiplier", "1", true], ["Frame multiplier", "2", false]],
   },
+  // Dynamic MFG: OptiScaler's checkbox next to its Frame Gen slider, read
+  // every present. Each step comes again as "Dynamic: up to ...".
+  {
+    name: "Deck: Dynamic (FG on/off) goes in live",
+    ini: { ...DECK_LITE, ...XEFG_ON, XeFG: { InterpolationCount: "1" } }, xefg_max: 1,
+    act: (node) => pick(node, "Frame multiplier", "dynamic:1"),
+    shows: [["Frame multiplier", "dynamic:1"]],
+    offers: [["Frame multiplier", "dynamic:2", false]],
+    ini_has: [["XeFG.DynamicMFG", "true"], ["XeFG.InterpolationCount", "1"]],
+    game_has: [["XeFG.DynamicMFG", "true"], ["XeFG.InterpolationCount", "1"]],
+  },
+  {
+    name: "Dynamic in the ini and the game → fixed 2X: Dynamic ends live",
+    ini: { ...DECK_LITE, ...XEFG_ON, XeFG: { InterpolationCount: "1", DynamicMFG: "true" } }, xefg_max: 1,
+    act: (node) => pick(node, "Frame multiplier", "1"),
+    shows: [["Frame multiplier", "1"]],
+    ini_has: [["XeFG.DynamicMFG", "false"]],
+    game_has: [["XeFG.DynamicMFG", "false"]],
+  },
+  {
+    name: "Dynamic turned on in OptiScaler's menu, ini off: shown, and fixed 2X ends it",
+    ini: { ...DECK_LITE, ...XEFG_ON, XeFG: { InterpolationCount: "1" } }, xefg_max: 1,
+    game: [["XeFG.DynamicMFG", "true"]],
+    act: async (node) => {
+      check("shows the game's Dynamic MFG first", selected(node, "Frame multiplier"), "dynamic:1");
+      await pick(node, "Frame multiplier", "1");
+    },
+    shows: [["Frame multiplier", "1"]],
+    ini_has: [["XeFG.DynamicMFG", "false"]],
+    game_has: [["XeFG.DynamicMFG", "false"]],
+  },
+  {
+    name: "Dynamic turned off in OptiScaler's menu, ini on → fixed 3X: the ini ends it too",
+    ini: { ...DECK_LITE, ...XEFG_ON, XeFG: { InterpolationCount: "1", DynamicMFG: "true" } }, xefg_max: 3,
+    game: [["XeFG.DynamicMFG", "false"]],
+    act: async (node) => {
+      check("shows the game's fixed 2X first", selected(node, "Frame multiplier"), "1");
+      await pick(node, "Frame multiplier", "2");
+    },
+    shows: [["Frame multiplier", "2"]],
+    ini_has: [["XeFG.DynamicMFG", "false"], ["XeFG.InterpolationCount", "2"]],
+    game_has: [["XeFG.DynamicMFG", "false"], ["XeFG.InterpolationCount", "2"]],
+  },
+  {
+    name: "XeFG reports 4X: Dynamic up to 4X sets both live",
+    ini: { ...DECK_LITE, ...XEFG_ON, XeFG: { InterpolationCount: "1" } }, xefg_max: 3,
+    act: (node) => pick(node, "Frame multiplier", "dynamic:3"),
+    shows: [["Frame multiplier", "dynamic:3"]],
+    ini_has: [["XeFG.DynamicMFG", "true"], ["XeFG.InterpolationCount", "3"]],
+    game_has: [["XeFG.DynamicMFG", "true"], ["XeFG.InterpolationCount", "3"]],
+  },
+  {
+    name: "XeFG reports 0: no Dynamic MFG, as in OptiScaler's menu",
+    ini: { ...DECK_LITE, ...XEFG_ON, XeFG: { InterpolationCount: "1" } }, xefg_max: 0,
+    act: async () => {},
+    offers: [["Frame multiplier", "1", true], ["Frame multiplier", "dynamic:1", false]],
+  },
   {
     name: "XeSS model changed in OptiScaler's menu, ini KPSS: the panel sets KPSS again",
     ini: { Upscalers: { Dx12Upscaler: "xess", Dx11Upscaler: "xess_12", VulkanUpscaler: "xess" },

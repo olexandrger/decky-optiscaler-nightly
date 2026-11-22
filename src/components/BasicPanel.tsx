@@ -9,6 +9,7 @@ import {
   UPSCALER_PRESETS,
   activeFgPreset,
   activeUpscalerPreset,
+  DYNAMIC_MFG_KEY,
   multiplierChoices,
   disableFrameGenChanges,
   enableFrameGenChanges,
@@ -233,7 +234,9 @@ export function BasicPanel({
   const rawFgOutput = (values.FrameGen?.FGOutput ?? AUTO).toLowerCase();
   const multiplierOption = optionById(MULTIPLIER_ID);
   const multiplierUsable = supportsMultiplier(values);
-  const multiplier = multiplierOption ? multiplierChoices(multiplierOption, values, xefgMax) : null;
+  const multiplier = multiplierOption
+    ? multiplierChoices(multiplierOption, values, xefgMax, optionById(`${MULTIPLIER_SECTION}.${DYNAMIC_MFG_KEY}`))
+    : null;
 
   // Automatic mode is only on offer when the wiki actually matched this game.
   const planned = plan?.available ? plan : null;
@@ -497,7 +500,8 @@ export function BasicPanel({
               label="Frame multiplier"
               description={
                 multiplierUsable
-                  ? hint("How many frames to present per rendered frame." +
+                  ? hint("How many frames to present per rendered frame. Dynamic follows the frame rate, " +
+                    "up to the step it names." +
                     (multiplier.limitLabel ? ` XeFG goes up to ${multiplier.limitLabel} on this GPU.` : ""))
                   : "Only XeSS Frame Generation can do more than 2X."
               }
@@ -505,12 +509,8 @@ export function BasicPanel({
               bottomSeparator="standard"
               options={multiplier.options}
               selected={multiplier.selected}
-              describe={(value) => labelFor(multiplierOption, value)}
-              onPick={(value) =>
-                onApply([
-                  { section: MULTIPLIER_SECTION, key: MULTIPLIER_KEY, value },
-                ])
-              }
+              describe={multiplier.describe}
+              onPick={(value) => onApply(multiplier.changes(value))}
             />
           </PanelSectionRow>
         ) : null}
