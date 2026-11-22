@@ -20,6 +20,11 @@ Newest first. Each release ships `Decky OptiScaler.zip` for Decky Loader's
   menu) never reached the game and flipped back; turning FG on rewrote the FG
   pair from an output OptiScaler had reset at runtime; the upscaler read as
   plain FFX when the game held another FSR 4 model than the ini.
+- README rewritten for the fork: what it is and does differently, how to
+  install, license and credits, with links to the original plugin. The
+  original's own README sections are gone (they described 0.9.x and its
+  plugin). Release notes now link the OptiScaler source commit next to the
+  binaries (GPL-3.0).
 - Steam Deck FSR 4 INT8 Lite ↔ INT8 RDNA2 switch live again: the panel waited
   for a restart because the two presets set different `Fsr4GpuSupport`, which
   OptiScaler only uses, with a model named, to decide whether that model may

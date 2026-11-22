@@ -49,6 +49,16 @@ def git(*args):
     return result.stdout.strip() if result.returncode == 0 else ""
 
 
+def source_commit():
+    """The OptiScaler commit the bundled dll was built from, or None."""
+    try:
+        text = (ROOT / "asi" / "optiscaler_ref" / "SOURCE_COMMIT.txt").read_text(encoding="utf-8")
+    except OSError:
+        return None
+    first = text.split(maxsplit=1)
+    return first[0] if first and all(c in "0123456789abcdef" for c in first[0].lower()) else None
+
+
 def nightly_tag():
     """nightly-YYYYMMDD of the archive in bin/, from its pinned name."""
     match = re.search(r"-(\d{8})\.7z$", constants.PAYLOAD_ARCHIVE)
@@ -141,6 +151,12 @@ def main():
     nightly_link = f"https://github.com/{NIGHTLY_REPO}/releases/tag/{tag}" if tag else None
     out.append(f"| OptiScaler | `{constants.OPTISCALER_VERSION}`"
                + (f" — [{tag}]({nightly_link})" if nightly_link else "") + " |")
+    # OptiScaler is GPL-3.0: name the source of the binaries next to them. The
+    # header sync records the commit the bundled dll names in its banner.
+    commit = source_commit()
+    if commit:
+        out.append(f"| OptiScaler source (GPL-3.0) | [optiscaler/OptiScaler@{commit}]"
+                   f"(https://github.com/optiscaler/OptiScaler/tree/{commit}) |")
     out.append(f"| FidelityFX upscaler | {fsr4build.BUNDLED_BUILD['label'].replace('Bundled ', '').strip('()')} |")
     deck_models = ", ".join(spec["label"] for key, spec in constants.FSR4_DECK_MODELS.items() if key != "int8")
     out.append(f"| Steam Deck presets | {deck_models} |")
