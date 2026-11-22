@@ -55,6 +55,10 @@ PACKAGE_JSON = ROOT / "package.json"
 NIGHTLY_REPO = "optiscaler/OptiScaler-nightly"
 FFX_UPSCALER_DLL = "amd_fidelityfx_upscaler_dx12.dll"
 
+# Folders the archive carries that are not payload: plugins/ is where ASIs
+# load from, the in-game plugin's and the player's own.
+NOT_PAYLOAD_DIRS = {"plugins"}
+
 # Top-level files the installer handles itself, or that never go in a game folder.
 NOT_PAYLOAD = {
     "OptiScaler.dll",
@@ -175,6 +179,24 @@ def flatten(extracted):
     return root
 
 
+def payload_lists(root):
+    """(files, dirs) the installer copies into a game folder, from the bundle root.
+
+    An allowlist, not everything in the archive: OptiScaler's dependency DLLs
+    and the folders holding files. Nightlies also carry an empty
+    "!! EXTRACT ALL FILES TO GAME FOLDER !!" marker and an empty plugins/
+    folder, and a bundle that listed everything installed the marker into every
+    game and treated the game's plugins/ (where the in-game plugin lives) as an
+    install folder of its own.
+    """
+    files = sorted(p.name for p in root.iterdir()
+                   if p.is_file() and p.suffix.lower() == ".dll" and p.name not in NOT_PAYLOAD)
+    dirs = sorted(p.name for p in root.iterdir()
+                  if p.is_dir() and p.name not in NOT_PAYLOAD_DIRS
+                  and any(child.is_file() for child in p.rglob("*")))
+    return files, dirs
+
+
 def nightly_date(archive_name, tag=None, built=None):
     """The nightly's date (YYYYMMDD), from the best evidence available.
 
@@ -255,8 +277,7 @@ def main():
         # was built from; fetch it now so the bundle and the ASI never disagree.
         import sync_optiscaler_headers
         sync_optiscaler_headers.sync((root / "OptiScaler.dll").read_bytes())
-        files = sorted(p.name for p in root.iterdir() if p.is_file() and p.name not in NOT_PAYLOAD)
-        dirs = sorted(p.name for p in root.iterdir() if p.is_dir())
+        files, dirs = payload_lists(root)
         ffx = root / FFX_UPSCALER_DLL
         if not ffx.is_file():
             sys.exit(f"{FFX_UPSCALER_DLL} missing -- FSR 4 restore needs it")

@@ -976,6 +976,51 @@ def restore_previous(target_dir, logger=None):
             "restored": record.get("files") or []}
 
 
+def _merge_stashed_plugins(target, own, journal=None, logger=None):
+    """Put back the player's files from a plugins/ an earlier bundle set aside.
+
+    The bundles of mid-November 2026 nightlies listed the archive's empty
+    plugins/ folder as payload. Installing one then treated the game's plugins/
+    as the game's own: it copied it, with this plugin's ASIs and any the player
+    had added, into the backup folder, and uninstall deleted plugins/ (with
+    anything added since) before moving that old copy back. The player's files go back into plugins/ (never over
+    one that is there now); `own` names this plugin's files, which an install
+    writes again and an uninstall removes.
+    """
+    target = Path(target)
+    stashed = backup_dir(target) / live.PLUGIN_SUBDIR
+    if not stashed.is_dir():
+        return []
+    folder = target / live.PLUGIN_SUBDIR
+    put_back = []
+    for item in sorted(stashed.iterdir()):
+        destination = folder / item.name
+        if item.name in own or destination.exists():
+            continue
+        if journal is not None:
+            journal.ensure_dir(folder)
+            (journal.write_tree if item.is_dir() else journal.write_file)(item, destination)
+        else:
+            folder.mkdir(exist_ok=True)
+            (shutil.copytree if item.is_dir() else shutil.copy2)(item, destination)
+        put_back.append(item.name)
+    if journal is not None:
+        journal.remove(stashed)
+    else:
+        shutil.rmtree(stashed, ignore_errors=True)
+    if logger:
+        logger.info("put back %d file(s) of the player's plugins/ an earlier install had set aside",
+                    len(put_back))
+    return put_back
+
+
+def _own_plugin_files(manifest):
+    """This plugin's files in plugins/: the in-game plugin, and OptiPatcher when it put it there."""
+    prefix = f"{live.PLUGIN_SUBDIR}/"
+    return {live.ASI_NAME} | {name[len(prefix):] for name in (manifest.get("files") or [])
+                              if name.startswith(prefix)}
+
+
 def _install(target, payload, filename, preserve_ini, logger, live_asi, optipatcher,
              reframework_files, reframework_revision, journal):
     """install()'s steps. Every write goes through `journal`, so a failure anywhere
@@ -1029,6 +1074,10 @@ def _install(target, payload, filename, preserve_ini, logger, live_asi, optipatc
             created.append(dest_name)
 
     place(source_dll, filename)
+
+    if live.PLUGIN_SUBDIR in old_dirs or live.PLUGIN_SUBDIR in backups:
+        backups.pop(live.PLUGIN_SUBDIR, None)
+        _merge_stashed_plugins(target, _own_plugin_files(old_manifest), journal, logger)
 
     # Files and folders an earlier bundle installed that this one no longer
     # ships (OptiScaler 10 folded fakenvapi in and replaced amd_fidelityfx_dx12/
@@ -1196,10 +1245,16 @@ def uninstall(target_dir, remove_ini=True, logger=None):
                 path.unlink()
                 removed.append(name)
         for name in manifest.get("dirs", []):
+            # plugins/ holds the player's ASIs too: only this plugin's own go
+            # (live.remove_asi, below), never the folder (an earlier bundle
+            # recorded it as an install folder).
+            if name == live.PLUGIN_SUBDIR:
+                continue
             path = target / name
             if path.is_dir():
                 shutil.rmtree(path, ignore_errors=True)
                 removed.append(name + "/")
+        restored.extend(_merge_stashed_plugins(target, _own_plugin_files(manifest), None, logger))
 
     for name in RUNTIME_ARTIFACTS + ["remove_optiscaler.sh"]:
         path = target / name

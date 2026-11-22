@@ -140,6 +140,27 @@ class DownloadTests(unittest.TestCase):
             self.assertFalse(transient(error), error)
 
 
+class PayloadListTests(unittest.TestCase):
+    """What a bundle installs: OptiScaler's DLLs and the folders holding files."""
+
+    def test_markers_empty_folders_and_plugins_are_not_payload(self):
+        with tempfile.TemporaryDirectory() as scratch:
+            root = Path(scratch)
+            for name in ("OptiScaler.dll", "libxess.dll", "setup_linux.sh",
+                         "!! EXTRACT ALL FILES TO GAME FOLDER !!", "Streamlined_fetcher_windows.bat"):
+                (root / name).write_bytes(b"x")
+            (root / "OptiScaler.ini").write_text("[Menu]\n")
+            (root / "D3D12_OptiScaler").mkdir()
+            (root / "D3D12_OptiScaler" / "D3D12Core.dll").write_bytes(b"x")
+            (root / "Licenses").mkdir()
+            (root / "Licenses" / "XeSS_LICENSE.txt").write_bytes(b"x")
+            (root / "plugins").mkdir()
+            (root / "empty").mkdir()
+            files, dirs = bundle_nightly.payload_lists(root)
+        self.assertEqual(files, ["libxess.dll"])
+        self.assertEqual(dirs, ["D3D12_OptiScaler", "Licenses"])
+
+
 class HeaderSyncTests(unittest.TestCase):
     """Syncing OptiScaler's headers at the dll's commit, and reading their enum tokens.
 

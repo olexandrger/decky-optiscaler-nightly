@@ -161,6 +161,7 @@ RETIRED_PAYLOAD_DIRS = [
 
 # Shipped by an earlier bundle, not by this one. An install that owns them removes them on upgrade.
 RETIRED_PAYLOAD_FILES = [
+    "!! EXTRACT ALL FILES TO GAME FOLDER !!",
     "amd_fidelityfx_dx12.dll",
     "amd_fidelityfx_vk.dll",
     "fakenvapi.dll",

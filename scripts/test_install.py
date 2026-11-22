@@ -438,6 +438,98 @@ class PreviousInstallTests(unittest.TestCase):
         self.assertIn("nightly", installer.PREVIOUS_DIR)
 
 
+class PlaceholderBundleTests(unittest.TestCase):
+    """The bundles of mid-November 2026 nightlies (up to v0.0.7-nightly.20261122.38).
+
+    They listed the archive's empty "!! EXTRACT ALL FILES TO GAME FOLDER !!"
+    marker as a payload file and its empty plugins/ folder as a payload folder.
+    Installing one wrote the marker into the game and copied the game's
+    plugins/ (this plugin's ASI and the player's own) into the backup folder as
+    the game's; uninstall deleted plugins/, with anything added since, before
+    moving that old copy back.
+    """
+
+    MARKER = "!! EXTRACT ALL FILES TO GAME FOLDER !!"
+
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
+        self.root = Path(self.temp.name)
+        self.payload = make_payload(self.root)
+        self.asi = self.root / "live.asi"
+        self.asi.write_bytes(b"MZ live")
+        self.game = self.root / "game"
+        self.game.mkdir()
+        (self.game / "Game.exe").write_bytes(b"MZ game")
+        (self.game / "plugins").mkdir()
+        (self.game / "plugins" / "players_mod.asi").write_bytes(b"the player's own ASI")
+        self.original = snapshot(self.game)
+
+    def install(self, **kwargs):
+        return installer.install(self.game, self.payload, "dxgi.dll", logger=LOG,
+                                 live_asi=self.asi, **kwargs)
+
+    def install_38(self):
+        """An install as the .38 bundle made it, over an earlier install of ours."""
+        self.install()
+        (self.payload / self.MARKER).write_bytes(b"")
+        (self.payload / "plugins").mkdir()
+        with mock.patch.object(installer, "PAYLOAD_FILES", [*PAYLOAD_FILES, self.MARKER]), \
+                mock.patch.object(installer, "PAYLOAD_DIRS", [*PAYLOAD_DIRS, "plugins"]):
+            self.install()
+        (self.payload / self.MARKER).unlink()
+        (self.payload / "plugins").rmdir()
+
+    def test_the_38_state_is_what_the_reports_describe(self):
+        self.install_38()
+        manifest = installer.read_manifest(self.game)
+        self.assertIn(self.MARKER, manifest["files"])
+        self.assertIn("plugins", manifest["dirs"])
+        self.assertIn("plugins", manifest["backups"])
+        # The install merged into plugins/, so the player's ASI still loads,
+        # but a copy of the folder sits in the backup as if it were the game's.
+        self.assertTrue((self.game / "plugins" / "players_mod.asi").exists())
+        self.assertTrue((installer.backup_dir(self.game) / "plugins" / "players_mod.asi").exists())
+
+    def test_the_next_install_puts_the_players_plugins_back_and_drops_the_marker(self):
+        self.install_38()
+        self.install()
+        manifest = installer.read_manifest(self.game)
+        self.assertEqual((self.game / "plugins" / "players_mod.asi").read_bytes(), b"the player's own ASI")
+        self.assertTrue((self.game / "plugins" / "decky_optiscaler_live.asi").is_file())
+        self.assertFalse((self.game / self.MARKER).exists())
+        self.assertNotIn(self.MARKER, manifest["files"])
+        self.assertNotIn("plugins", manifest["dirs"])
+        self.assertNotIn("plugins", manifest["backups"])
+        self.assertFalse((installer.backup_dir(self.game) / "plugins").exists())
+        installer.uninstall(self.game, logger=LOG)
+        self.assertEqual(snapshot(self.game), self.original)
+
+    def test_a_failure_at_any_write_of_that_repair_leaves_the_folder_as_it_was(self):
+        self.install_38()
+        before = snapshot(self.game)
+        clone = self.root / "count"
+        shutil.copytree(self.game, clone)
+        with FailingCopies(fail_at=10**9) as counter:
+            installer.install(clone, self.payload, "dxgi.dll", logger=LOG, live_asi=self.asi)
+        shutil.rmtree(clone)
+        for fail_at in range(1, counter.count + 1):
+            with self.subTest(fail_at=fail_at):
+                with FailingCopies(fail_at), self.assertRaises(OSError):
+                    self.install()
+                self.assertEqual(snapshot(self.game), before)
+
+    def test_uninstalling_a_38_install_keeps_what_the_player_added_since(self):
+        self.install_38()
+        (self.game / "plugins" / "added_later.asi").write_bytes(b"added while installed")
+        installer.uninstall(self.game, logger=LOG)
+        self.assertEqual((self.game / "plugins" / "added_later.asi").read_bytes(), b"added while installed")
+        self.assertEqual((self.game / "plugins" / "players_mod.asi").read_bytes(), b"the player's own ASI")
+        self.assertFalse((self.game / "plugins" / "decky_optiscaler_live.asi").exists())
+        self.assertFalse((self.game / self.MARKER).exists())
+        self.assertFalse(installer.backup_dir(self.game).exists())
+
+
 class ExclusiveWithOtherInstallsTests(unittest.TestCase):
     """Decky OptiScaler Nightly and upstream's Decky OptiScaler never share a game.
 
