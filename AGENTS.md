@@ -308,7 +308,7 @@ scripts, Streamline fetcher, "extract here" marker and empty folders left out),
 repacks the archive into `bin/`, and rewrites every pinned value: version,
 archive name and SHA-256, payload file and folder lists as paths in the game
 folder (retiring what a previous bundle shipped, or shipped elsewhere), the bundled FidelityFX
-upscaler hash, and the plugin version (`<base>-nightly.<date>`); and it syncs
+upscaler hash, and the plugin version (the nightly's date, `2026.11.23`); and it syncs
 `asi/optiscaler_ref/` (`Config.{h,cpp}`, `OptiTypes.{h,cpp}`, `State.h`) to the
 commit the dll was built from. Do not
 hand-edit those values.
@@ -416,7 +416,7 @@ happening. It messages only when a human is needed.
 `nightly.yml` runs only when started: by the Claude task (above) or by hand
 from the Actions tab. It bundles the newest nightly, or the one in its
 `nightly` input (`nightly-YYYYMMDD`, `bundle_nightly.py --tag`), and publishes
-when that nightly has no release yet (no `v*-nightly.<its date>*` tag), when
+when that nightly has no release yet (no `v<its date>-*` tag), when
 `main` has commits since the last release, or with "Release the current build".
 A run with nothing to release downloads nothing; a failed run creates no tag.
 A run that finds `main` moved on before it releases (a push mid-run) does not
@@ -426,10 +426,13 @@ would refuse the tag anyway when the push changed a workflow file, since that
 needs the `workflows` permission `GITHUB_TOKEN` cannot have.
 After each publish, releases beyond the newest 10 (`KEEP_RELEASES`) are deleted
 with their tags; upstream's own `v0.0.x` tags are not touched.
-Each published build is its own full release (not a prerelease) tagged
-`v<base>-nightly.<date>.<run number>` (the run number makes fork-only changes on
-the same nightly a new version, which the updater needs), with the asset
-`decky-optiscaler-nightly.zip`,
+Each published build is its own full release (not a prerelease), versioned by
+the nightly it bundles and the run that built it: `<YYYY.M.D of the nightly>-<run
+number>`, tagged `v2026.11.23-42` (`bundle_nightly.plugin_version` writes the
+date into `package.json`, the workflow appends the run number, which makes a
+fork-only change on the same nightly a new version, which the updater needs;
+releases before were `v0.0.7-nightly.<date>.<run>`, upstream's base, and the
+release checks still count them). The asset is `decky-optiscaler-nightly.zip`,
 so the Deck installs from a stable URL:
 
 ```

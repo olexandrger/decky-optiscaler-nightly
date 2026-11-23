@@ -1,6 +1,6 @@
 {
   "name": "decky-optiscaler",
-  "version": "0.0.7-nightly.20261122",
+  "version": "2026.11.22",
   "description": "EXPERIMENTAL fork for tinkering, not for real use: OptiScaler nightlies in Decky OptiScaler",
   "type": "module",
   "scripts": {

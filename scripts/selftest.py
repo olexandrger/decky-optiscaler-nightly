@@ -1700,6 +1700,11 @@ def check_version_pin():
     check("the shipped archive matches the pinned version",
           constants.OPTISCALER_VERSION in constants.PAYLOAD_ARCHIVE,
           constants.PAYLOAD_ARCHIVE)
+    import bundle_nightly
+    plugin = json.loads((ROOT / "package.json").read_text())["version"]
+    check("the plugin's version is the bundled nightly's date (the release appends its run)",
+          plugin == bundle_nightly.plugin_version(constants.OPTISCALER_VERSION),
+          (plugin, constants.OPTISCALER_VERSION))
 
     # And the archive is the one the hash names. This pins more than OptiScaler
     # itself: the FidelityFX libraries inside it are what decide the FSR

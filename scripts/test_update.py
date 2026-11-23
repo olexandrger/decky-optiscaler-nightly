@@ -16,10 +16,10 @@ from optiscaler import update  # noqa: E402
 
 SHA = "a" * 64
 ZIP_URL = ("https://github.com/olexandrger/decky-optiscaler-nightly/releases/download/"
-           "v0.0.7-nightly.20261031/decky-optiscaler-nightly.zip")
+           "v2026.10.31-12/decky-optiscaler-nightly.zip")
 
 
-def release(tag="v0.0.7-nightly.20261031", digest=f"sha256:{SHA}", sidecar=None, asset=True):
+def release(tag="v2026.10.31-12", digest=f"sha256:{SHA}", sidecar=None, asset=True):
     assets = []
     if asset:
         entry = {"name": update.UPDATE_ASSET, "browser_download_url": ZIP_URL}
@@ -36,7 +36,7 @@ def release(tag="v0.0.7-nightly.20261031", digest=f"sha256:{SHA}", sidecar=None,
 class LatestReleaseTests(unittest.TestCase):
     def test_the_release_asset_and_githubs_digest_are_used(self):
         got = update.latest_release(fetch_json=lambda url: release(), fetch_text=None)
-        self.assertEqual(got["version"], "0.0.7-nightly.20261031")
+        self.assertEqual(got["version"], "2026.10.31-12")
         self.assertEqual(got["url"], ZIP_URL)
         self.assertEqual(got["sha256"], SHA)
 
@@ -68,7 +68,7 @@ class CheckerTests(unittest.TestCase):
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
         self.plugin = Path(self.temp.name)
-        self.set_version("0.0.7-nightly.20261030")
+        self.set_version("2026.10.30-11")
         self.calls = 0
         self.now = 1000.0
 
@@ -77,7 +77,7 @@ class CheckerTests(unittest.TestCase):
 
     def fetch(self):
         self.calls += 1
-        return {"version": "0.0.7-nightly.20261031", "url": ZIP_URL, "sha256": SHA, "page": "p"}
+        return {"version": "2026.10.31-12", "url": ZIP_URL, "sha256": SHA, "page": "p"}
 
     def checker(self):
         return update.UpdateChecker(self.plugin, fetch=self.fetch, clock=lambda: self.now)
@@ -86,11 +86,11 @@ class CheckerTests(unittest.TestCase):
         result = self.checker().check()
         self.assertTrue(result["available"])
         self.assertEqual((result["current"], result["latest"]),
-                         ("0.0.7-nightly.20261030", "0.0.7-nightly.20261031"))
+                         ("2026.10.30-11", "2026.10.31-12"))
         self.assertEqual((result["url"], result["sha256"]), (ZIP_URL, SHA))
 
     def test_the_installed_release_is_not(self):
-        self.set_version("0.0.7-nightly.20261031")
+        self.set_version("2026.10.31-12")
         self.assertFalse(self.checker().check()["available"])
 
     def test_the_answer_is_reused_until_it_is_old_or_forced(self):
@@ -105,7 +105,7 @@ class CheckerTests(unittest.TestCase):
         self.assertEqual(self.calls, 3)
 
     def test_the_version_decky_reads_is_the_one_compared(self):
-        self.assertEqual(update.installed_version(self.plugin), "0.0.7-nightly.20261030")
+        self.assertEqual(update.installed_version(self.plugin), "2026.10.30-11")
         (self.plugin / "package.json").unlink()
         self.assertEqual(update.installed_version(self.plugin), "")
 

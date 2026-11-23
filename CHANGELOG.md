@@ -8,6 +8,10 @@ Newest first. Each release ships `Decky OptiScaler.zip` for Decky Loader's
 
 ### Nightly fork
 
+- Versions are the bundled nightly's date and the release run, `2026.11.23-42`,
+  instead of upstream's `0.0.7` with the date appended
+  (`0.0.7-nightly.20261122.41`), which no longer said anything about this fork.
+  The in-plugin updater offers the first such release like any other.
 - The daily release also reviews what each OptiScaler nightly adds: the release
   run lists new ini keys, Config members, menu writes, archive contents,
   OptiScaler's commits and changes to its v10 changelog, and the daily task

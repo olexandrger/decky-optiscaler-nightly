@@ -68,6 +68,13 @@ class NightlyDateTests(unittest.TestCase):
     def test_a_commit_hash_is_not_a_date(self):
         self.assertIsNone(bundle_nightly.nightly_date("OptiScaler_v10.0.0-pre1_03b37db7.7z"))
 
+    def test_the_plugin_version_is_the_nightlys_date(self):
+        self.assertEqual(bundle_nightly.plugin_version("10.0.0-pre1-20261123"), "2026.11.23")
+        # Plain numbers: semver allows no leading zeros.
+        self.assertEqual(bundle_nightly.plugin_version("10.0.0-pre1-20270105"), "2027.1.5")
+        with self.assertRaises(SystemExit):
+            bundle_nightly.plugin_version("10.0.0-pre1")
+
 
 class DownloadTests(unittest.TestCase):
     def setUp(self):

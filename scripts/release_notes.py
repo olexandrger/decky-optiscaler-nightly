@@ -10,7 +10,8 @@ build that is attached, not the one the workflow meant to make:
 - the OptiScaler nightly in bin/ (version, tag, link) and the FidelityFX
   upscaler inside it, with the archive's and the zip's SHA-256;
 - this fork's commits since its previous build. Builds are found by tag: each
-  release is tagged v<plugin version>-nightly.<date>;
+  release is tagged v<nightly date>-<run> (v2026.11.23-42), before that
+  v0.0.7-nightly.<date>.<run>;
 - the test counts the release was gated on, when their logs are given.
 
 OptiScaler's own changes are not repeated here: the table links the nightly's
@@ -67,7 +68,8 @@ def nightly_tag():
 
 def previous_release_tag(current):
     """This fork's last nightly release tag before `current`, or None."""
-    tags = [t for t in git("tag", "--list", "v*-nightly.*", "--sort=-creatordate").splitlines() if t]
+    tags = [t for t in git("tag", "--list", "v[0-9][0-9][0-9][0-9].*-*", "v*-nightly.*",
+                           "--sort=-creatordate").splitlines() if t]
     earlier = [t for t in tags if t != current]
     return earlier[0] if earlier else None
 

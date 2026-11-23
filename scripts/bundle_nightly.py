@@ -250,6 +250,20 @@ def nightly_date(archive_name, tag=None, built=None):
     return None
 
 
+def plugin_version(optiscaler_version):
+    """The plugin's own version: the date of the nightly it bundles, YYYY.M.D.
+
+    Every release is that nightly plus this fork's code, so its date is the
+    version; the release workflow appends its run number (2026.11.23-42), which
+    makes a fork-only change on the same nightly a new version for the
+    updater. Plain numbers, so it stays a valid semver (no leading zeros).
+    """
+    match = re.search(r"(20\d{2})(\d{2})(\d{2})$", optiscaler_version)
+    if not match:
+        sys.exit(f"no nightly date at the end of {optiscaler_version!r}: keep the archive's dated name")
+    return ".".join(str(int(part)) for part in match.groups())
+
+
 def version_label(dll, archive_name, tag=None):
     major, minor, hotfix, build = pe_file_version(dll) or (0, 0, 0, 0)
     label = f"{major}.{minor}.{hotfix}-pre{build}"
@@ -357,13 +371,9 @@ def main():
         source = set_value(source, "FSR4_BUNDLED_FILE_BYTES", str(ffx.stat().st_size))
         CONSTANTS.write_text(source, encoding="utf-8")
 
-        # The plugin's own version: the upstream base plus the nightly date, so
-        # Decky shows which OptiScaler build is inside.
         package = PACKAGE_JSON.read_text(encoding="utf-8")
-        base = re.search(r'"version"\s*:\s*"([0-9.]+)', package).group(1)
-        stamp = re.search(r"(\d{8})$", version)
-        plugin_version = f"{base}-nightly.{stamp.group(1) if stamp else version}"
-        package = re.sub(r'("version"\s*:\s*")[^"]+(")', rf"\g<1>{plugin_version}\g<2>", package, count=1)
+        package = re.sub(r'("version"\s*:\s*")[^"]+(")', rf"\g<1>{plugin_version(version)}\g<2>", package,
+                         count=1)
         PACKAGE_JSON.write_text(package, encoding="utf-8")
 
         label = FSR4BUILD.read_text(encoding="utf-8")

@@ -848,19 +848,19 @@ async function mount(kind: "quick" | "page") {
 
   console.log("=== updating the plugin through Decky's installer ===");
   // No update: nothing is shown.
-  fixtures.check_update = { ok: true, current: "0.0.7-nightly.20261031",
-    latest: "0.0.7-nightly.20261031", available: false };
+  fixtures.check_update = { ok: true, current: "2026.10.31-12",
+    latest: "2026.10.31-12", available: false };
   panel = await open();
   check("no update, no update button", (panel.node.textContent ?? "").includes("Update to"), false);
   await act(async () => panel.root.unmount());
   // A failed check is silent too: it is not the user's problem.
-  fixtures.check_update = { ok: false, error: "offline", current: "0.0.7-nightly.20261030" };
+  fixtures.check_update = { ok: false, error: "offline", current: "2026.10.30-11" };
   panel = await open();
   check("a failed check shows nothing", (panel.node.textContent ?? "").includes("Update to"), false);
   await act(async () => panel.root.unmount());
   // An update: the button, and the exact call to Decky's own installer.
-  fixtures.check_update = { ok: true, current: "0.0.7-nightly.20261030",
-    latest: "0.0.7-nightly.20261031", available: true,
+  fixtures.check_update = { ok: true, current: "2026.10.30-11",
+    latest: "2026.10.31-12", available: true,
     url: "https://github.com/x/releases/download/v1/decky-optiscaler-nightly.zip",
     sha256: "a".repeat(64), page: "https://github.com/x/releases/tag/v1" };
   const deckyCalls: any[][] = [];
@@ -869,7 +869,7 @@ async function mount(kind: "quick" | "page") {
   };
   panel = await open();
   const updateButton = all(panel.node, '[data-mock="ButtonItem"]')
-    .find((b) => (b.textContent ?? "").includes("Update to 0.0.7-nightly.20261031")) as HTMLElement | undefined;
+    .find((b) => (b.textContent ?? "").includes("Update to 2026.10.31-12")) as HTMLElement | undefined;
   check("an update shows the version it updates to", Boolean(updateButton), true);
   await act(async () => { updateButton?.click(); });
   await settle(20);
