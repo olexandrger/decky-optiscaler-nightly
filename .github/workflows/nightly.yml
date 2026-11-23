@@ -121,6 +121,31 @@ jobs:
           npm pkg set version="$version"
           echo "version=$version" >> "$GITHUB_OUTPUT"
 
+      # What OptiScaler's nightlies added since the last one reviewed
+      # (docs/optiscaler-review.md, AGENTS.md "Following OptiScaler"): new ini
+      # keys, Config members, menu writes, archive contents, commits and the v10
+      # changelog. The daily task reads it from this log: GitHub's API for
+      # OptiScaler's commits and changelog answers here, not in its sessions.
+      # Also on runs with nothing to release, and it never fails the run.
+      - name: What OptiScaler changed
+        if: steps.bundle.outcome == 'success'
+        continue-on-error: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          bundled=""
+          if [ "${{ steps.bundle.outputs.release }}" = "true" ]; then bundled="--bundled"; fi
+          # The changelog is OptiScaler's text: keep the runner from reading a
+          # line of it as a workflow command.
+          echo "::stop-commands::optiscaler-review"
+          python3 scripts/optiscaler_review.py delta --nightly "${{ steps.bundle.outputs.nightly }}" $bundled \
+            | tee optiscaler-delta.txt
+          echo "::optiscaler-review::"
+          {
+            echo "<details><summary>What OptiScaler changed since the last review</summary>"
+            echo; echo '```'; cat optiscaler-delta.txt; echo '```'; echo "</details>"
+          } >> "$GITHUB_STEP_SUMMARY"
+
       - name: Typecheck, build and test
         if: steps.bundle.outputs.release == 'true'
         run: |

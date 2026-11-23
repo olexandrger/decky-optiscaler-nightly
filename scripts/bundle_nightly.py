@@ -60,6 +60,14 @@ LICENSES = "Licenses"
 
 # The two files the installer places itself, at the top of the game folder.
 TOP_LEVEL = {"OptiScaler.dll", "OptiScaler.ini"}
+# The nightlies' "!! EXTRACT ALL FILES TO GAME FOLDER !!": an empty file whose
+# name is the instruction.
+MARKER_RE = re.compile(r"^!!.*!!$")
+# What arrange met that it neither installs nor knows to leave out: a nightly
+# shipping something new. The release run's OptiScaler review lists it
+# (scripts/optiscaler_review.py, AGENTS.md "Following OptiScaler").
+# In tmp/ (git-ignored, not packaged: bin/ holds only the archive and the ASIs).
+ARCHIVE_REPORT = ROOT / "tmp" / "archive-report.json"
 # Files that never go in a game folder, wherever the archive has them.
 NOT_PAYLOAD = {
     "setup_linux.sh",
@@ -160,15 +168,18 @@ def download_latest(dest_dir, opener=urllib.request.urlopen, sleep=time.sleep, t
     return target
 
 
-def arrange(extracted):
+def arrange(extracted, unclassified=None):
     """The bundle root, laid out as OptiScaler 10 ships it, minus what never goes in a game.
 
     OptiScaler.dll and OptiScaler.ini at the top, the rest in OptiScaler/. The
     licences move in there too, so the game folder gets nothing of OptiScaler's
-    but its dll and ini. Anything else at the top (the setup scripts, the
-    empty "!! EXTRACT ALL FILES TO GAME FOLDER !!" marker) and empty folders
-    (OptiScaler/plugins) are dropped.
+    but its dll and ini. The setup scripts, the empty "!! EXTRACT ALL FILES TO
+    GAME FOLDER !!" marker and empty folders (OptiScaler/plugins) are dropped.
+    Anything else is new to this script: it goes in `unclassified` (archive
+    paths) and is not installed (other files at the top are dropped, folders
+    and non-DLL files in OptiScaler/ stay in the repack).
     """
+    unclassified = [] if unclassified is None else unclassified
     root = next((p.parent for p in extracted.rglob("OptiScaler.dll")), None)
     if root is None:
         sys.exit("no OptiScaler.dll in the archive")
@@ -180,12 +191,18 @@ def arrange(extracted):
         if (deps / LICENSES).exists():
             sys.exit(f"{LICENSES}/ exists both at the top level and in {OPTI_SUBDIR}/")
         shutil.move(str(licenses), str(deps / LICENSES))
-    for item in list(root.iterdir()):
+    for item in sorted(root.iterdir()):
         if item.is_file() and item.name not in TOP_LEVEL:
+            if item.name not in NOT_PAYLOAD and not MARKER_RE.match(item.name):
+                unclassified.append(item.name)
             item.unlink()
-    for path in list(deps.rglob("*")):
+        elif item.is_dir() and item != deps:
+            unclassified.append(item.name + "/")
+    for path in sorted(deps.rglob("*")):
         if path.is_file() and path.name in NOT_PAYLOAD:
             path.unlink()
+        elif path.is_file() and path.suffix.lower() != ".dll" and LICENSES not in path.relative_to(deps).parts[:1]:
+            unclassified.append(path.relative_to(root).as_posix())
     for path in sorted(deps.rglob("*"), key=lambda p: len(p.parts), reverse=True):
         if path.is_dir() and not any(path.iterdir()):
             path.rmdir()
@@ -289,7 +306,8 @@ def main():
         archive = download_latest(scratch, tag=args.tag) if args.latest else Path(args.archive).resolve()
         extracted = scratch / "x"
         run([seven, "x", "-y", f"-o{extracted}", str(archive)])
-        root = arrange(extracted)
+        unclassified = []
+        root = arrange(extracted, unclassified)
 
         version = version_label(root / "OptiScaler.dll", archive.name, args.tag)
         # The live-control ASI's Config layout comes from the source this dll
@@ -359,6 +377,11 @@ def main():
     if retired_files or retired_dirs:
         print(f"  retired:       {', '.join(retired_files + [d + '/' for d in retired_dirs])}")
     print(f"  bundled FSR upscaler: {ffx_version}")
+    if unclassified:
+        print(f"  not installed, new to this script: {', '.join(unclassified)}")
+    ARCHIVE_REPORT.parent.mkdir(exist_ok=True)
+    ARCHIVE_REPORT.write_text(json.dumps({"archive": archive.name, "unclassified": unclassified}, indent=2),
+                              encoding="utf-8")
     print("next: python3 scripts/generate_schema.py && pnpm build && python3 scripts/package.py")
 
 

@@ -163,9 +163,14 @@ class PayloadListTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as scratch:
             extracted = Path(scratch)
             self.nightly(extracted)
-            root = bundle_nightly.arrange(extracted)
+            (extracted / "WhatsNew.txt").write_bytes(b"x")
+            unclassified = []
+            root = bundle_nightly.arrange(extracted, unclassified)
             left = sorted(p.relative_to(root).as_posix() for p in root.rglob("*"))
             files, dirs = bundle_nightly.payload_lists(root)
+        # What it neither installs nor knows to leave out is reported (the
+        # release run's OptiScaler review lists it), not silently dropped.
+        self.assertEqual(unclassified, ["WhatsNew.txt", "OptiScaler/notes.txt"])
         self.assertEqual(left, ["OptiScaler", "OptiScaler.dll", "OptiScaler.ini", "OptiScaler/D3D12_OptiScaler",
                                 "OptiScaler/D3D12_OptiScaler/D3D12Core.dll", "OptiScaler/Licenses",
                                 "OptiScaler/Licenses/XeSS_LICENSE.txt", "OptiScaler/libxess.dll",

@@ -3286,6 +3286,77 @@ def check_upstream_review_file():
     check("every closed item says how it was closed", not unexplained, unexplained)
 
 
+def check_optiscaler_review():
+    """docs/optiscaler-review.md stays readable and small, and a release log's delta marks it.
+
+    The daily task reviews what each OptiScaler nightly adds from the delta the
+    release run prints (scripts/optiscaler_review.py). The record holds only
+    open items and rules, under fixed limits, so it cannot grow with time.
+    """
+    import importlib.util
+    import tempfile
+    from unittest import mock
+    spec = importlib.util.spec_from_file_location("optiscaler_review", ROOT / "scripts" / "optiscaler_review.py")
+    review = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(review)
+    print("\nOptiScaler review record")
+    text = review.REVIEW.read_text(encoding="utf-8")
+    check("the record parses and keeps to its limits", not review.problems(text), review.problems(text))
+    marker, nightly, _, rules = review.read(text)
+    check("it names the last OptiScaler commit and nightly reviewed, and its rules",
+          re.fullmatch(r"[0-9a-f]{7,40}", marker) and re.fullmatch(r"nightly-\d{8}", nightly) and rules,
+          (marker, nightly, len(rules)))
+    over = text.replace("## Rules", "".join(f"- [ ] item-{n} (abcdef12): something\n" for n in range(13))
+                        + "- [x] done-1 (abcdef12): kept\n\n## Rules")
+    found = review.problems(over)
+    check("more open items than its limit, or a done item kept, is a problem",
+          any("open items" in p for p in found) and any("done item" in p for p in found), found)
+    check("so is an item without its OptiScaler commit",
+          review.problems(text.replace("## Rules", "- [ ] no-commit: x\n\n## Rules")) != [])
+
+    body = "# v10\n\n- Last updated 9 Sept 2026\n- a feature\n"
+    delta_lines = [review.DELTA_BEGIN, f"from: {marker} ({nightly})", "to: 1234abcd (nightly-20261124)",
+                   "", "## OptiScaler.ini", "  nothing", review.CHANGELOG_BEGIN, *body.rstrip("\n").split("\n"),
+                   review.CHANGELOG_END, review.DELTA_END]
+    # As GitHub's job log has it: the job and step (from gh run view), then a timestamp.
+    log = "\n".join(f"bundle\tWhat changed\t2026-11-24T05:30:00.1234567Z {line}".rstrip() for line in delta_lines)
+    check("the delta is read back from a release run's log",
+          review.from_log(log) == (marker, "1234abcd", "nightly-20261124", body), review.from_log(log))
+    with tempfile.TemporaryDirectory() as scratch:
+        record, snapshot, saved = Path(scratch) / "review.md", Path(scratch) / "changelog.md", Path(scratch) / "run.log"
+        record.write_text(text, encoding="utf-8")
+        saved.write_text(log, encoding="utf-8")
+        with mock.patch.object(review, "REVIEW", record), mock.patch.object(review, "CHANGELOG", snapshot):
+            review.mark(saved)
+            check("mark moves the marker to the delta's commit and stores the changelog it printed",
+                  review.read()[:2] == ("1234abcd", "nightly-20261124") and review.stored_changelog() == body)
+            try:
+                review.mark(saved)
+                stale = False
+            except SystemExit:
+                stale = True
+            check("and refuses a delta that does not start at the marker (an older run's)", stale)
+            with mock.patch.object(review, "api", return_value={"body": body}):
+                same = review.changelog("token")
+            with mock.patch.object(review, "api", return_value={"body": body + "- another feature\n"}):
+                changed = review.changelog("token")
+            check("the changelog is compared with the one last reviewed",
+                  same == (["unchanged"], None) and "+- another feature" in changed[0], (same, changed))
+            snapshot.unlink()
+            with mock.patch.object(review, "api", return_value={"body": body}):
+                baseline = review.changelog("token")
+            check("the one read by hand is a baseline, not news", baseline[0][0].startswith("baseline"), baseline)
+
+    old_ini = "[CAS]\n; 0 or 1 - Default (auto) is 0\nModel=auto\n"
+    new_ini = old_ini + "; true or false - Default (auto) is false\nFresh=auto\n"
+    check("a key a nightly adds to the ini is listed",
+          review.ini_changes(old_ini, new_ini) == ["added [CAS] Fresh: bool, default false"],
+          review.ini_changes(old_ini, new_ini))
+    check("and a Config member its menu starts writing",
+          review.menu_changes("config->A = 1;", "config->A = 1;\nconfig->B.reset();", {"B"})
+          == ["now writes B (line 2) -- live in the panel"])
+
+
 def main():
     logging.basicConfig(level=logging.ERROR)
     asyncio.run(run())
@@ -3296,6 +3367,7 @@ def main():
     check_running_config()
     check_frontend_types_match_backend()
     check_upstream_review_file()
+    check_optiscaler_review()
     check_live_fields_match_optiscalers_menu()
     check_live_keys()
     check_remembered_choices()

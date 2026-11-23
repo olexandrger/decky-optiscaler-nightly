@@ -28,6 +28,8 @@ What the fork adds on top of upstream:
   OptiScaler than the bundled one;
 - fixes and ideas ported from upstream one commit at a time (never rebased),
   tracked in `docs/upstream-review.md`;
+- what each OptiScaler nightly adds is reviewed daily, tracked in
+  `docs/optiscaler-review.md`;
 - `.github/workflows/nightly.yml` builds, tests and releases, started daily by a
   Claude scheduled task that also fixes what a new nightly breaks; the 10 newest
   releases are kept.
@@ -196,6 +198,44 @@ the merge base by hand, then set the marker again.
 Small steps: a port is one queue item, one commit, its own test. The daily task
 (below) reviews new upstream commits and ports at most one item a day.
 
+## Following OptiScaler (what a nightly adds)
+
+A nightly can add what the plugin should follow or use without failing a
+single check: OptiScaler 10's own `OptiScaler/` folder, Dynamic MFG, OptiSharpen
+and XeFG's real multiplier limit all arrived that way and were found only by
+reading its changelog by hand. So each release run also prints what changed in
+OptiScaler since the last review, and the daily task reviews it.
+
+- `scripts/optiscaler_review.py delta` (nightly.yml, step "What OptiScaler
+  changed"; in the log between `=== OptiScaler review delta ===` and its end
+  line, and in the run summary) lists, from the marker commit to the nightly's:
+  ini keys added, removed or changed (`OptiScaler.ini` at both commits), Config
+  members added or removed (`Config.h`), Config members OptiScaler's menu starts
+  or stops writing (`menu_common.cpp`, marking the panel's live ones), what the
+  archive holds that `bundle_nightly.arrange` does not know (`tmp/archive-report.json`),
+  OptiScaler's commits with the areas of this plugin they touch, and a diff of
+  its v10 changelog (the `nightly` release of optiscaler/OptiScaler). It is
+  mechanical, so nothing in that scope slips past. Commits and changelog need
+  GitHub's API, which the workflow has and Claude's sessions do not.
+- `docs/optiscaler-review.md` holds the marker (`reviewed: <commit> nightly-YYYYMMDD`),
+  the open items and standing rules, nothing else: one line each, at most 12
+  open items and 12 rules, under 7 KB (`optiscaler_review.py check`, in
+  selftest). A resolved item is deleted in the commit that resolves it, whose
+  message is its record (`git log --grep "OptiScaler review"`); a full queue is
+  triaged with the owner, never grown. A rule says what is never queued, so
+  the same kind of thing is not looked at twice; fold rules rather than add.
+  `docs/optiscaler-changelog.md` is the changelog as last reviewed, replaced by
+  `mark`, so it never grows beyond OptiScaler's own text.
+- The task queues what needs this plugin to change (a live candidate, checked
+  against OptiScaler's consumer code and its menu as "Live editing" says, a
+  layout or path change, a runtime limit the panel should know, a setting that
+  matters on a Deck) with a verdict and a recommendation, reports the day's new
+  items in one message, and implements none of them: each needs the owner's
+  decision. What breaks a check is not an item; it is the release step's
+  autofix. Then `optiscaler_review.py mark --from-log <saved log>` moves the
+  marker and stores the changelog, as one commit `OptiScaler review: <old>..<new>`
+  whose body lists everything the delta held that was not queued, and why.
+
 `CLAUDE.md` only imports this file. Upstream's `.gitignore` excludes `CLAUDE.md`,
 so it is tracked here with `git add -f`.
 
@@ -327,7 +367,10 @@ Vilnius, after OptiScaler-nightly's 04:00 UTC build) is what releases:
    for and releases it; a newer nightly published meanwhile waits for the next
    day. If that run fails too, it reverts its commit and reports.
 4. Only once the release is settled (released, nothing new, or the fix and its
-   pinned run done; not after a failure it reported), the upstream step
+   pinned run done; not after a failure it reported), the OptiScaler step
+   ("Following OptiScaler"): it reads the delta in that release run's log,
+   queues what needs a decision, reports the day's new items once, and marks
+   the review in one commit `OptiScaler review: <old>..<new>`. Then the upstream step
    ("Taking from upstream"): `upstream_review.py new`; each new upstream
    commit is read and its port candidates queued, then `mark` moves the marker
    and that goes in as one commit `Upstream review: <old>..<new>`.

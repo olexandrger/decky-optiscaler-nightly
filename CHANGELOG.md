@@ -8,6 +8,12 @@ Newest first. Each release ships `Decky OptiScaler.zip` for Decky Loader's
 
 ### Nightly fork
 
+- The daily release also reviews what each OptiScaler nightly adds: the release
+  run lists new ini keys, Config members, menu writes, archive contents,
+  OptiScaler's commits and changes to its v10 changelog, and the daily task
+  queues what the plugin should follow or use in `docs/optiscaler-review.md`
+  (kept small: open items and rules only) and reports it. The four 10.x
+  features above were found by reading the changelog by hand.
 - OptiScaler goes into games as OptiScaler 10 lays itself out: OptiScaler.dll
   (as the proxy) and OptiScaler.ini in the game folder, every other file in an
   `OptiScaler/` folder next to them, the in-game plugin and OptiPatcher in
