@@ -595,6 +595,27 @@ def remove_files(target_dir, names, logger=None):
     return {"ok": True, "removed": removed, "restored": restored}
 
 
+def record_optipatcher(target_dir, installed):
+    """Record OptiPatcher, added or taken out from its own toggle, in the manifest.
+
+    Without this, an OptiPatcher added after the install was nobody's: uninstall
+    left it in OptiScaler's plugin folder. Only this plugin's own installs have
+    a manifest to record it in; returns whether it was recorded.
+    """
+    target = Path(target_dir)
+    manifest = read_manifest(target)
+    if not manifest or manifest.get("plugin") != PLUGIN_ID:
+        return False
+    name = layout.relative(target, live.plugin_dir(target) / OPTIPATCHER_NAME)
+    files = [n for n in manifest.get("files") or [] if n != name]
+    if installed:
+        files.append(name)
+    manifest["files"] = files
+    manifest["optipatcher"] = bool(installed)
+    (target / MANIFEST_NAME).write_text(json.dumps(manifest, indent=2), encoding="utf-8")
+    return True
+
+
 def _stash(target, path, logger=None):
     """Move a file or directory into the backup folder; returns its name."""
     stash = backup_dir(target)
@@ -1269,6 +1290,25 @@ def _install(target, payload, filename, preserve_ini, logger, live_asi, optipatc
     if (target / plugins).is_dir():
         containers.append(plugins)
 
+    # What an earlier install of this plugin owned and this one left untouched
+    # (OptiPatcher left unticked, REFramework or FSR 4 files added later) is
+    # still this plugin's and still on disk: it stays in the manifest, so
+    # uninstall removes it and puts back what it displaced. A name this install
+    # wrote, removed or gave back to the game (retired payload, the old layout's
+    # files) is decided by this install.
+    touched = {Path(op["path"]).as_posix() for op in journal.ops}
+    carried = [name for name in old_manifest.get("files") or []
+               if old_manifest.get("plugin") == PLUGIN_ID and name not in created
+               and name not in touched
+               and ((target / name).is_file() or (target / name).is_symlink())]
+    if carried and logger:
+        logger.info("still owned from the previous install: %s", ", ".join(carried))
+    patcher_owned = patcher_result["installed"] or f"{plugins}/{OPTIPATCHER_NAME}" in carried
+    ref_owned = ref_result["installed"] or REFRAMEWORK_DLL in carried
+    ref_revision = ref_result["revision"]
+    if not ref_result["installed"] and ref_owned:
+        ref_revision = old_manifest.get("reframework_revision")
+
     # Folders an earlier install created that this one does not use, once empty.
     for name in sorted(set(old_containers) - set(containers), key=lambda n: n.count("/"), reverse=True):
         journal.remove_if_empty(target / name)
@@ -1276,15 +1316,15 @@ def _install(target, payload, filename, preserve_ini, logger, live_asi, optipatc
     manifest = {
         "plugin": PLUGIN_ID,
         "live_asi": live_result["installed"],
-        "optipatcher": patcher_result["installed"],
-        "reframework": ref_result["installed"],
-        "reframework_revision": ref_result["revision"],
+        "optipatcher": patcher_owned,
+        "reframework": ref_owned,
+        "reframework_revision": ref_revision,
         "fsr4_build": selected_build,
         "optiscaler_version": OPTISCALER_VERSION,
         "filename": filename,
         "installed_at": time.time(),
         "layout": LAYOUT,
-        "files": created,
+        "files": created + carried,
         # Folders copied whole; installs from before OptiScaler/ had some.
         "dirs": [],
         "containers": containers,

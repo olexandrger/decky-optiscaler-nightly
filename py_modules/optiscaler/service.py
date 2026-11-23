@@ -835,8 +835,8 @@ class OptiScalerService:
         if manifest.get("reframework"):
             return {"ok": False, "error": "This game's REFramework is managed too: reinstall "
                                           "from the game's page in Libraries & all settings."}
-        # OptiPatcher stays: added at install, or later from its toggle (which
-        # is not recorded), wherever OptiScaler loads it from now.
+        # OptiPatcher stays: added at install, or later from its toggle (not
+        # recorded before that toggle recorded it), wherever OptiScaler loads it from now.
         patcher = await self._run(lambda: (live.plugin_dir(target_dir) / OPTIPATCHER_NAME).is_file())
         return await self.install(target_dir, manifest["filename"], preserve_ini=True,
                                   optipatcher=bool(manifest.get("optipatcher")) or patcher)
@@ -1190,12 +1190,15 @@ class OptiScalerService:
                 if not enabled:
                     if path.is_file():
                         await self._run(path.unlink)
+                    await self._run(installer.record_optipatcher, target_dir, False)
                     return {"ok": True, "installed": False}
                 result = await self._run(
                     live.install_plugin_asi, target_dir, source, OPTIPATCHER_NAME, self.log
                 )
                 if not result.get("ok"):
                     return {"ok": False, "error": result.get("error")}
+                # Recorded as this plugin's, so uninstall takes it out again.
+                await self._run(installer.record_optipatcher, target_dir, True)
                 # It is loaded by the same switch our own plugin needs, written
                 # under the same lock so an uninstall cannot come in between.
                 written = await self._run(self._write_ini, target_dir, live.ini_requirements())

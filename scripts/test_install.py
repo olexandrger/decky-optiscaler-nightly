@@ -985,6 +985,95 @@ class GameFolderWritesAreSerializedTests(unittest.TestCase):
                 self.assertEqual(order, ["uninstall", name], outcome)
 
 
+class ReinstallKeepsWhatItOwnedTests(unittest.TestCase):
+    """What this plugin added to an install stays its own across a reinstall.
+
+    Upstream's audit (886d5f0, CD-02) found that a reinstall rebuilt the
+    manifest from that install's files only, and that OptiPatcher added from
+    its toggle was never recorded: OptiPatcher, REFramework and imported FSR 4
+    files stayed on disk, nobody's, and uninstall left them in the game.
+    """
+
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
+        self.root = Path(self.temp.name)
+        self.payload = make_payload(self.root)
+        self.asi = self.root / "live.asi"
+        self.asi.write_bytes(b"MZ live")
+        self.patcher = self.root / "OptiPatcher.asi"
+        self.patcher.write_bytes(b"MZ patcher")
+        self.game = self.root / "game"
+        self.game.mkdir()
+        (self.game / "Game.exe").write_bytes(b"MZ game")
+        (self.game / "dinput8.dll").write_bytes(b"the game's own dinput8")
+        self.original = snapshot(self.game)
+
+    def install(self, **kwargs):
+        return installer.install(self.game, self.payload, "dxgi.dll", logger=LOG, live_asi=self.asi, **kwargs)
+
+    def service(self):
+        from optiscaler.service import OptiScalerService
+        service = OptiScalerService(ROOT, self.root / "s", self.root / "r", self.root / "h", LOG)
+        service.optipatcher_path = lambda: str(self.patcher)
+        return service
+
+    def test_optipatcher_from_the_install_is_still_removed_after_a_reinstall_without_it(self):
+        self.install(optipatcher=self.patcher)
+        self.install()
+        self.assertTrue(installer.read_manifest(self.game)["optipatcher"])
+        installer.uninstall(self.game, logger=LOG)
+        self.assertEqual(snapshot(self.game), self.original)
+
+    def test_optipatcher_from_its_toggle_is_removed_by_uninstall(self):
+        import asyncio
+        self.install()
+        service = self.service()
+        self.assertTrue(asyncio.run(service.install_optipatcher(str(self.game), True))["ok"])
+        self.assertTrue(installer.read_manifest(self.game)["optipatcher"])
+        self.install()
+        self.assertTrue((installer.live.plugin_dir(self.game) / "OptiPatcher.asi").is_file())
+        installer.uninstall(self.game, logger=LOG)
+        self.assertEqual(snapshot(self.game), self.original)
+
+    def test_optipatcher_taken_out_by_its_toggle_is_no_longer_recorded(self):
+        import asyncio
+        self.install(optipatcher=self.patcher)
+        self.assertTrue(asyncio.run(self.service().install_optipatcher(str(self.game), False))["ok"])
+        manifest = installer.read_manifest(self.game)
+        self.assertFalse(manifest["optipatcher"])
+        self.assertFalse([n for n in manifest["files"] if n.endswith("OptiPatcher.asi")])
+        installer.uninstall(self.game, logger=LOG)
+        self.assertEqual(snapshot(self.game), self.original)
+
+    def test_files_added_later_stay_owned_and_their_originals_come_back(self):
+        self.install()
+        reframework = self.root / "ref" / "dinput8.dll"
+        reframework.parent.mkdir()
+        reframework.write_bytes(b"REFramework")
+        installer.add_files(self.game, [reframework], LOG, reframework_revision="r1")
+        fsr4 = self.root / "fsr4"
+        fsr4.mkdir()
+        (fsr4 / "amdxcffx64.dll").write_bytes(b"imported FSR 4 support")
+        installer.import_fsr4_files(self.game, fsr4, LOG)
+        self.install()
+        manifest = installer.read_manifest(self.game)
+        self.assertIn("dinput8.dll", manifest["files"])
+        self.assertIn("amdxcffx64.dll", manifest["files"])
+        self.assertTrue(manifest["reframework"])
+        self.assertEqual(manifest["reframework_revision"], "r1")
+        installer.uninstall(self.game, logger=LOG)
+        self.assertEqual(snapshot(self.game), self.original)
+
+    def test_a_file_the_player_removed_is_not_carried(self):
+        self.install(optipatcher=self.patcher)
+        (installer.live.plugin_dir(self.game) / "OptiPatcher.asi").unlink()
+        self.install()
+        manifest = installer.read_manifest(self.game)
+        self.assertFalse(manifest["optipatcher"])
+        self.assertFalse([n for n in manifest["files"] if n.endswith("OptiPatcher.asi")])
+
+
 class ProxyNameTests(unittest.TestCase):
     """Every filename the plugin offers installs, gets the right launch option,
     and uninstalls back to the game's own file."""
