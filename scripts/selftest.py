@@ -1702,8 +1702,9 @@ def check_version_pin():
           constants.PAYLOAD_ARCHIVE)
     import bundle_nightly
     plugin = json.loads((ROOT / "package.json").read_text())["version"]
-    check("the plugin's version is the bundled nightly's date (the release appends its run)",
-          plugin == bundle_nightly.plugin_version(constants.OPTISCALER_VERSION),
+    # A release run appends its run number before the checks (2026.11.23-42).
+    check("the plugin's version is the bundled nightly's date, and a release run's number",
+          re.fullmatch(re.escape(bundle_nightly.plugin_version(constants.OPTISCALER_VERSION)) + r"(-\d+)?", plugin),
           (plugin, constants.OPTISCALER_VERSION))
 
     # And the archive is the one the hash names. This pins more than OptiScaler
