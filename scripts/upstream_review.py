@@ -8,6 +8,11 @@ upstream commit read (its ``reviewed:`` line) and the queue of things to port.
     python3 scripts/upstream_review.py new      # upstream commits after the marker, oldest first
     python3 scripts/upstream_review.py queue    # open items in the queue
     python3 scripts/upstream_review.py mark SHA # every commit up to SHA has been read
+    python3 scripts/upstream_review.py check    # the record parses and keeps to its limits
+
+The record holds only open items and rules (AGENTS.md "Taking from upstream"):
+a port deletes its item in its own commit, and a review commit's message
+lists what was not applicable or not taken. ``check`` holds it to that.
 
 ``new`` adds the ``upstream`` remote when it is missing and fetches it. ``mark``
 only moves forward along upstream/main, so a review can never skip back or
@@ -25,6 +30,12 @@ UPSTREAM_URL = "https://github.com/danielcamilo1/decky-optiscaler"
 BRANCH = "upstream/main"
 MARKER_RE = re.compile(r"^reviewed: ([0-9a-f]{40})$", re.M)
 OPEN_RE = re.compile(r"^- \[ \] (.+)$", re.M)
+ITEM_RE = re.compile(r"^[\w-]+ \([0-9a-f]{7,40}\): \S")
+# An audit can leave many findings for the next day; decisions should be few.
+MAX_OPEN = 30
+MAX_RULES = 12
+MAX_LINE = 400
+MAX_BYTES = 12000
 
 
 def git(*args, check=True):
@@ -44,7 +55,35 @@ def marker(text=None):
 
 def open_items(text=None):
     text = REVIEW.read_text(encoding="utf-8") if text is None else text
-    return OPEN_RE.findall(text)
+    return OPEN_RE.findall(section(text, "Open"))
+
+
+def section(text, name):
+    found = re.search(r"^## " + name + r"\n(.*?)(?=^## |\Z)", text, re.M | re.S)
+    return found.group(1) if found else ""
+
+
+def problems(text=None):
+    """What keeps the record from being read, or from staying small."""
+    text = REVIEW.read_text(encoding="utf-8") if text is None else text
+    found = []
+    if len(MARKER_RE.findall(text)) != 1:
+        found.append("no single 'reviewed: <40-hex sha>' line")
+    items = OPEN_RE.findall(section(text, "Open"))
+    rules = re.findall(r"^- (?!\[[ x]\] )(.+)$", section(text, "Rules"), re.M)
+    found += [f"open item not '<id> (<commit>): <what>': {item[:80]}" for item in items if not ITEM_RE.match(item)]
+    if re.search(r"^- \[x\] ", text, re.M):
+        found.append("a done item is kept: a port deletes its item, and a review commit's message records the rest")
+    if len(OPEN_RE.findall(text)) != len(items):
+        found.append("an open item outside '## Open'")
+    if len(items) > MAX_OPEN:
+        found.append(f"{len(items)} open items (at most {MAX_OPEN}): triage the queue with the owner")
+    if len(rules) > MAX_RULES:
+        found.append(f"{len(rules)} rules (at most {MAX_RULES}): fold them into fewer, broader ones")
+    found += [f"line over {MAX_LINE} characters: {line[:60]}..." for line in text.splitlines() if len(line) > MAX_LINE]
+    if len(text.encode("utf-8")) > MAX_BYTES:
+        found.append(f"{len(text.encode('utf-8'))} bytes (at most {MAX_BYTES})")
+    return found
 
 
 def fetch():
@@ -97,6 +136,7 @@ def main():
     sub.add_parser("queue", help="open items")
     marking = sub.add_parser("mark", help="move the marker forward")
     marking.add_argument("sha")
+    sub.add_parser("check", help="the record parses and keeps to its limits")
     args = parser.parse_args()
     if args.command == "new":
         new()
@@ -105,6 +145,10 @@ def main():
         print(f"{len(items)} open item(s):")
         for item in items:
             print(f"- {item}")
+    elif args.command == "check":
+        left = problems()
+        print("\n".join(left) or "ok")
+        sys.exit(1 if left else 0)
     else:
         mark(args.sha)
 

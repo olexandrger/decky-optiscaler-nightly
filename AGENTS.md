@@ -180,23 +180,31 @@ fork commit**, written against the fork's code and under the rules of this file:
 - History is never rewritten for this: plain commits, plain `git push`.
 
 **Where the review stands: `docs/upstream-review.md`.** Its `reviewed:` line is
-the last upstream commit read; everything up to it has been looked at, and each
-thing worth a port is in its queue (`- [ ]`), with what was done (`- [x]`,
-naming the fork commit) and what was turned down, with the reason. So a review
-never starts from the beginning again:
+the last upstream commit read; everything up to it has been looked at. It holds
+only what is still open and the rules that keep things from being looked at
+twice, one line each, under limits (`upstream_review.py check`, in selftest),
+so it does not grow with time: a port deletes its item in its own commit, and a
+review commit's message lists what was not applicable or not taken, and why.
+The record of what was done is the history (`git log --grep "<finding id>"`).
 
 ```bash
 python3 scripts/upstream_review.py new      # fetches upstream; commits after the marker, oldest first
 python3 scripts/upstream_review.py queue    # open items
-python3 scripts/upstream_review.py mark SHA # after reading up to SHA and queueing what it holds
+python3 scripts/upstream_review.py mark SHA # after reading up to SHA and sorting what it holds
+python3 scripts/upstream_review.py check    # the record parses and keeps to its limits
 ```
 
 `mark` only moves forward along `upstream/main`. If upstream ever rewrites its
 history so the marker is no longer on it, `new` stops and says so: review from
 the merge base by hand, then set the marker again.
 
-Small steps: a port is one queue item, one commit, its own test. The daily task
-(below) reviews new upstream commits and ports at most one item a day.
+A day's upstream commits are dealt with that day, not one item a day (one
+audit commit held 15 findings): every finding is sorted when it is read, as
+ported now, not applicable, or a decision for the owner, and everything to
+port is ported that same day. Small steps stay where they matter: one finding,
+one `Port:` commit, its own test that fails without the fix, so a bad port is
+reverted alone. Only decisions, and what a day's cap (about 10 ports) leaves
+for the next day, stay in the queue.
 
 ## Following OptiScaler (what a nightly adds)
 
@@ -372,19 +380,24 @@ Vilnius, after OptiScaler-nightly's 04:00 UTC build) is what releases:
    queues what needs a decision, reports the day's new items once, and marks
    the review in one commit `OptiScaler review: <old>..<new>`. Then the upstream step
    ("Taking from upstream"): `upstream_review.py new`; each new upstream
-   commit is read and its port candidates queued, then `mark` moves the marker
-   and that goes in as one commit `Upstream review: <old>..<new>`.
-5. Then at most **one port** from the queue, oldest first. The item is checked
-   against the fork's code first; one that does not apply is ticked with the
-   reason and the next is checked (three checked a day at most). One that does
-   is fixed the fork's way with a test that fails without it, every check
-   passes, and it is pushed as `Port: ...` with the queue item ticked in the
-   same commit. If `build.yml` fails on that push, the task reverts it and
-   reports. An item marked as needing a decision (a feature, a UI change, or
-   anything near "Live editing" or "Exclusive with upstream's plugin") is not
-   ported: the task reports it once, with a recommendation, and leaves it. The
-   port is released by the next day's run (`main` has commits since the last
-   release).
+   commit is read and every finding in it sorted: to port, not applicable
+   (listed in the review commit's message with the reason, never in the file),
+   or a decision (queued, reported). `mark` moves the marker, as one commit
+   `Upstream review: <old>..<new>`.
+5. Then **the day's ports**: what the queue holds left over from the day before
+   first, then what today's review sorted to port, about 10 at most. Each is
+   checked against the fork's code first (one that does not apply is deleted
+   from the queue with the reason in the commit), fixed the fork's way with a
+   test that fails without it, run against the checks it touches, and
+   committed as `Port: ...`, deleting its queue line in the same commit. Once
+   the day's ports are in, every check runs once; a port that breaks one is
+   dropped (its item reopened with why) and the rest are pushed together, so
+   `build.yml` runs once. If that run fails, the task reverts all of the day's
+   ports, reopens their items and reports. An item that needs a decision (a
+   feature, a UI change, or anything near "Live editing" or "Exclusive with
+   upstream's plugin") is not ported: all the day's are reported in one
+   message, with a recommendation each. The ports are released by the next
+   day's run (`main` has commits since the last release).
 
 A failure of `test_live_asi.py` is maintained like any other (usually
 `generate_asi_layout.py` meeting a new kind of Config member or a new way
@@ -393,7 +406,7 @@ A failure of `test_live_asi.py` is maintained like any other (usually
 layout checks. A failure of the check against OptiScaler's own menu is not
 fixed automatically: whether that setting stays live is a decision, so the
 task reports it. It never force-pushes or touches tags and releases itself, makes at most
-one autofix and one port a day, and stops with a report instead of pushing when an autofix
+one autofix and about 10 ports a day, and stops with a report instead of pushing when an autofix
 did not help or the fix needs a decision. A transient failure (GitHub 5xx, DNS,
 apt mirrors) gets one retry of the same run; it only reports when that keeps
 happening. It messages only when a human is needed.

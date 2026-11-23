@@ -3278,12 +3278,13 @@ def check_upstream_review_file():
     text = review.REVIEW.read_text(encoding="utf-8")
     check("the review file names the last upstream commit read, in full",
           len(review.MARKER_RE.findall(text)) == 1, review.MARKER_RE.findall(text))
-    items = review.open_items(text)
-    malformed = [item for item in items if not re.match(r"[\w-]+( [\w-]+)? \([0-9a-f]{7,40}\): \S", item)]
-    check("every open item names its finding and upstream commit", not malformed, malformed)
-    done = re.findall(r"^- \[x\] (.+)$", text, re.M)
-    unexplained = [item for item in done if not re.search(r"Ported in ([0-9a-f]{7,40}|this commit)|Already covered|Not applicable", item)]
-    check("every closed item says how it was closed", not unexplained, unexplained)
+    check("it parses and keeps to its limits: open items and rules only, one line each",
+          not review.problems(text), review.problems(text))
+    done = text.replace("## Rules", "- [x] CD-01 (886d5f0): fixed. Ported in abc1234.\n\n## Rules")
+    check("a done item kept in it is a problem (a port deletes its item)",
+          any("done item" in p for p in review.problems(done)), review.problems(done))
+    loose = text.replace("## Open\n", "## Open\n\n- [ ] IDEA no-commit: something\n")
+    check("so is an item without its finding id and upstream commit", review.problems(loose) != [])
 
 
 def check_optiscaler_review():
@@ -3336,7 +3337,8 @@ def check_optiscaler_review():
             except SystemExit:
                 stale = True
             check("and refuses a delta that does not start at the marker (an older run's)", stale)
-            with mock.patch.object(review, "api", return_value={"body": body}):
+            # As GitHub's API has it: CRLF, and trailing spaces the job log drops.
+            with mock.patch.object(review, "api", return_value={"body": body.replace("\n", "  \r\n")}):
                 same = review.changelog("token")
             with mock.patch.object(review, "api", return_value={"body": body + "- another feature\n"}):
                 changed = review.changelog("token")

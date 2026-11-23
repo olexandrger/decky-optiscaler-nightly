@@ -266,11 +266,16 @@ def commit_list(old, new, auth):
     return lines, None
 
 
+def normal(text):
+    """The changelog as compared: line ends and trailing spaces evened out (a job log drops them)."""
+    return "\n".join(line.rstrip() for line in text.replace("\r\n", "\n").split("\n")).strip() + "\n"
+
+
 def stored_changelog():
     if not CHANGELOG.is_file():
         return None
     text = CHANGELOG.read_text(encoding="utf-8")
-    return text.split("\n\n", 1)[1] if "\n\n" in text else ""
+    return normal(text.split("\n\n", 1)[1] if "\n\n" in text else "")
 
 
 def changelog(auth):
@@ -281,7 +286,7 @@ def changelog(auth):
         body = api(f"{REPO}/releases/tags/nightly", auth).get("body") or ""
     except (urllib.error.URLError, OSError, ValueError) as error:
         return [f"GitHub's release API failed: {error}"], None
-    body = body.replace("\r\n", "\n").strip() + "\n"
+    body = normal(body)
     before = stored_changelog()
     if before is None:
         updated = UPDATED_RE.search(body)
@@ -387,7 +392,7 @@ def from_log(text):
     if CHANGELOG_BEGIN in block:
         first = block.index(CHANGELOG_BEGIN) + 1
         last = block.index(CHANGELOG_END)
-        body = "\n".join(block[first:last]) + "\n"
+        body = normal("\n".join(block[first:last]))
     return since.group(1), to.group(1), to.group(2), body
 
 
