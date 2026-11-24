@@ -1767,6 +1767,40 @@ async function render(name: string, element: React.ReactElement) {
     fixtures.install_live = previousInstall;
   }
 
+  {
+    // Switching automatic on writes the wiki's settings; what this page wrote
+    // just before must not be laid back over them on screen (upstream 886d5f0,
+    // audit UI-01).
+    console.log("\n=== GameDetail: automatic settings replace a recent edit ===");
+    const previousApply = fixtures.apply_auto_settings;
+    const previousUpscaler = iniValues.Upscalers.Dx12Upscaler;
+    fixtures.get_auto_plan = plainPlan;
+    fixtures.get_game = detail;
+    const page = await render("GameDetail (automatic over a recent edit)",
+      <GameDetail gamePath="/games/Cyberpunk 2077" gameName="Cyberpunk 2077" appid="1091500"
+        status={fixtures.get_status} runningGame={null} onBack={() => {}} />);
+    const settings = () => findAll(page.host, '[data-tab="basic"]')[0];
+    const upscaler = () => findAll(settings(), '[data-mock="DropdownItem"][data-label="Override upscaler with"]')[0];
+    await act(async () => {
+      (findAll(upscaler(), '[data-opt-value="xess"]')[0] as HTMLElement)?.click();
+    });
+    await new Promise((r) => setTimeout(r, 500));
+    await settle();
+    console.log(`  the edit shows: ${upscaler()?.getAttribute("data-selected") === "xess"}`);
+    fixtures.apply_auto_settings = () => {
+      iniValues.Upscalers.Dx12Upscaler = "fsr22";
+      return { ok: true, applied: [{ section: "Upscalers", key: "Dx12Upscaler", value: "fsr22" }] };
+    };
+    const toggle = findAll(settings(), '[data-mock="ToggleField"][data-label="Automatic"]')[0];
+    await act(async () => { (findAll(toggle, "[data-toggle]")[0] as HTMLElement)?.click(); });
+    await settle();
+    console.log(`  after automatic, the page shows what it wrote: ${
+      upscaler()?.getAttribute("data-selected") === "fsr22"}`);
+    await act(async () => page.root.unmount());
+    fixtures.apply_auto_settings = previousApply;
+    iniValues.Upscalers.Dx12Upscaler = previousUpscaler;
+  }
+
   console.log("\n=== backend calls made ===");
   console.log("  " + Array.from(new Set(calls)).join(", "));
 

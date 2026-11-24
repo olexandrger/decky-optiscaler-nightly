@@ -201,6 +201,10 @@ export function GameDetail({
     const folder = gamePath.split("/").filter(Boolean).pop() ?? gameName;
     const result = await applyAutoSettings(targetDir, gamePath, gameName, [folder]);
     if (result.ok) {
+      // The wiki's settings were just written over the file: what this page
+      // wrote before them is no longer newer than the file, so it is dropped
+      // rather than laid back over the values on screen.
+      config.forgetLocal();
       await config.reload();
       toaster.toast({ title: "Automatic settings applied", body: detailName(plan, gameName) });
     } else {
