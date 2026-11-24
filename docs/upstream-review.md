@@ -6,7 +6,7 @@ What this fork takes from upstream
 (AGENTS.md, "Taking from upstream"). `scripts/upstream_review.py` reads and
 updates this file.
 
-reviewed: 6a243593df7986981ec714598d91540952c852e2
+reviewed: 1a2b9f9a085a81c85a757a5cd2bf6327f9abe5bd
 
 Every upstream commit up to and including `reviewed` has been read. A review
 sorts each finding the day it is read: ported that day (one `Port:` commit
