@@ -2430,6 +2430,22 @@ def check_optipatcher():
         check("optipatcher lands in the plugins folder", result["ok"] and landed.is_file())
         check("it sits next to the live-control plugin",
               landed.parent.name == live.PLUGIN_SUBDIR)
+        # A running game has it mapped: replacing it must not write into the
+        # file the game holds (upstream 886d5f0, audit CD-04).
+        held = landed.open("rb")
+        try:
+            held_inode = os.fstat(held.fileno()).st_ino
+            source.write_bytes(b"MZ newer build")
+            again = live.install_plugin_asi(str(target), source, constants.OPTIPATCHER_NAME)
+            check("replacing an installed asi leaves the file a game holds untouched",
+                  again["ok"] and held.read() == b"MZ fake"
+                  and landed.read_bytes() == b"MZ newer build"
+                  and landed.stat().st_ino != held_inode)
+            check("replacing an installed asi leaves no partial file behind",
+                  sorted(p.name for p in landed.parent.iterdir()) == [constants.OPTIPATCHER_NAME],
+                  sorted(p.name for p in landed.parent.iterdir()))
+        finally:
+            held.close()
         requirements = {(r["section"], r["key"]): r["value"] for r in live.ini_requirements()}
         check("asi loading is switched on for it",
               requirements.get(("Plugins", "LoadAsiPlugins")) == "true", requirements)

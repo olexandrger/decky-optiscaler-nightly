@@ -319,7 +319,20 @@ def install_plugin_asi(target_dir, source, name, logger=None, folder=None):
         return {"ok": False, "error": f"{name} missing at {source}"}
     destination = Path(folder or plugin_dir(target_dir)) / name
     destination.parent.mkdir(parents=True, exist_ok=True)
-    destination.write_bytes(source.read_bytes())
+    # A running game has the ASI mapped: writing over it in place would change
+    # the code under the game's feet (or crash it once the file is truncated).
+    # Write a sibling and rename it over, so the game keeps the inode it holds.
+    data = source.read_bytes()
+    partial = destination.with_name(f".{name}.{os.getpid()}.partial")
+    try:
+        partial.write_bytes(data)
+        os.replace(partial, destination)
+    except OSError:
+        try:
+            partial.unlink()
+        except OSError:
+            pass
+        raise
     if logger:
         logger.info("installed %s at %s", name, destination)
     return {"ok": True, "path": str(destination)}
