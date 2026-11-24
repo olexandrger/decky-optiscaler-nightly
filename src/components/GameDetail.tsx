@@ -379,6 +379,7 @@ export function GameDetail({
                     config.forgetLocal();
                     await config.reload();
                   }}
+                  onWikiEntry={() => reloadPlan(false)}
                 />
               ) : (
                 <MonitorTab

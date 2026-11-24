@@ -34,6 +34,8 @@ interface Props {
   appid: string | null;
   live: LiveStatus | null;
   onChanged: () => Promise<void> | void;
+  /** The game's wiki entry was picked by hand: the page's plan is rebuilt from it. */
+  onWikiEntry?: () => Promise<void> | void;
 }
 
 /**
@@ -93,7 +95,7 @@ function LaunchOptionsPrompt({
  * launch options. Reached from "Manual setup" on the setup checklist,
  * which is where the majority of games never have to come.
  */
-export function InstallPanel({ detail, status, appid, live, onChanged }: Props) {
+export function InstallPanel({ detail, status, appid, live, onChanged, onWikiEntry }: Props) {
   const [filename, setFilename] = useState(detail.install.filename ?? "dxgi.dll");
   const [target, setTarget] = useState(detail.target);
   const [preserveIni, setPreserveIni] = useState(false);
@@ -275,6 +277,7 @@ export function InstallPanel({ detail, status, appid, live, onChanged }: Props) 
               setSearching(false);
               await onChanged();
               await lookup(false);
+              await onWikiEntry?.();
               toaster.toast({ title: "Compatibility entry set", body: entryName });
             }}
           />

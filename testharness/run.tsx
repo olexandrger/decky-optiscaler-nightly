@@ -1841,6 +1841,48 @@ async function render(name: string, element: React.ReactElement) {
     fixtures.set_auto_mode = previousSetAuto;
   }
 
+  {
+    // Picking the wiki entry by hand rebuilds the plan the setup page shows
+    // (upstream 886d5f0, audit UI-05).
+    console.log("\n=== GameDetail: the wiki entry picked by hand ===");
+    const previousEntry = fixtures.set_wiki_entry;
+    // Followed, so the setup page spells out the entry's settings.
+    fixtures.get_auto_plan = { ...plainPlan, plan: { ...plainPlan.plan, enabled: true } };
+    fixtures.get_game = detail;
+    fixtures.set_wiki_entry = (_path: string, entry: string) => {
+      fixtures.get_auto_plan = {
+        ...plainPlan,
+        recommendation: { ...plainPlan.recommendation, game: entry },
+        plan: { ...plainPlan.plan, game: entry, enabled: true,
+                settings: [{ section: "Spoofing", key: "Dxgi", value: "true", label: "Dxgi",
+                             source: "wiki entry, “Settings”" }] },
+      };
+      return { ok: true };
+    };
+    const page = await render("GameDetail (wiki entry picked)",
+      <GameDetail gamePath="/games/Cyberpunk 2077" gameName="Cyberpunk 2077" appid="1091500"
+        status={fixtures.get_status} runningGame={null} onBack={() => {}} />);
+    const setup = () => findAll(page.host, '[data-tab="install"]')[0];
+    await act(async () => {
+      (findAll(setup(), '[data-mock="Field"][data-label="Manual setup"]')[0] as HTMLElement)?.click();
+    });
+    await settle();
+    const button = (text: string) => findAll(setup(), '[data-mock="ButtonItem"], [data-mock="DialogButton"], [data-mock="Field"]')
+      .find((node) => (node.textContent ?? "").includes(text)) as HTMLElement | undefined;
+    await act(async () => { button("Find this game in the list myself")?.click(); });
+    await settle();
+    await act(async () => { button("Forza Horizon 5")?.click(); });
+    await settle();
+    await act(async () => { (findAll(setup(), "[data-back]")[0] as HTMLElement)?.click(); });
+    await settle();
+    const text = setup()?.textContent ?? "";
+    console.log(`  back on the setup page, the plan is the picked entry's: ${
+      text.includes("Dxgi=true") && !text.includes("Dxgi=false")}`);
+    await act(async () => page.root.unmount());
+    fixtures.set_wiki_entry = previousEntry;
+    fixtures.get_auto_plan = plainPlan;
+  }
+
   console.log("\n=== backend calls made ===");
   console.log("  " + Array.from(new Set(calls)).join(", "));
 
