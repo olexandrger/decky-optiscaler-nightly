@@ -1730,6 +1730,43 @@ async function render(name: string, element: React.ReactElement) {
     fixtures.get_live_status = previousLive;
   }
 
+  {
+    // Live control added with the game stopped: nothing polls the status then,
+    // so the page has to read it again itself, and a refusal has to be said
+    // (upstream 886d5f0, audit UI-06).
+    console.log("\n=== GameDetail: adding live control with the game stopped ===");
+    const previousLive = fixtures.get_live_status;
+    const previousInstall = fixtures.install_live;
+    fixtures.get_live_status = { ...(previousLive ?? {}), asi_available: true, asi_installed: false,
+                                 attached: false, ready: false, state: "absent" };
+    fixtures.install_live = () => {
+      fixtures.get_live_status = { ...fixtures.get_live_status, asi_installed: true };
+      return { ok: true };
+    };
+    const stopped = await render("GameDetail (stopped, no live control)",
+      <GameDetail gamePath="/games/Cyberpunk 2077" gameName="Cyberpunk 2077" appid="1091500"
+        status={fixtures.get_status} runningGame={null} onBack={() => {}} />);
+    await act(async () => {
+      (findAll(stopped.host, '[data-mock="Field"][data-label="Manual setup"]')[0] as HTMLElement)?.click();
+    });
+    await settle();
+    const liveButton = (label: string) => findAll(stopped.host, '[data-mock="ButtonItem"]')
+      .find((node) => (node.textContent ?? "").trim() === label) as HTMLElement | undefined;
+    console.log(`  live control is offered: ${Boolean(liveButton("Add live control"))}`);
+    await act(async () => { liveButton("Add live control")?.click(); });
+    await settle();
+    console.log(`  once added, the page reads the status again: ${
+      Boolean(liveButton("Reinstall live control")) && !liveButton("Add live control")}`);
+    fixtures.install_live = { ok: false, error: "OptiScaler is not installed by this plugin here" };
+    await act(async () => { liveButton("Reinstall live control")?.click(); });
+    await settle();
+    console.log(`  a refusal is said: ${
+      (stopped.host.textContent ?? "").includes("OptiScaler is not installed by this plugin here")}`);
+    await act(async () => stopped.root.unmount());
+    fixtures.get_live_status = previousLive;
+    fixtures.install_live = previousInstall;
+  }
+
   console.log("\n=== backend calls made ===");
   console.log("  " + Array.from(new Set(calls)).join(", "));
 

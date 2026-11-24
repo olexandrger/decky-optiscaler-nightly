@@ -22,6 +22,7 @@ interface Props {
 export function LivePanel({ targetDir, status, onChanged }: Props) {
   const [busy, setBusy] = useState(false);
   const [log, setLog] = useState<string[] | null>(null);
+  const [installError, setInstallError] = useState<string | null>(null);
 
   if (!status) return null;
 
@@ -123,9 +124,13 @@ export function LivePanel({ targetDir, status, onChanged }: Props) {
             disabled={busy}
             onClick={async () => {
               setBusy(true);
+              setInstallError(null);
               try {
-                await installLive(targetDir);
+                const result = await installLive(targetDir);
+                if (!result.ok) setInstallError(result.error ?? "the backend gave no reason");
                 await onChanged();
+              } catch (exc) {
+                setInstallError(String(exc));
               } finally {
                 setBusy(false);
               }
@@ -133,6 +138,14 @@ export function LivePanel({ targetDir, status, onChanged }: Props) {
           >
             {status.asi_installed ? "Reinstall live control" : "Add live control"}
           </ButtonItem>
+        </PanelSectionRow>
+      ) : null}
+
+      {installError ? (
+        <PanelSectionRow>
+          <Notice tone="error" title="Could not add live control">
+            {installError}
+          </Notice>
         </PanelSectionRow>
       ) : null}
 

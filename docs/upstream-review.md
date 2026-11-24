@@ -27,7 +27,6 @@ one) and, once reported, "Reported <date>, awaiting a decision."; a port that
 failed says so with its date. Every other item is one the review could not
 finish that day (the daily cap), and goes first the next day.
 
-- [ ] UI-06 (886d5f0): adding live control with the game stopped does not refresh the status afterwards, and a failure is not shown.
 - [ ] UI-01 (886d5f0): after automatic settings are written, an older local write record still overrides the new values on screen.
 - [ ] UI-03 (886d5f0): the automatic toggle has no in-progress state; turned off while applying, it comes back on.
 - [ ] UI-05 (886d5f0): re-picking the wiki entry by hand leaves the setup page on the old plan.

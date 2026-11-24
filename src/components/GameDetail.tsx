@@ -162,7 +162,7 @@ export function GameDetail({
   // OptiScaler's overlay writes the ini when the user hits Save in-game, so
   // re-read it whenever this game stops running rather than trusting our copy.
   const config = useConfig(targetDir, installed, isRunning);
-  const { status: liveStatus } = useLiveStatus(targetDir, isRunning);
+  const { status: liveStatus, refresh: refreshLive } = useLiveStatus(targetDir, isRunning);
   // The page edits the configuration, so its controls show the ini; what the
   // running game holds instead is listed in "Running now" above them.
   const runningCfg = useRunningConfig(targetDir, Boolean(isRunning && liveStatus?.ready));
@@ -355,6 +355,9 @@ export function GameDetail({
                   live={liveStatus}
                   onChanged={async () => {
                     await load();
+                    // Polled only while the game runs: with it stopped, adding
+                    // live control would otherwise still read as missing.
+                    await refreshLive();
                     config.forgetLocal();
                     await config.reload();
                   }}
