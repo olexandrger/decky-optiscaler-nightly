@@ -21,7 +21,7 @@
  *   the grounds that it is not ours to guess about.
  */
 import { getLaunchOptions, recordLaunchOptions } from "./api";
-import { readLaunchOptions } from "./hooks/useRunningGame";
+import { overlayLaunchWrite, readLaunchOptions } from "./hooks/useRunningGame";
 import type { LaunchRecord } from "./types";
 
 /** What to do with the launch options when OptiScaler is removed. */
@@ -296,6 +296,10 @@ export function recordedValue(record: LaunchRecord | undefined): string | null {
  */
 export async function currentLaunchOptions(appid: string | null): Promise<string | null> {
   if (!appid) return null;
+  return overlayLaunchWrite(Number(appid), await readCurrentLaunchOptions(appid));
+}
+
+async function readCurrentLaunchOptions(appid: string): Promise<string | null> {
   const fromClient = await readLaunchOptions(Number(appid));
   if (fromClient !== null) return fromClient;
   try {

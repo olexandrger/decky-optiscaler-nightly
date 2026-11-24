@@ -440,7 +440,7 @@ export function SetupChecklist({
       : now === null || now === launchWanted
         ? ""
         : stripOverride(ref ? stripOverride(now, ref.override) : now, filename);
-    if (setLaunchOptions(Number(appid), written)) {
+    if (setLaunchOptions(Number(appid), written, now)) {
       // Shown from what was written rather than read back: Steam flushes its
       // config file on its own schedule, so a read landing in that window
       // reports the old value and the row appears not to have taken.
@@ -498,8 +498,8 @@ export function SetupChecklist({
       }
       if (withLaunch && appid && needsOverride) {
         await recordPreviousLaunchOptions(appid, detail.target);
-        setLaunchOptions(Number(appid),
-          mergeOverride(await currentLaunchOptions(appid), planned.launch_options));
+        const before = await currentLaunchOptions(appid);
+        setLaunchOptions(Number(appid), mergeOverride(before, planned.launch_options), before);
       }
       toaster.toast({
         title: `${detail.name} is set up`,
@@ -624,7 +624,7 @@ export function SetupChecklist({
         toaster.toast({ title: "OptiScaler removed", body: detail.name });
         const chosen = launchChoices(launchState).find((choice) => choice.action === action);
         if (appid && chosen && chosen.value !== null) {
-          const wrote = setLaunchOptions(Number(appid), chosen.value);
+          const wrote = setLaunchOptions(Number(appid), chosen.value, launchNow);
           toaster.toast({
             title: wrote
               ? chosen.value === ""

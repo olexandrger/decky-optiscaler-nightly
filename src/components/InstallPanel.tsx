@@ -192,8 +192,9 @@ export function InstallPanel({ detail, status, appid, live, onChanged, onWikiEnt
   const applyLaunchOptions = async () => {
     if (!appid) return;
     // Added to what the player already has, never written over it (PD-02).
-    const written = mergeOverride((await currentLaunchOptions(appid)) ?? launchNow, launchOption);
-    if (setLaunchOptions(Number(appid), written)) {
+    const before = (await currentLaunchOptions(appid)) ?? launchNow;
+    const written = mergeOverride(before, launchOption);
+    if (setLaunchOptions(Number(appid), written, before)) {
       setLaunchNow(written);
       setLaunchRead(true);
       toaster.toast({ title: "Launch options set", body: written });

@@ -27,7 +27,6 @@ one) and, once reported, "Reported <date>, awaiting a decision."; a port that
 failed says so with its date. Every other item is one the review could not
 finish that day (the daily cap), and goes first the next day.
 
-- [ ] UI-08 (886d5f0): a launch-option toggle snaps back because a stale read overwrites the optimistic state.
 - [ ] UI-10 (886d5f0): a failed log read leaves the Logs tab on "Reading OptiScaler log" for good, or its buttons disabled.
 - [ ] UI-11 (886d5f0): the game page's "Restart now" is a bare button the D-pad cannot reach.
 - [ ] PD-06 (886d5f0): automatic mode refreshes the wiki plan but does not write the new settings to the installed game.

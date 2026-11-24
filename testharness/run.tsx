@@ -1883,6 +1883,44 @@ async function render(name: string, element: React.ReactElement) {
     fixtures.get_auto_plan = plainPlan;
   }
 
+  {
+    // Steam flushes launch options on its own schedule: a read straight after
+    // the toggle still has the old value, and must not snap it back (upstream
+    // 886d5f0, audit UI-08).
+    console.log("\n=== GameDetail: the launch-options toggle against a stale read ===");
+    const writes: any[][] = [];
+    (globalThis as any).SteamClient = {
+      Apps: {
+        SetAppLaunchOptions: (...args: any[]) => { writes.push(args); },
+        GetAppLaunchOptions: async () => "gamemoderun %command%",
+      },
+    };
+    fixtures.get_auto_plan = plainPlan;
+    fixtures.get_game = detail;
+    const page = await render("GameDetail (launch options, stale read)",
+      <GameDetail gamePath="/games/Cyberpunk 2077" gameName="Cyberpunk 2077" appid="1091500"
+        status={fixtures.get_status} runningGame={null} onBack={() => {}} />);
+    const row = () => findAll(findAll(page.host, '[data-tab="install"]')[0],
+      '[data-mock="ToggleField"][data-label^="Launch options"]')[0];
+    console.log(`  the toggle starts off: ${row()?.getAttribute("data-label") === "Launch options not set"}`);
+    await act(async () => { (findAll(row(), "[data-toggle]")[0] as HTMLElement)?.click(); });
+    await settle();
+    console.log(`  switched on, it stays on while Steam still reports the old value: ${
+      writes.length === 1 && row()?.getAttribute("data-label") === "Launch options set"}`);
+    // Somebody else's value, not the stale one, is taken at its word.
+    (globalThis as any).SteamClient.Apps.GetAppLaunchOptions = async () => "%command% -windowed";
+    await act(async () => page.root.unmount());
+    const again = await render("GameDetail (launch options, changed in Steam)",
+      <GameDetail gamePath="/games/Cyberpunk 2077" gameName="Cyberpunk 2077" appid="1091500"
+        status={fixtures.get_status} runningGame={null} onBack={() => {}} />);
+    const rowAgain = findAll(findAll(again.host, '[data-tab="install"]')[0],
+      '[data-mock="ToggleField"][data-label^="Launch options"]')[0];
+    console.log(`  a value changed in Steam since is shown as it is: ${
+      rowAgain?.getAttribute("data-label") === "Launch options not set"}`);
+    await act(async () => again.root.unmount());
+    (globalThis as any).SteamClient = undefined;
+  }
+
   console.log("\n=== backend calls made ===");
   console.log("  " + Array.from(new Set(calls)).join(", "));
 

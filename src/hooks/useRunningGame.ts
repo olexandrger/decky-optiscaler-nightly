@@ -156,11 +156,35 @@ export function lastPlayed(appid: string | null): number | null {
   }
 }
 
-export function setLaunchOptions(appid: number, options: string) {
+export function setLaunchOptions(appid: number, options: string, previous?: string | null) {
   try {
     SteamClient.Apps.SetAppLaunchOptions(appid, options);
+    if (previous !== undefined && previous !== options) {
+      recentLaunchWrites.set(appid, { value: options, previous, at: Date.now() });
+    }
     return true;
   } catch {
     return false;
   }
+}
+
+/**
+ * Launch options this plugin has just written, per app.
+ *
+ * Steam flushes its config on its own schedule, so a read right after a write
+ * can still report the old value; taken at its word, a toggle that just set
+ * them snaps back. A read within `LAUNCH_WRITE_MS` that still says what was
+ * there before the write (`previous`, when the caller knew it) gives way to
+ * what was written. Anything else (the write, or a value somebody else set
+ * since) is taken at its word and retires the entry.
+ */
+const LAUNCH_WRITE_MS = 30_000;
+const recentLaunchWrites = new Map<number, { value: string; previous: string | null; at: number }>();
+
+export function overlayLaunchWrite(appid: number, read: string | null): string | null {
+  const entry = recentLaunchWrites.get(appid);
+  if (!entry) return read;
+  if (read === entry.previous && Date.now() - entry.at <= LAUNCH_WRITE_MS) return entry.value;
+  recentLaunchWrites.delete(appid);
+  return read;
 }
