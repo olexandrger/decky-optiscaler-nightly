@@ -26,15 +26,34 @@ export function MonitorTab({
 }) {
   const [report, setReport] = useState<MonitorReport | null>(null);
   const [busy, setBusy] = useState(false);
+  /** Why the last read or action failed; shown rather than waited on for ever. */
+  const [error, setError] = useState<string | null>(null);
   const timer = useRef<number | null>(null);
 
   const refresh = useCallback(async () => {
     try {
       setReport(await getMonitor(targetDir));
-    } catch {
-      /* the game may be mid-write; the next tick will pick it up */
+      setError(null);
+    } catch (exc) {
+      // The game may be mid-write and the next tick pick it up, but a read
+      // with no tick behind it (game closed) would otherwise wait for ever.
+      setError(String(exc));
     }
   }, [targetDir]);
+
+  /** A button's action: never leaves the buttons disabled when it fails. */
+  const act = async (action: () => Promise<unknown>, after?: () => void) => {
+    setBusy(true);
+    try {
+      await action();
+      await refresh();
+      after?.();
+    } catch (exc) {
+      setError(String(exc));
+    } finally {
+      setBusy(false);
+    }
+  };
 
   useEffect(() => {
     void refresh();
@@ -49,8 +68,19 @@ export function MonitorTab({
     return (
       <PanelSection title="Monitoring">
         <PanelSectionRow>
-          <Notice tone="info">Reading OptiScaler log…</Notice>
+          {error ? (
+            <Notice tone="error" title="Could not read the OptiScaler log">{error}</Notice>
+          ) : (
+            <Notice tone="info">Reading OptiScaler log…</Notice>
+          )}
         </PanelSectionRow>
+        {error ? (
+          <PanelSectionRow>
+            <ButtonItem layout="below" onClick={() => void refresh()}>
+              Try again
+            </ButtonItem>
+          </PanelSectionRow>
+        ) : null}
       </PanelSection>
     );
   }
@@ -69,15 +99,15 @@ export function MonitorTab({
             checked={loggingOn}
             disabled={busy}
             bottomSeparator="standard"
-            onChange={async (checked) => {
-              setBusy(true);
-              await setLogging(targetDir, checked);
-              await refresh();
-              onNeedsRestart();
-              setBusy(false);
-            }}
+            onChange={(checked) => void act(() => setLogging(targetDir, checked), onNeedsRestart)}
           />
         </PanelSectionRow>
+
+        {error ? (
+          <PanelSectionRow>
+            <Notice tone="error">{error}</Notice>
+          </PanelSectionRow>
+        ) : null}
 
         {!report.log_present ? (
           <PanelSectionRow>
@@ -175,12 +205,7 @@ export function MonitorTab({
               <ButtonItem
                 layout="below"
                 disabled={busy}
-                onClick={async () => {
-                  setBusy(true);
-                  await clearLog(targetDir);
-                  await refresh();
-                  setBusy(false);
-                }}
+                onClick={() => void act(() => clearLog(targetDir))}
               >
                 Clear log file
               </ButtonItem>

@@ -1921,6 +1921,38 @@ async function render(name: string, element: React.ReactElement) {
     (globalThis as any).SteamClient = undefined;
   }
 
+  {
+    // A log read that fails says so, rather than "Reading OptiScaler log…" for
+    // good, and a failed action leaves the buttons usable (upstream 886d5f0,
+    // audit UI-10).
+    console.log("\n=== MonitorTab: a log read that fails ===");
+    const { MonitorTab } = await import("../src/components/MonitorTab");
+    const previousMonitor = fixtures.get_monitor;
+    const previousLogging = fixtures.set_logging;
+    fixtures.get_monitor = () => { throw new Error("Permission denied: OptiScaler.log"); };
+    const tab = await render("MonitorTab (read fails)",
+      <MonitorTab targetDir="/games/Cyberpunk 2077/bin/x64" live={false} onNeedsRestart={() => {}} />);
+    const text = () => tab.host.textContent ?? "";
+    console.log(`  the failure is said: ${
+      text().includes("Could not read the OptiScaler log") && text().includes("Permission denied")
+      && !text().includes("Reading OptiScaler log")}`);
+    fixtures.get_monitor = previousMonitor;
+    const retry = findAll(tab.host, '[data-mock="ButtonItem"]')
+      .find((node) => (node.textContent ?? "").includes("Try again")) as HTMLElement | undefined;
+    await act(async () => { retry?.click(); });
+    await settle();
+    console.log(`  and trying again reads it: ${Boolean(retry) && text().includes("Write OptiScaler log")}`);
+    fixtures.set_logging = () => { throw new Error("OptiScaler.ini is read-only"); };
+    const logging = findAll(tab.host, '[data-mock="ToggleField"][data-label="Write OptiScaler log"]')[0];
+    await act(async () => { ((logging ? findAll(logging, "[data-toggle]")[0] : undefined) as HTMLElement)?.click(); });
+    await settle();
+    const after = findAll(tab.host, '[data-mock="ToggleField"][data-label="Write OptiScaler log"]')[0];
+    console.log(`  a failed action is said and leaves its control usable: ${
+      text().includes("OptiScaler.ini is read-only") && after?.getAttribute("data-disabled") !== "true"}`);
+    await act(async () => tab.root.unmount());
+    fixtures.set_logging = previousLogging;
+  }
+
   console.log("\n=== backend calls made ===");
   console.log("  " + Array.from(new Set(calls)).join(", "));
 
