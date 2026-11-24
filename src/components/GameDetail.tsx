@@ -279,7 +279,8 @@ export function GameDetail({
 
   const restartBanner =
     installed && config.dirty ? (
-      <div
+      <Focusable
+        flow-children="horizontal"
         style={{
           display: "flex",
           alignItems: "center",
@@ -297,7 +298,9 @@ export function GameDetail({
           Saved. OptiScaler reads its config at launch, so restart the game to apply.
         </span>
         {isThisGameRunning && runningGame ? (
-          <button
+          // A DialogButton, not a bare <button>: Steam's focus graph only
+          // reaches its own focusable elements, so the D-pad skipped this.
+          <DialogButton
             onClick={() => {
               if (restartGame(runningGame)) {
                 config.clearDirty();
@@ -306,23 +309,22 @@ export function GameDetail({
                 toaster.toast({ title: "Could not restart", body: "Relaunch manually." });
               }
             }}
+            onOKActionDescription="Restart the game"
             style={{
               background: "#e8a33d",
-              border: "none",
-              borderRadius: "3px",
               color: "#241a08",
-              cursor: "pointer",
-              font: "inherit",
               fontSize: "11px",
               fontWeight: 600,
+              minWidth: 0,
+              width: "auto",
               padding: "3px 9px",
               whiteSpace: "nowrap",
             }}
           >
             Restart now
-          </button>
+          </DialogButton>
         ) : null}
-      </div>
+      </Focusable>
     ) : null;
 
   const tabs = [

@@ -1953,6 +1953,30 @@ async function render(name: string, element: React.ReactElement) {
     fixtures.set_logging = previousLogging;
   }
 
+  {
+    // The banner's restart has to be reachable with the D-pad: one of Steam's
+    // own focusable buttons, not a bare <button> (upstream 886d5f0, audit UI-11).
+    console.log("\n=== GameDetail: the restart banner's button ===");
+    fixtures.get_auto_plan = plainPlan;
+    fixtures.get_game = detail;
+    const page = await render("GameDetail (restart banner)",
+      <GameDetail gamePath="/games/Cyberpunk 2077" gameName="Cyberpunk 2077" appid="1091500"
+        status={fixtures.get_status}
+        runningGame={{ appid: 1091500, name: "Cyberpunk 2077", gameid: "1091500" }}
+        onBack={() => {}} />);
+    const upscaler = findAll(findAll(page.host, '[data-tab="basic"]')[0],
+      '[data-mock="DropdownItem"][data-label="Override upscaler with"]')[0];
+    await act(async () => {
+      ((upscaler ? findAll(upscaler, '[data-opt-value="xess"]')[0] : undefined) as HTMLElement)?.click();
+    });
+    await settle();
+    const restart = findAll(page.host, '[data-mock="DialogButton"]')
+      .find((node) => (node.textContent ?? "").trim() === "Restart now");
+    console.log(`  a change that waits shows Restart now as a focusable Steam button: ${
+      Boolean(restart) && page.host.querySelectorAll("button").length === 0}`);
+    await act(async () => page.root.unmount());
+  }
+
   console.log("\n=== backend calls made ===");
   console.log("  " + Array.from(new Set(calls)).join(", "));
 
