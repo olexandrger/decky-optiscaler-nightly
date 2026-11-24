@@ -68,6 +68,8 @@ interface Props {
   /** Whether the wiki is currently driving everything but the three choices. */
   auto?: boolean;
   onAutoChange?: (enabled: boolean) => void;
+  /** The wiki's settings are being written: the toggle waits for that. */
+  autoBusy?: boolean;
   /** Which upscaler build the folder holds; kept for callers, not read since 4.1.1b retired. */
   fsr4Build?: string | null;
   /** Apply a Steam Deck FSR 4 preset; takes its model ("lite", "rdna2"). */
@@ -204,6 +206,7 @@ export function BasicPanel({
   plan,
   auto,
   onAutoChange,
+  autoBusy,
   onApply,
   onEnableFsr4,
   xefgMax,
@@ -384,7 +387,9 @@ export function BasicPanel({
             <ToggleField
               label="Automatic"
               description={hint(
-                automatic
+                autoBusy
+                  ? "Applying the wiki's settings…"
+                  : automatic
                   ? `Set from “${planned.game}” on the OptiScaler wiki. You choose frame ` +
                     "generation and how it runs, the multiplier and the upscaler; " +
                     "everything else follows the entry."
@@ -392,7 +397,7 @@ export function BasicPanel({
                     "and how it runs, the multiplier and the upscaler."
               )}
               checked={automatic}
-              disabled={busy || !onAutoChange}
+              disabled={busy || autoBusy || !onAutoChange}
               bottomSeparator={automatic ? "none" : "standard"}
               onChange={(checked) => onAutoChange?.(checked)}
             />

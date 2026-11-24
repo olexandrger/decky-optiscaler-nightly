@@ -77,6 +77,8 @@ interface Props {
   /** Whether this game is the one running right now. */
   running: boolean;
   onSetAuto: (enabled: boolean) => Promise<void> | void;
+  /** The wiki's settings are being written: the toggle waits for that. */
+  autoBusy?: boolean;
   onManual: () => void;
   onLogs: () => void;
   onChanged: () => Promise<void> | void;
@@ -336,6 +338,7 @@ export function SetupChecklist({
   live,
   running,
   onSetAuto,
+  autoBusy,
   onManual,
   onLogs,
   onChanged,
@@ -1145,12 +1148,14 @@ export function SetupChecklist({
                 </StepLabel>
               }
               description={
-                auto
+                autoBusy
+                  ? "Applying the wiki's settings…"
+                  : auto
                   ? `${settingsSummary(planned) || "No special settings"} — kept up to date.`
                   : "Every option is yours. Turn this on to let the wiki keep the ones this game needs."
               }
               checked={auto}
-              disabled={busy}
+              disabled={busy || autoBusy}
               bottomSeparator="standard"
               onChange={(checked) => void onSetAuto(checked)}
             />

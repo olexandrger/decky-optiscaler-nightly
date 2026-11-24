@@ -1801,6 +1801,46 @@ async function render(name: string, element: React.ReactElement) {
     iniValues.Upscalers.Dx12Upscaler = previousUpscaler;
   }
 
+  {
+    // Switching automatic on writes the wiki's settings and records the mode
+    // when done, so the toggle must wait for that rather than take a switch
+    // back the write would undo (upstream 886d5f0, audit UI-03).
+    console.log("\n=== GameDetail: the automatic toggle while it applies ===");
+    const previousApply = fixtures.apply_auto_settings;
+    const previousSetAuto = fixtures.set_auto_mode;
+    const modes: boolean[] = [];
+    fixtures.set_auto_mode = (_path: string, enabled: boolean) => {
+      modes.push(enabled);
+      return { ok: true, enabled };
+    };
+    let finish: (value: unknown) => void = () => {};
+    fixtures.apply_auto_settings = () => new Promise((resolve) => {
+      finish = () => resolve({ ok: true, applied: [] });
+    });
+    fixtures.get_auto_plan = plainPlan;
+    fixtures.get_game = detail;
+    const page = await render("GameDetail (automatic applying)",
+      <GameDetail gamePath="/games/Cyberpunk 2077" gameName="Cyberpunk 2077" appid="1091500"
+        status={fixtures.get_status} runningGame={null} onBack={() => {}} />);
+    const toggle = () => findAll(findAll(page.host, '[data-tab="basic"]')[0],
+      '[data-mock="ToggleField"][data-label="Automatic"]')[0];
+    await act(async () => { (findAll(toggle(), "[data-toggle]")[0] as HTMLElement)?.click(); });
+    await settle();
+    console.log(`  while the wiki's settings are written, the toggle waits: ${
+      toggle()?.getAttribute("data-disabled") === "true"
+      && (toggle()?.textContent ?? "").includes("Applying the wiki's settings")}`);
+    await act(async () => { (findAll(toggle(), "[data-toggle]")[0] as HTMLElement)?.click(); });
+    await settle();
+    console.log(`  and a switch back meanwhile is not taken: ${JSON.stringify(modes) === "[true]"}`);
+    await act(async () => { finish(undefined); });
+    await settle();
+    console.log(`  once written, it can be switched again: ${
+      toggle()?.getAttribute("data-disabled") !== "true"}`);
+    await act(async () => page.root.unmount());
+    fixtures.apply_auto_settings = previousApply;
+    fixtures.set_auto_mode = previousSetAuto;
+  }
+
   console.log("\n=== backend calls made ===");
   console.log("  " + Array.from(new Set(calls)).join(", "));
 

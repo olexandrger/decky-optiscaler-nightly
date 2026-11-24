@@ -195,7 +195,20 @@ export function GameDetail({
    * nobody made — the point of the switch is that every option becomes
    * editable, not that the game goes back to stock.
    */
+  // Switching on writes the wiki's settings and records the mode at the end
+  // (service.apply_auto_settings), so a switch back meanwhile would be undone
+  // by it: the toggle waits until the write is done.
+  const [applyingAuto, setApplyingAuto] = useState(false);
   const changeAuto = async (enabled: boolean) => {
+    if (applyingAuto) return;
+    setApplyingAuto(true);
+    try {
+      await switchAuto(enabled);
+    } finally {
+      setApplyingAuto(false);
+    }
+  };
+  const switchAuto = async (enabled: boolean) => {
     await setAuto(enabled);
     if (!enabled || !targetDir) return;
     const folder = gamePath.split("/").filter(Boolean).pop() ?? gameName;
@@ -329,6 +342,7 @@ export function GameDetail({
               auto={auto}
               live={liveStatus}
               running={isThisGameRunning}
+              autoBusy={applyingAuto}
               onSetAuto={(enabled) => changeAuto(enabled)}
               onManual={() => setSetupView("manual")}
               onLogs={() => setSetupView("logs")}
@@ -414,6 +428,7 @@ export function GameDetail({
                   ffx={detail.install.fsr4?.ffx}
                   plan={plan}
                   auto={auto}
+                  autoBusy={applyingAuto}
                   onAutoChange={(enabled) => void changeAuto(enabled)}
                   fsr4Build={config.fsr4Build}
                   onEnableFsr4={config.enableFsr4}
