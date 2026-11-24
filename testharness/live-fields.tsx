@@ -904,6 +904,10 @@ async function mount(kind: "quick" | "page") {
   const realWrite = fixtures.write_config;
   let nowPlaying = await mountNowPlaying();
   check("Now Playing shows the game's settings", Boolean(control(nowPlaying.node, "Override upscaler with")), true);
+  // The newest FSR is named after the library in the folder, as on the Quick
+  // Access panel (upstream 886d5f0, audit UI-09).
+  check("its FSR versions are named as the Quick Access panel names them",
+    all(control(nowPlaying.node, "FSR version") as Element, "[data-opt]")[0]?.textContent, "FSR 4.1.1");
   check("and no restart before anything waits",
     (nowPlaying.node.textContent ?? "").includes("Restart game to apply"), false);
   fixtures.write_config = (dir: string, changes: any[]) => {

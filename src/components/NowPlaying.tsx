@@ -141,6 +141,7 @@ export function NowPlaying({
           values={config.values}
           gpu={detail!.gpu}
           live={live}
+          ffx={ffx}
           targetDir={detail!.install.path}
           plan={plan}
           auto={auto}
