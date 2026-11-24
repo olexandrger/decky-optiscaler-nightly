@@ -1,9 +1,11 @@
 import { ButtonItem, PanelSection, PanelSectionRow } from "@decky/ui";
+import { toaster } from "@decky/api";
 import { useCallback, useEffect, useState } from "react";
 import { resolveGame } from "../shortcuts";
 import { useAutoPlan } from "../hooks/useAutoPlan";
 import { useConfig } from "../hooks/useConfig";
 import { useLiveStatus } from "../hooks/useLiveStatus";
+import { restartGame } from "../hooks/useRunningGame";
 import type { Game, GameDetail, RunningGame } from "../types";
 import { BasicPanel } from "./BasicPanel";
 import { Centered, KeyValue, Notice, Pill } from "./Common";
@@ -122,6 +124,16 @@ export function NowPlaying({
         </PanelSectionRow>
       </PanelSection>
 
+      {/* As on the Quick Access panel: a write the backend would not take is
+          said, and a change that waits for the next launch offers the restart. */}
+      {config.error ? (
+        <PanelSection>
+          <PanelSectionRow>
+            <Notice tone="error">{config.error}</Notice>
+          </PanelSectionRow>
+        </PanelSection>
+      ) : null}
+
       {config.loading ? (
         <Centered>Reading config…</Centered>
       ) : (
@@ -138,6 +150,26 @@ export function NowPlaying({
           onApply={config.setOptions}
         />
       )}
+
+      {config.dirty ? (
+        <PanelSection>
+          <PanelSectionRow>
+            <ButtonItem
+              layout="below"
+              onClick={() => {
+                if (restartGame(runningGame)) {
+                  config.clearDirty();
+                  toaster.toast({ title: "Restarting", body: runningGame.name });
+                } else {
+                  toaster.toast({ title: "Could not restart", body: "Relaunch the game manually." });
+                }
+              }}
+            >
+              Restart game to apply
+            </ButtonItem>
+          </PanelSectionRow>
+        </PanelSection>
+      ) : null}
 
       <PanelSection>
         <PanelSectionRow>

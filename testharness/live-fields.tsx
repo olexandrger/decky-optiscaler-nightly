@@ -17,6 +17,7 @@ import { fixtures } from "@decky/api";
 import { Navigation } from "@decky/ui";
 import { GENERATED_OPTIONS } from "../src/config/generatedSchema";
 import { QuickPanel } from "../src/components/QuickPanel";
+import { NowPlaying } from "../src/components/NowPlaying";
 import { nextFpsOverlay } from "../src/components/FpsOverlayButton";
 import { BasicPanel } from "../src/components/BasicPanel";
 import { useConfig } from "../src/hooks/useConfig";
@@ -882,6 +883,53 @@ async function mount(kind: "quick" | "page") {
   delete (globalThis as any).window.DeckyBackend;
   delete fixtures.check_update;
   await act(async () => panel.root.unmount());
+
+  console.log("=== the full page's Now Playing tab ===");
+  // The real component, not FullPage's wiring: it has to say what the Quick
+  // Access panel says when a write waits for the next launch or is refused
+  // (upstream 886d5f0, audit UI-07).
+  setGpu(DECK_GPU);
+  setIni({ Upscalers: { Dx12Upscaler: "fsr31", Dx11Upscaler: "auto", VulkanUpscaler: "auto" } });
+  const mountNowPlaying = async () => {
+    const node = document.createElement("div");
+    document.body.appendChild(node);
+    const r = createRoot(node);
+    await act(async () => {
+      r.render(<NowPlaying runningGame={{ appid: 1091500, name: "Cyberpunk 2077", gameid: "1091500" }}
+        onOpenGame={() => {}} onBrowse={() => {}} />);
+    });
+    await settle(20);
+    return { node, root: r };
+  };
+  const realWrite = fixtures.write_config;
+  let nowPlaying = await mountNowPlaying();
+  check("Now Playing shows the game's settings", Boolean(control(nowPlaying.node, "Override upscaler with")), true);
+  check("and no restart before anything waits",
+    (nowPlaying.node.textContent ?? "").includes("Restart game to apply"), false);
+  fixtures.write_config = (dir: string, changes: any[]) => {
+    const result = realWrite(dir, changes);
+    return { ...result, live: { ...result.live, deferred: changes.map((c: any) => `${c.section}.${c.key}`) } };
+  };
+  await act(async () => {
+    (all(control(nowPlaying.node, "Override upscaler with"), '[data-opt-value="xess"]')[0] as HTMLElement).click();
+  });
+  await settle(200);
+  check("a change that waits for the next launch offers the restart there too",
+    (nowPlaying.node.textContent ?? "").includes("Restart game to apply"), true);
+  await act(async () => nowPlaying.root.unmount());
+  fixtures.write_config = (_dir: string, changes: any[]) => ({
+    ok: true, applied: [], rejected: changes.map((c: any) => ({ ...c, value: String(c.value) })),
+    live: { sent: false, deferred: [], attached: true, keys: [] },
+  });
+  nowPlaying = await mountNowPlaying();
+  await act(async () => {
+    (all(control(nowPlaying.node, "Override upscaler with"), '[data-opt-value="fsr31"]')[0] as HTMLElement).click();
+  });
+  await settle(200);
+  check("a write OptiScaler would not take is said there too",
+    (nowPlaying.node.textContent ?? "").includes("OptiScaler would not accept"), true);
+  fixtures.write_config = realWrite;
+  await act(async () => nowPlaying.root.unmount());
 
   const real = errors.filter((e) => !e.includes("not wrapped in act"));
   console.log(`\nreal React errors: ${real.length}`);

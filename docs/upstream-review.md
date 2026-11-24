@@ -27,7 +27,6 @@ one) and, once reported, "Reported <date>, awaiting a decision."; a port that
 failed says so with its date. Every other item is one the review could not
 finish that day (the daily cap), and goes first the next day.
 
-- [ ] UI-07 (886d5f0): the full-screen Now Playing page drops write errors and the restart-needed notice the Quick Access panel shows.
 - [ ] UI-09 (886d5f0): Now Playing does not pass the detected FidelityFX file version, so the FSR version names differ from the Quick Access panel's.
 - [ ] UI-06 (886d5f0): adding live control with the game stopped does not refresh the status afterwards, and a failure is not shown.
 - [ ] UI-01 (886d5f0): after automatic settings are written, an older local write record still overrides the new values on screen.
