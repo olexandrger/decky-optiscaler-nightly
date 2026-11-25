@@ -45,9 +45,14 @@ export const SECTION_TITLES: Record<string, string> = {
   Mipmap: "Mipmap Bias",
   ProcessFilter: "Process Filter",
   Hotfix: "Hotfixes & Workarounds",
+  FlipMeter: "Flip Metering",
+  DLSSG: "DLSS Frame Generation",
+  NvngxFG: "Nvngx Frame Generation",
+  Magnifier: "Magnifier",
 };
 
-export const TABS: TabDefinition[] = [
+/** The tabs sections are placed on by hand. */
+const PLACED_TABS: TabDefinition[] = [
   {
     id: "framegen",
     title: "Frame Gen",
@@ -101,6 +106,31 @@ export const TABS: TabDefinition[] = [
   { id: "overlay", title: "Overlay", sections: ["Menu", "Log"] },
 ];
 
+/**
+ * Sections that exist in the INI but no tab above places, in INI order.
+ *
+ * A nightly can add a section at any time (FlipMeter, DLSSG and Magnifier
+ * arrived that way), and one on no tab was unreachable: All settings showed
+ * none of its options. They are shown on "Other" instead, so every option the
+ * bundled OptiScaler has can be reached without anyone placing it first.
+ */
+export const UNGROUPED_SECTIONS: string[] = Array.from(
+  new Set(GENERATED_OPTIONS.map((option) => option.section))
+).filter((section) => !PLACED_TABS.some((tab) => tab.sections.includes(section)));
+
+export const TABS: TabDefinition[] = [
+  ...PLACED_TABS,
+  ...(UNGROUPED_SECTIONS.length
+    ? [{
+        id: "other",
+        title: "Other",
+        sections: UNGROUPED_SECTIONS,
+        blurb:
+          "OptiScaler's sections no other tab holds. Most are for NVIDIA GPUs or Windows, or tools in OptiScaler's own overlay.",
+      }]
+    : []),
+];
+
 /** Options surfaced at the top of a tab and in the quick panel. */
 export const FEATURED: Record<string, string[]> = {
   framegen: ["FrameGen.Enabled", "FrameGen.FGInput", "FrameGen.FGOutput", "FrameGen.FTInput"],
@@ -134,7 +164,3 @@ export const optionById = (id: string): OptionMeta | undefined => BY_ID.get(id);
 export const optionsInSection = (section: string): OptionMeta[] => BY_SECTION.get(section) ?? [];
 export const sectionTitle = (section: string): string => SECTION_TITLES[section] ?? section;
 
-/** Sections that exist in the INI but are not on any tab. */
-export const UNGROUPED_SECTIONS = Array.from(BY_SECTION.keys()).filter(
-  (section) => !TABS.some((tab) => tab.sections.includes(section))
-);

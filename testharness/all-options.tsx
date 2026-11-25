@@ -40,20 +40,22 @@ const fail = (text: string) => {
 };
 
 (async () => {
-  // 1. Tab coverage. Sections on no tab are listed, not failed: which tab a
-  // new OptiScaler section belongs on is a decision, not something a nightly
-  // should be able to break a release over.
+  // 1. Tab coverage. A section no tab places goes on "Other" by itself, so a
+  // section on no tab at all is a bug, not a nightly's doing.
   const covered = new Set(TABS.flatMap((t) => t.sections));
   const all = new Set(GENERATED_OPTIONS.map((o) => o.section));
   const missing = [...all].filter((s) => !covered.has(s));
   console.log(`sections: ${all.size} total, ${covered.size} on tabs`);
-  console.log(`ungrouped (not shown anywhere): ${missing.length ? missing.join(", ") : "none"}`);
-  const agrees = JSON.stringify(UNGROUPED_SECTIONS) === JSON.stringify(missing);
-  console.log(`UNGROUPED_SECTIONS export agrees: ${agrees}`);
-  if (!agrees) fail(`UNGROUPED_SECTIONS is ${JSON.stringify(UNGROUPED_SECTIONS)}, tabs leave out ${JSON.stringify(missing)}`);
+  console.log(`on the Other tab: ${UNGROUPED_SECTIONS.length ? UNGROUPED_SECTIONS.join(", ") : "none"}`);
+  if (missing.length) fail(`sections on no tab, not even Other: ${missing.join(", ")}`);
+  const other = TABS.find((t) => t.id === "other");
+  if (JSON.stringify(other?.sections ?? []) !== JSON.stringify(UNGROUPED_SECTIONS))
+    fail(`the Other tab holds ${JSON.stringify(other?.sections ?? [])}, not ${JSON.stringify(UNGROUPED_SECTIONS)}`);
   let optionsOnTabs = 0;
   for (const t of TABS) for (const s of t.sections) optionsOnTabs += optionsInSection(s).length;
   console.log(`options reachable through tabs: ${optionsOnTabs} / ${GENERATED_OPTIONS.length}`);
+  if (optionsOnTabs !== GENERATED_OPTIONS.length)
+    fail(`${optionsOnTabs} of ${GENERATED_OPTIONS.length} options reachable through tabs`);
 
   // 2. Render every control, in both states
   for (const [name, values] of [["auto", autoValues], ["explicit", setValues]] as const) {
