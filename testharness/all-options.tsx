@@ -31,14 +31,26 @@ for (const o of GENERATED_OPTIONS) {
     : "custom-value";
 }
 
+// What the checks below found wrong; any of it fails the run, as React errors do.
+// (Upstream 886d5f0, audit TS-01: these were printed and the exit code ignored them.)
+const failures: string[] = [];
+const fail = (text: string) => {
+  failures.push(text);
+  console.log(`  FAIL ${text}`);
+};
+
 (async () => {
-  // 1. Tab coverage
+  // 1. Tab coverage. Sections on no tab are listed, not failed: which tab a
+  // new OptiScaler section belongs on is a decision, not something a nightly
+  // should be able to break a release over.
   const covered = new Set(TABS.flatMap((t) => t.sections));
   const all = new Set(GENERATED_OPTIONS.map((o) => o.section));
   const missing = [...all].filter((s) => !covered.has(s));
   console.log(`sections: ${all.size} total, ${covered.size} on tabs`);
   console.log(`ungrouped (not shown anywhere): ${missing.length ? missing.join(", ") : "none"}`);
-  console.log(`UNGROUPED_SECTIONS export agrees: ${JSON.stringify(UNGROUPED_SECTIONS) === JSON.stringify(missing)}`);
+  const agrees = JSON.stringify(UNGROUPED_SECTIONS) === JSON.stringify(missing);
+  console.log(`UNGROUPED_SECTIONS export agrees: ${agrees}`);
+  if (!agrees) fail(`UNGROUPED_SECTIONS is ${JSON.stringify(UNGROUPED_SECTIONS)}, tabs leave out ${JSON.stringify(missing)}`);
   let optionsOnTabs = 0;
   for (const t of TABS) for (const s of t.sections) optionsOnTabs += optionsInSection(s).length;
   console.log(`options reachable through tabs: ${optionsOnTabs} / ${GENERATED_OPTIONS.length}`);
@@ -65,6 +77,8 @@ for (const o of GENERATED_OPTIONS) {
     });
     const rendered = host.querySelectorAll("[data-mock]").length;
     console.log(`  [${name}] rendered ${rendered} controls for ${GENERATED_OPTIONS.length} options`);
+    if (rendered !== GENERATED_OPTIONS.length)
+      fail(`[${name}] ${rendered} controls rendered for ${GENERATED_OPTIONS.length} options`);
     root.unmount();
   }
 
@@ -72,7 +86,7 @@ for (const o of GENERATED_OPTIONS) {
   let badEnum = 0;
   for (const o of GENERATED_OPTIONS) {
     if (o.type !== "enum") continue;
-    if (!o.options?.length) { badEnum++; console.log(`  ! enum with no options: ${o.section}.${o.key}`); }
+    if (!o.options?.length) { badEnum++; fail(`enum with no options: ${o.section}.${o.key}`); }
     if (o.default !== "auto" && o.options && !o.options.includes(o.default)) {
       console.log(`  ~ default outside options: ${o.section}.${o.key} default=${o.default} options=${o.options.join("|")}`);
     }
@@ -84,8 +98,10 @@ for (const o of GENERATED_OPTIONS) {
     (o) => (o.type === "int" || o.type === "float") && o.min !== undefined && o.max !== undefined && o.min >= o.max
   );
   console.log(`numeric ranges inverted: ${badRange.length}`);
+  for (const o of badRange) fail(`inverted range: ${o.section}.${o.key} min=${o.min} max=${o.max}`);
 
   console.log(`\nreal React errors: ${errors.length}`);
   errors.slice(0, 10).forEach((e) => console.log("  ! " + e.slice(0, 250)));
-  process.exit(errors.length ? 1 : 0);
+  console.log(`failed checks: ${failures.length}`);
+  process.exit(errors.length || failures.length ? 1 : 0);
 })();

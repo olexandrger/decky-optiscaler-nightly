@@ -28,7 +28,6 @@ failed says so with its date. Every other item is one the review could not
 finish that day (the daily cap), and goes first the next day.
 
 - [ ] PD-06 (886d5f0): automatic mode refreshes the wiki plan but does not write the new settings to the installed game.
-- [ ] TS-01b (886d5f0): all-options.tsx computes ungrouped sections, empty enums and inverted ranges but exits on React errors only.
 - [ ] running-exe-folder (886d5f0): install next to the executable the game actually runs (the process OptiScaler's log names), not the scored guess that favours Unreal's Binaries/Win64. A feature: needs a decision. Reported 2026-11-18, awaiting a decision.
 
 ## Rules

@@ -336,7 +336,7 @@ python3 scripts/test_bundle.py    # the nightly download retries GitHub's transi
 python3 scripts/selftest.py
 python3 scripts/test_live_asi.py  # live editing inside the bundled OptiScaler, under Wine
 HARNESS=run.tsx node testharness/build-and-run.mjs          # "React errors/warnings: 0", no line ending ": false"
-HARNESS=all-options.tsx node testharness/build-and-run.mjs  # "real React errors: 0"
+HARNESS=all-options.tsx node testharness/build-and-run.mjs  # "real React errors: 0"; exits non-zero on a failed check
 HARNESS=live-fields.tsx node testharness/build-and-run.mjs  # exits non-zero on failure
 HARNESS=backend.tsx node testharness/build-and-run.mjs      # the panel against the real backend; exits non-zero
 python3 scripts/package.py
