@@ -935,7 +935,7 @@ export function SetupChecklist({
                 }
                 description={
                   settingsSummary(planned) ||
-                  "This entry needs no special settings, but keeping it on means later wiki changes reach this game."
+                  "This entry needs no special settings. The wiki's settings are written now, when this is switched on, or with “Set up again”; a later wiki change is not written by itself."
                 }
                 checked={withSettings}
                 disabled={busy}
@@ -1131,7 +1131,7 @@ export function SetupChecklist({
             <PanelSectionRow>
               <Field
                 label={<StepLabel>No wiki entry matched this game</StepLabel>}
-                description="Nothing is being kept up to date for it. Pick an entry yourself under “Manual setup”, or leave the settings to you."
+                description="No wiki settings apply to it. Pick an entry yourself under “Manual setup”, or leave the settings to you."
                 onClick={onManual}
                 onActivate={onManual}
                 focusable
@@ -1150,15 +1150,15 @@ export function SetupChecklist({
             <ToggleField
               label={
                 <StepLabel done={auto}>
-                  {auto ? "Following the wiki entry" : "Not following the wiki entry"}
+                  {auto ? "Using the wiki entry's settings" : "Not using the wiki entry's settings"}
                 </StepLabel>
               }
               description={
                 autoBusy
                   ? "Applying the wiki's settings…"
                   : auto
-                  ? `${settingsSummary(planned) || "No special settings"} — kept up to date.`
-                  : "Every option is yours. Turn this on to let the wiki keep the ones this game needs."
+                  ? `${settingsSummary(planned) || "No special settings"} — written at setup, when switched on, or with “Set up again”. A later wiki change waits for one of those.`
+                  : "Every option is yours. Turn this on to write the settings this game needs from its wiki entry; “Set up again” takes a newer entry."
               }
               checked={auto}
               disabled={busy || autoBusy}

@@ -742,8 +742,8 @@ class OptiScalerService:
                                   extra_names=None):
         """Re-apply the wiki's settings to a game that is already installed.
 
-        Used when automatic mode is switched on for a game set up by hand, and
-        after a wiki refresh, so the ini says what the entry currently says.
+        Used when automatic mode is switched on. A wiki refresh only rebuilds
+        the plan: nothing calls this behind the user's back (PD-06).
         """
         refused = self._foreign(target_dir)
         if refused:

@@ -186,8 +186,10 @@ export function GameDetail({
   } = useAutoPlan(gamePath, gameName);
 
   /**
-   * Switching automatic on re-applies the wiki's settings; switching it off
-   * only stops them being maintained.
+   * Switching automatic on writes the wiki's settings; switching it off only
+   * frees the options they hold. Nothing writes them again behind the user's
+   * back: a newer wiki entry is taken by switching on again or "Set up again"
+   * (upstream 886d5f0, PD-06).
    *
    * Turning it off deliberately does not undo anything. The wiki's settings are
    * the ones that make the game work at all, so reverting them on the way to

@@ -579,9 +579,9 @@ async function render(name: string, element: React.ReactElement) {
   console.log(`  setup states what is installed: ${
     setupText.includes("Installed as") && setupText.includes("dxgi.dll")}`);
   console.log(`  the wiki step is a toggle, off until asked for: ${
-    findAll(gd.host, '[data-mock="ToggleField"][data-label^="Not following the wiki"]').length === 1}`);
+    findAll(gd.host, '[data-mock="ToggleField"][data-label^="Not using the wiki entry"]').length === 1}`);
   console.log(`  and says what turning it on would do: ${
-    setupText.includes("let the wiki keep the ones this game needs")}`);
+    setupText.includes("Turn this on to write the settings this game needs")}`);
   // Removing has to be findable without hunting: it is on the tab, not behind
   // the manual page it used to live on.
   console.log(`  removing and resetting stay on the setup tab: ${
@@ -948,6 +948,27 @@ async function render(name: string, element: React.ReactElement) {
       onBack={() => {}} />);
   console.log(`  a game that does not need it never mentions it: ${
     !gdPlain.host.textContent!.includes("REFramework")}`);
+
+  // Automatic mode writes the wiki's settings when asked; a wiki refresh only
+  // rebuilds the plan. So nothing may promise they are kept up to date
+  // (upstream 886d5f0, PD-06).
+  fixtures.get_auto_plan = { ...plainPlan, plan: { ...plainPlan.plan, enabled: true } };
+  const gdAuto = await render("GameDetail (automatic mode on)",
+    <GameDetail gamePath="/games/Cyberpunk 2077" gameName="Cyberpunk 2077" appid="1091500"
+      status={fixtures.get_status}
+      runningGame={{ appid: 1091500, name: "Cyberpunk 2077", gameid: "1091500" }}
+      onBack={() => {}} />);
+  await act(async () => {
+    (findAll(gdAuto.host, '[data-tab="install"]')[0] as HTMLElement).click();
+  });
+  await settle();
+  const wikiAutoText = gdAuto.host.textContent!;
+  console.log(`  automatic mode says when the wiki's settings are written: ${
+    findAll(gdAuto.host, '[data-mock="ToggleField"][data-label^="Using the wiki entry"]').length === 1
+    && wikiAutoText.includes("A later wiki change waits for one of those")}`);
+  console.log(`  and promises no upkeep it does not do: ${
+    !/kept up to date|later wiki changes reach/.test(wikiAutoText)}`);
+  fixtures.get_auto_plan = plainPlan;
 
   // -- automatic settings mode ----------------------------------------------
   const settingsTab = findAll(gd.host, '[data-tab="basic"]')[0] as HTMLElement;
