@@ -27,8 +27,9 @@ one) and, once reported, "Reported <date>, awaiting a decision."; a port that
 failed says so with its date. Every other item is one the review could not
 finish that day (the daily cap), and goes first the next day.
 
-- [ ] PD-06 (886d5f0): automatic mode refreshes the wiki plan but does not write the new settings to the installed game.
+- [ ] PD-06 (886d5f0): automatic mode refreshes the wiki plan but does not write the new settings to the installed game. Applies (the setup page says "kept up to date" / "later wiki changes reach this game"); fixing it is a choice between writing on refresh and saying it applies on demand. Reported 2026-11-25, awaiting a decision.
 - [ ] running-exe-folder (886d5f0): install next to the executable the game actually runs (the process OptiScaler's log names), not the scored guess that favours Unreal's Binaries/Win64. A feature: needs a decision. Reported 2026-11-18, awaiting a decision.
+- [ ] ungrouped-sections (886d5f0): found porting TS-01b: ini sections on no tab (FlipMeter, DLSSG, NvngxFG, fakenvapi, Magnifier; 25 options) are unreachable in All settings. A UI change: needs a decision. Reported 2026-11-25, awaiting a decision.
 
 ## Rules
 
