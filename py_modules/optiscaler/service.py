@@ -716,9 +716,19 @@ class OptiScalerService:
             return {"ok": False, "error": result.get("error"), **planned}
 
         changes = autoplan.setting_changes(plan) + autoplan.framegen_changes(plan)
-        written = await self.write_config(target_dir, changes) if changes else {"applied": []}
+        written = await self._write_wiki_settings(target_dir, changes)
         if game_path:
             await self._run(self.settings.set_target, game_path, target_dir)
+        failed = _not_fully_written(written)
+        if failed:
+            # The files are in place, so the target is recorded; the game is
+            # not following the wiki until its settings are actually in the ini.
+            if game_path:
+                await self.set_auto_mode(game_path, False)
+            return {"ok": False, "error": f"OptiScaler is installed, but {failed}",
+                    "install": result, "applied": written.get("applied", []),
+                    "rejected": written.get("rejected", []), **planned}
+        if game_path:
             await self.set_auto_mode(game_path, True)
         return {
             "ok": True,
@@ -745,11 +755,28 @@ class OptiScalerService:
             return {"ok": False, "error": "no compatibility entry matched this game",
                     **planned}
         changes = autoplan.setting_changes(plan) + autoplan.framegen_changes(plan)
-        written = await self.write_config(target_dir, changes) if changes else {"ok": True}
+        written = await self._write_wiki_settings(target_dir, changes)
+        failed = _not_fully_written(written)
+        if failed:
+            # The switch recorded automatic mode before asking for this: the
+            # game is not following the wiki while its settings are not written.
+            if game_path:
+                await self.set_auto_mode(game_path, False)
+            return {"ok": False, "error": failed, "applied": written.get("applied", []),
+                    "rejected": written.get("rejected", []), **planned}
         if game_path:
             await self.set_auto_mode(game_path, True)
         return {"ok": True, "applied": written.get("applied", []),
                 "live": written.get("live"), **planned}
+
+    async def _write_wiki_settings(self, target_dir, changes):
+        """Write a wiki plan's settings; a failure is an answer, not an exception."""
+        if not changes:
+            return {"ok": True, "applied": [], "rejected": []}
+        try:
+            return await self.write_config(target_dir, changes)
+        except Exception as exc:  # noqa: BLE001 - reported to the caller
+            return {"ok": False, "error": str(exc) or type(exc).__name__}
 
     # -- install ---------------------------------------------------------
     async def install(self, target_dir, filename=DEFAULT_PROXY, preserve_ini=True,
@@ -1309,6 +1336,17 @@ class OptiScalerService:
                 {"section": "Log", "key": "SingleFile", "value": "true"},
             ],
         )
+
+
+def _not_fully_written(written):
+    """Why a wiki plan's settings did not all reach the ini, or None if they did."""
+    if not written.get("ok"):
+        return f"the wiki's settings were not written: {written.get('error') or 'unknown error'}"
+    rejected = written.get("rejected") or []
+    if rejected:
+        keys = ", ".join(f"[{r.get('section')}] {r.get('key')}={r.get('value')}" for r in rejected)
+        return f"the ini refused some of the wiki's settings: {keys}"
+    return None
 
 
 def _auto_key(game_path):

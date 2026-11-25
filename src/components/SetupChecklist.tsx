@@ -469,6 +469,12 @@ export function SetupChecklist({
         const result = await autoInstall(detail.target, detail.path, detail.name, [folder]);
         if (!result.ok) {
           toaster.toast({ title: "Setup failed", body: String(result.error) });
+          // OptiScaler may be installed with the wiki's settings not written:
+          // the page shows the install as it is, not as it was.
+          if (result.install) {
+            await onChanged();
+            await onReloadPlan();
+          }
           return;
         }
       } else {

@@ -222,6 +222,10 @@ export function GameDetail({
       toaster.toast({ title: "Automatic settings applied", body: detailName(plan, gameName) });
     } else {
       toaster.toast({ title: "Could not apply the wiki settings", body: String(result.error) });
+      // The backend turned automatic mode back off: the game is not following
+      // the wiki while its settings are not in the ini, so the switch says so.
+      await reloadPlan();
+      await config.reload();
     }
   };
 

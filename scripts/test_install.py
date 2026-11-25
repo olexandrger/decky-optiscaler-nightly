@@ -985,6 +985,104 @@ class GameFolderWritesAreSerializedTests(unittest.TestCase):
                 self.assertEqual(order, ["uninstall", name], outcome)
 
 
+class AutoSetupReportsWhatItWroteTests(unittest.TestCase):
+    """Automatic set-up is done only when the wiki's settings are in the ini.
+
+    Upstream's audit (886d5f0, TS-04) found auto_install and
+    apply_auto_settings answering ok and recording automatic mode when the
+    config write failed, and nothing tied the two to the ini they wrote. This
+    runs the real service on a real install: the proxy, the wiki's values and
+    the FG pair in the ini, and automatic mode, for each way the write can go.
+    """
+
+    def setUp(self):
+        from optiscaler.service import OptiScalerService
+        self.temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
+        self.root = Path(self.temp.name)
+        self.payload = make_payload(self.root)
+        self.game = self.root / "game"
+        self.game.mkdir()
+        (self.game / "Game.exe").write_bytes(b"MZ game")
+        self.game_path = str(self.root / "library" / "Game")
+        self.service = OptiScalerService(ROOT, self.root / "s", self.root / "r", self.root / "h", LOG)
+        self.service.ensure_payload = mock.AsyncMock(return_value=str(self.payload))
+        self.service.live_asi_path = lambda: None
+        self.service.optipatcher_path = lambda: None
+        self.plan(settings=[{"section": "Upscalers", "key": "Dx12Upscaler", "value": "xess"}])
+
+    def plan(self, settings, framegen=("fsrfg", "fsrfg")):
+        plan = {"available": True, "filename": "dxgi.dll", "optipatcher": False,
+                "reframework": None, "settings": settings,
+                "framegen": {"input": framegen[0], "output": framegen[1]}}
+        self.service.get_auto_plan = mock.AsyncMock(
+            return_value={"plan": plan, "recommendation": {}})
+
+    def run_call(self, name):
+        import asyncio
+        call = getattr(self.service, name)
+        return asyncio.run(call(str(self.game), self.game_path, "Game", ["Game"]))
+
+    def ini(self):
+        from optiscaler.inifile import IniFile
+        return IniFile(self.game / INI_NAME).to_dict()
+
+    def auto(self):
+        from optiscaler.service import _auto_key
+        return bool(self.service.settings.get_pref(_auto_key(self.game_path), False))
+
+    def test_auto_install_writes_the_plan_and_records_automatic_mode(self):
+        result = self.run_call("auto_install")
+        self.assertTrue(result["ok"], result)
+        self.assertTrue((self.game / "dxgi.dll").is_file())
+        ini = self.ini()
+        self.assertEqual(ini["Upscalers"]["Dx12Upscaler"], "xess")
+        self.assertEqual((ini["FrameGen"]["FGInput"], ini["FrameGen"]["FGOutput"]),
+                         ("fsrfg", "fsrfg"))
+        self.assertTrue(self.auto())
+        self.assertEqual(self.service.settings.get_target(self.game_path), str(self.game))
+
+    def test_a_failed_write_is_not_reported_as_done(self):
+        for name in ("auto_install", "apply_auto_settings"):
+            for failure in ({"ok": False, "error": "disk full"}, OSError("read-only")):
+                with self.subTest(name, failure=failure):
+                    if name == "apply_auto_settings":
+                        installer.install(self.game, self.payload, "dxgi.dll", logger=LOG)
+                        # The switch records the mode before it asks for this.
+                        import asyncio
+                        asyncio.run(self.service.set_auto_mode(self.game_path, True))
+                    write = mock.AsyncMock(side_effect=failure) if isinstance(failure, Exception) \
+                        else mock.AsyncMock(return_value=failure)
+                    with mock.patch.object(self.service, "write_config", write):
+                        result = self.run_call(name)
+                    self.assertFalse(result["ok"], result)
+                    self.assertIn("not written", result["error"])
+                    self.assertFalse(self.auto())
+
+    def test_a_refused_setting_is_not_reported_as_done(self):
+        self.plan(settings=[{"section": "Upscalers", "key": "Dx12Upscaler", "value": "nonsense"}])
+        for name in ("auto_install", "apply_auto_settings"):
+            with self.subTest(name):
+                result = self.run_call(name)
+                self.assertFalse(result["ok"], result)
+                self.assertEqual(result["rejected"],
+                                 [{"section": "Upscalers", "key": "Dx12Upscaler", "value": "nonsense"}])
+                self.assertIn("Dx12Upscaler", result["error"])
+                self.assertFalse(self.auto())
+                # What the ini did take is still there and reported.
+                self.assertEqual(self.ini()["FrameGen"]["FGInput"], "fsrfg")
+
+    def test_no_plan_and_a_failed_install_are_not_done(self):
+        self.service.get_auto_plan = mock.AsyncMock(
+            return_value={"plan": {"available": False}, "recommendation": {}})
+        self.assertFalse(self.run_call("auto_install")["ok"])
+        self.plan(settings=[])
+        self.service.install = mock.AsyncMock(return_value={"ok": False, "error": "stub"})
+        result = self.run_call("auto_install")
+        self.assertFalse(result["ok"])
+        self.assertFalse(self.auto())
+
+
 class ReinstallKeepsWhatItOwnedTests(unittest.TestCase):
     """What this plugin added to an install stays its own across a reinstall.
 
