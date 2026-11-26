@@ -12,7 +12,7 @@ deleted in the commit that resolves it, and that commit's message is its record
 (`git log --grep "OptiScaler review"`). The v10 changelog as last reviewed is
 in `optiscaler-changelog.md`, replaced at each review.
 
-reviewed: 14f8e39a nightly-20261124
+reviewed: a1e0e193 nightly-20261125
 
 ## Open
 
