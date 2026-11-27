@@ -177,6 +177,12 @@ export interface GameDetail {
   gpu: GpuInfo;
   target: string;
   target_is_saved: boolean;
+  /** The folder the game was seen rendering from while it ran (null: never seen). */
+  seen_exe_dir: string | null;
+  /** Whether that was seen just now, with the game running. */
+  seen_running: boolean;
+  /** Installed beside another executable than the one seen rendering, and not loaded. */
+  installed_elsewhere: boolean;
   candidates: ExeCandidate[];
   install: InstallInfo;
   launch_option: string;

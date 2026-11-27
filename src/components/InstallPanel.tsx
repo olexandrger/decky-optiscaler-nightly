@@ -21,7 +21,7 @@ import {
 import { PREF_INSTALL_LAUNCH, isRemembering, recall, remember } from "../prefs";
 import { useAutoPlan } from "../hooks/useAutoPlan";
 import type { GameDetail, LiveStatus, PayloadStatus } from "../types";
-import { KeyValue, Mono, Notice, Pill } from "./Common";
+import { ExeFolderNotice, KeyValue, Mono, Notice, Pill } from "./Common";
 import { Fsr4Panel } from "./Fsr4Panel";
 import { LiveDiagnostics } from "./LiveDiagnostics";
 import { LivePanel } from "./LivePanel";
@@ -333,6 +333,12 @@ export function InstallPanel({ detail, status, appid, live, onChanged, onWikiEnt
               selectedOption={target}
               onChange={(selected) => setTarget(String(selected.data))}
             />
+          </PanelSectionRow>
+        ) : null}
+
+        {detail.seen_exe_dir && (detail.installed_elsewhere || target === detail.seen_exe_dir) ? (
+          <PanelSectionRow>
+            <ExeFolderNotice detail={detail} />
           </PanelSectionRow>
         ) : null}
 

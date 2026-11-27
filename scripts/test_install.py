@@ -1259,6 +1259,114 @@ class InstallFolderTests(unittest.TestCase):
                                  [(c["relative"], round(c["score"])) for c in candidates[:3]])
 
 
+class RunningExeFolderTests(unittest.TestCase):
+    """The folder a running game renders from beats the scored guess.
+
+    Upstream found Phantom Blade Zero rendering from PBZ/platform/steam/PBZ.exe
+    while the scan picks the Unreal Binaries/Win64 one (886d5f0, solved there
+    with a per-game table; the fork reads it from the running process instead,
+    running-exe-folder). Wine maps the .exe by its Linux path in
+    /proc/<pid>/maps, and the D3D/Vulkan DLLs say the process renders.
+    """
+
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
+        self.root = Path(self.temp.name)
+        self.game = self.root / "library" / "PBZ"
+        for rel, size in {"PBZ/Binaries/Win64/PBZ-Win64-Shipping.exe": 120 * MB,
+                          "PBZ/platform/steam/PBZ.exe": 2 * MB,
+                          "Launcher/Launcher.exe": 4 * MB}.items():
+            path = self.game / rel
+            path.parent.mkdir(parents=True, exist_ok=True)
+            with open(path, "wb") as handle:
+                handle.truncate(size)
+        self.renderer = self.game / "PBZ" / "platform" / "steam"
+        self.proc = self.root / "proc"
+        self.proc.mkdir()
+        patcher = mock.patch.object(steam, "PROC_ROOT", str(self.proc))
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
+    def process(self, pid, *mapped):
+        folder = self.proc / str(pid)
+        folder.mkdir(exist_ok=True)
+        lines = [f"7f00{i:04x}000-7f00{i:04x}fff r--p 00000000 00:2a {i} {path}"
+                 for i, path in enumerate(mapped)]
+        lines.append("7fff0000-7fff1000 rw-p 00000000 00:00 0 [stack]")
+        (folder / "maps").write_text("\n".join(lines) + "\n")
+
+    D3D12 = "/home/deck/.steam/steam/steamapps/common/Proton/files/lib/vkd3d-proton/d3d12.dll"
+    DXGI = "/home/deck/.steam/steam/steamapps/common/Proton/files/lib/dxvk/dxgi.dll"
+
+    def test_the_guess_alone_picks_the_wrong_folder(self):
+        # What the fix is for: without a running game the scan prefers Unreal's.
+        self.assertTrue(steam.find_exe_dirs(self.game)[0]["relative"].endswith("Binaries/Win64"))
+        self.assertIsNone(steam.running_exe_dir(self.game))
+
+    def test_the_rendering_process_names_its_folder(self):
+        self.process(100, str(self.game / "Launcher" / "Launcher.exe"))  # draws nothing
+        self.process(200, str(self.renderer / "PBZ.exe"), self.DXGI, self.D3D12)
+        self.process(300, "/usr/bin/steam", self.DXGI)  # not this game
+        self.assertEqual(steam.running_exe_dir(self.game), str(self.renderer.resolve()))
+
+    def test_two_folders_rendering_is_no_answer(self):
+        self.process(100, str(self.game / "Launcher" / "Launcher.exe"), self.DXGI)
+        self.process(200, str(self.renderer / "PBZ.exe"), self.D3D12)
+        self.assertIsNone(steam.running_exe_dir(self.game))
+
+    def test_a_launcher_alone_is_no_answer(self):
+        self.process(100, str(self.game / "Launcher" / "Launcher.exe"))
+        self.assertIsNone(steam.running_exe_dir(self.game))
+
+    def service(self):
+        from optiscaler.service import OptiScalerService
+        return OptiScalerService(ROOT, self.root / "s", self.root / "r", self.root / "h", LOG)
+
+    def detail(self, service):
+        import asyncio
+        return asyncio.run(service.get_game(str(self.game), "PBZ"))
+
+    def test_the_game_page_installs_where_the_game_was_seen_rendering(self):
+        service = self.service()
+        service.settings.set_target(str(self.game), str(self.game / "PBZ/Binaries/Win64"))
+        self.process(200, str(self.renderer / "PBZ.exe"), self.D3D12)
+        running = self.detail(service)
+        self.assertEqual(Path(running["target"]).resolve(), self.renderer.resolve())
+        self.assertTrue(running["seen_running"])
+        self.assertFalse(running["installed_elsewhere"])
+        shutil.rmtree(self.proc / "200")  # the game closed
+        closed = self.detail(service)
+        self.assertEqual(Path(closed["target"]).resolve(), self.renderer.resolve())
+        self.assertFalse(closed["seen_running"])
+        self.assertIn(closed["target"], [c["path"] for c in closed["candidates"]])
+        # Remembered across a restart of the plugin.
+        self.assertEqual(Path(self.detail(self.service())["target"]).resolve(),
+                         self.renderer.resolve())
+
+    def test_a_folder_picked_by_hand_afterwards_wins(self):
+        service = self.service()
+        self.process(200, str(self.renderer / "PBZ.exe"), self.D3D12)
+        self.detail(service)
+        shutil.rmtree(self.proc / "200")
+        chosen = str(self.game / "Launcher")
+        service.settings.set_target(str(self.game), chosen)  # the dropdown, then install
+        self.assertEqual(self.detail(service)["target"], chosen)
+        self.assertIsNone(self.detail(service)["seen_exe_dir"])
+
+    def test_an_install_beside_another_exe_is_reported_not_moved(self):
+        payload = make_payload(self.root)
+        wrong = self.game / "PBZ" / "Binaries" / "Win64"
+        installer.install(wrong, payload, "dxgi.dll", logger=LOG)
+        service = self.service()
+        self.process(200, str(self.renderer / "PBZ.exe"), self.D3D12)
+        detail = self.detail(service)
+        self.assertEqual(detail["target"], str(wrong))
+        self.assertTrue(detail["installed_elsewhere"])
+        self.assertTrue((wrong / "dxgi.dll").exists())
+        self.assertFalse((self.renderer / "dxgi.dll").exists())
+
+
 class PayloadCompletenessTests(unittest.TestCase):
     """A payload folder counts as extracted only once a whole extraction
     finished (upstream 886d5f0, audit CD-05): one cut short keeps the dll but

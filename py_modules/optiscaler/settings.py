@@ -9,6 +9,7 @@ class Settings:
     DEFAULTS = {
         "custom_libraries": [],   # [{"path": str, "name": str}]
         "game_targets": {},       # game_path -> chosen install directory
+        "seen_exe_dirs": {},      # game_path -> folder the game was seen rendering from
         "wiki_entries": {},        # game_path -> pinned compatibility entry name
         "expanded_libraries": [],
         "last_library": None,
@@ -115,4 +116,23 @@ class Settings:
             else:
                 targets.pop(str(game_path), None)
             self._data["game_targets"] = targets
+            # A folder picked after the game was seen running elsewhere is the
+            # player overriding what was seen: it no longer decides the default.
+            seen = dict(self._data.get("seen_exe_dirs", {}))
+            if seen.get(str(game_path)) not in (None, str(target_dir or "")):
+                seen.pop(str(game_path), None)
+                self._data["seen_exe_dirs"] = seen
+            self.save()
+
+    # -- where a running game was seen rendering from ---------------------
+    def get_seen_exe_dir(self, game_path):
+        return self.get("seen_exe_dirs", {}).get(str(game_path))
+
+    def set_seen_exe_dir(self, game_path, folder):
+        with self._lock:
+            seen = dict(self._data.get("seen_exe_dirs", {}))
+            if seen.get(str(game_path)) == str(folder):
+                return
+            seen[str(game_path)] = str(folder)
+            self._data["seen_exe_dirs"] = seen
             self.save()

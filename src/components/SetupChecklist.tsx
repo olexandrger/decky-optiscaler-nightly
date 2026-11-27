@@ -44,7 +44,7 @@ import type {
   PlannedReframework,
   Recommendation,
 } from "../types";
-import { Mono, Notice, Pill } from "./Common";
+import { ExeFolderNotice, Mono, Notice, Pill } from "./Common";
 import { RemovePrompt } from "./RemovePrompt";
 
 /**
@@ -806,6 +806,11 @@ export function SetupChecklist({
     return (
       <>
         <PanelSection title={detail.name}>
+          {detail.seen_exe_dir ? (
+            <PanelSectionRow>
+              <ExeFolderNotice detail={detail} />
+            </PanelSectionRow>
+          ) : null}
           <PanelSectionRow>
             {loadingWiki ? (
               <Notice tone="info">Checking the OptiScaler wiki…</Notice>
@@ -991,6 +996,11 @@ export function SetupChecklist({
   return (
     <>
       <PanelSection title={detail.name}>
+        {detail.installed_elsewhere ? (
+          <PanelSectionRow>
+            <ExeFolderNotice detail={detail} />
+          </PanelSectionRow>
+        ) : null}
         <PanelSectionRow>
           <Field
             label={<StepLabel done>Installed as <Mono>{detail.install.filename}</Mono></StepLabel>}

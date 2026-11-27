@@ -27,7 +27,6 @@ one) and, once reported, "Reported <date>, awaiting a decision."; a port that
 failed says so with its date. Every other item is one the review could not
 finish that day (the daily cap), and goes first the next day.
 
-- [ ] running-exe-folder (886d5f0): install next to the executable the game actually runs (the process OptiScaler's log names), not the scored guess that favours Unreal's Binaries/Win64. A feature: needs a decision. Reported 2026-11-18, awaiting a decision.
 
 ## Rules
 
@@ -37,5 +36,5 @@ What is never taken (AGENTS.md "Taking from upstream" has why), so it is not que
 - OptiScaler builds, archives committed to bin/, upstream's pinned OptiScaler version, payload lists and reference ini.
 - Community FSR 4 downloads (4.1.1b, 4.1.2 Lite Exact): the fork's Deck presets use the bundled upscaler's Lite and RDNA2 models.
 - Upstream's own repository metadata, docs and release notes; upstream's names (a port adds `-nightly` names).
-- Hand-written per-game tables (the folder problem is the running-exe-folder item, in general form). Decided 2026-11-18.
+- Hand-written per-game tables (the install folder comes from the running game's renderer instead, running-exe-folder). Decided 2026-11-18.
 - Findings whose details upstream keeps private (security audits without the fix described): nothing to port from.

@@ -288,6 +288,14 @@ of anything this plugin did not put there, or OptiScaler would look in it.
 `scripts/test_install.py` (OptiScalerFolderTests, `flat_install` rebuilds such
 an install) fails every write of the move and of the way back.
 
+Which folder of a game gets OptiScaler: the folder of the executable a running
+game renders from (`steam.running_exe_dir`: the one .exe under the game that a
+process mapping D3D/Vulkan DLLs has in `/proc/<pid>/maps`; two such folders is
+no answer), remembered per game, beats the scored guess (`find_exe_dirs`) until
+the player installs somewhere else by hand. It never moves an install: one
+beside another executable is reported (`installed_elsewhere`).
+`scripts/test_install.py` (RunningExeFolderTests) holds this.
+
 ## The OptiScaler archive is not committed
 
 `bin/` holds no OptiScaler archive and no built ASI in git (`bin/.gitignore`);

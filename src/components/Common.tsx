@@ -1,5 +1,6 @@
 import { Field, Focusable, PanelSectionRow } from "@decky/ui";
 import type { ReactNode } from "react";
+import type { GameDetail } from "../types";
 
 type NoticeTone = "info" | "warn" | "error" | "success";
 
@@ -122,5 +123,38 @@ export function Centered({ children }: { children: ReactNode }) {
     <Focusable style={{ padding: "24px", textAlign: "center", opacity: 0.75 }}>
       {children}
     </Focusable>
+  );
+}
+
+function lastParts(path: string, keep = 3) {
+  const parts = path.split("/").filter(Boolean);
+  return parts.length <= keep ? path : `…/${parts.slice(-keep).join("/")}`;
+}
+
+/**
+ * Where the game was seen rendering from, when that decides or contradicts the
+ * install folder. OptiScaler only loads beside the executable that renders, and
+ * a few games run one the folder scan ranks lower.
+ */
+export function ExeFolderNotice({ detail }: { detail: GameDetail }) {
+  const seen = detail.seen_exe_dir;
+  if (!seen) return null;
+  if (detail.install.installed) {
+    if (!detail.installed_elsewhere) return null;
+    return (
+      <Notice tone="warn" title="OptiScaler is next to another executable">
+        The game {detail.seen_running ? "runs" : "was seen running"} from{" "}
+        <Mono>{lastParts(seen)}</Mono>, but OptiScaler is in{" "}
+        <Mono>{lastParts(detail.install.path)}</Mono>, so it is most
+        likely not loaded. Remove it and set it up again to install it there.
+      </Notice>
+    );
+  }
+  if (detail.target !== seen) return null;
+  return (
+    <Notice tone="info" title="Install folder seen in the running game">
+      The game {detail.seen_running ? "runs" : "was seen running"} from{" "}
+      <Mono>{lastParts(seen)}</Mono>, so OptiScaler goes there.
+    </Notice>
   );
 }

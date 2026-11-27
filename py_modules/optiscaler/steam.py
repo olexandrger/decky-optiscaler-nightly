@@ -526,6 +526,72 @@ def find_exe_dirs(game_path, max_depth=6, limit=40):
     return ordered
 
 
+# Where running processes are read from; tests point it at a fake tree.
+PROC_ROOT = "/proc"
+
+# A process that maps one of these is rendering (Proton's DXVK/vkd3d-proton
+# keep the Windows names). A launcher that only shows a window maps none of the
+# D3D12 ones, but a CEF launcher can map d3d11/dxgi, which is why several
+# renderers in different folders give no answer rather than a guess.
+RENDER_DLLS = {"d3d12.dll", "d3d12core.dll", "d3d11.dll", "dxgi.dll", "d3d9.dll",
+               "vulkan-1.dll", "winevulkan.dll"}
+
+
+def _under(path, root):
+    try:
+        return Path(path).resolve().is_relative_to(root)
+    except (OSError, ValueError):
+        return False
+
+
+def running_exe_dir(game_path, proc_root=None):
+    """The folder of the executable this game is rendering from right now.
+
+    The scored guess (``find_exe_dirs``) is right for most games, but a few run
+    an executable it ranks lower (Phantom Blade Zero runs PBZ/platform/steam/
+    PBZ.exe, not the Unreal Binaries/Win64 one), and OptiScaler installed beside
+    the wrong one is never loaded and says nothing. While the game runs, Wine
+    has the real one mapped: ``/proc/<pid>/maps`` names the .exe file by its
+    Linux path, and the D3D/Vulkan DLLs the process loaded say it renders.
+
+    Returns the folder only when exactly one folder under the game holds the
+    executable of a rendering process; otherwise None (not running, or a
+    launcher and a game both drawing, which is a guess this does not make).
+    """
+    root = Path(game_path)
+    try:
+        root = root.resolve()
+    except OSError:
+        return None
+    if not root.is_dir():
+        return None
+    found = set()
+    for maps in Path(proc_root or PROC_ROOT).glob("[0-9]*/maps"):
+        try:
+            text = maps.read_text(errors="replace")
+        except (OSError, ProcessLookupError):
+            continue
+        exes, renders = set(), False
+        for line in text.splitlines():
+            fields = line.split(maxsplit=5)
+            if len(fields) < 6 or not fields[5].startswith("/"):
+                continue
+            mapped = fields[5]
+            if mapped.endswith(" (deleted)"):
+                continue
+            name = mapped.rsplit("/", 1)[-1].lower()
+            if name in RENDER_DLLS:
+                renders = True
+            elif name.endswith(".exe") and name not in EXE_NAME_BLACKLIST \
+                    and _under(mapped, root):
+                parts = [p.lower() for p in Path(mapped).resolve().relative_to(root).parts[:-1]]
+                if not any(p in EXE_DIR_BLACKLIST for p in parts):
+                    exes.add(str(Path(mapped).resolve().parent))
+        if renders and len(exes) == 1:
+            found |= exes
+    return found.pop() if len(found) == 1 else None
+
+
 def find_by_appid(home, appid, exe=None, start_dir=None, name=None):
     """Locate a game by the app id its library entry uses.
 

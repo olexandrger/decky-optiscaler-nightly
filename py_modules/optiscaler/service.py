@@ -29,6 +29,13 @@ from .sysinfo import gpu_info
 from .wiki import WikiClient
 
 
+def _same_folder(a, b):
+    try:
+        return Path(a).resolve() == Path(b).resolve()
+    except OSError:
+        return str(a) == str(b)
+
+
 class OptiScalerService:
     def __init__(self, plugin_dir, settings_dir, runtime_dir, home, logger):
         self.plugin_dir = Path(plugin_dir)
@@ -356,6 +363,26 @@ class OptiScalerService:
             path = Path(game_path)
             candidates = steam.find_exe_dirs(path)
             saved_target = self.settings.get_target(str(path))
+            # Where the game renders from while it runs beats the scored guess:
+            # remembered, so the game page offers it once the game is closed.
+            running_dir = steam.running_exe_dir(path)
+            if running_dir:
+                self.settings.set_seen_exe_dir(str(path), running_dir)
+            seen_dir = self.settings.get_seen_exe_dir(str(path))
+            if seen_dir and not Path(seen_dir).is_dir():
+                seen_dir = None
+            if seen_dir:
+                same = next((c for c in candidates if _same_folder(c["path"], seen_dir)), None)
+                if same:
+                    seen_dir = same["path"]
+                else:
+                    # Deeper than the scan goes, or named like a folder it skips.
+                    exes = sorted(e.name for e in Path(seen_dir).iterdir()
+                                  if e.is_file() and e.name.lower().endswith(".exe"))[:12]
+                    candidates.insert(0, {
+                        "path": seen_dir, "score": 0.0, "executables": exes,
+                        "relative": os.path.relpath(seen_dir, str(path)),
+                    })
 
             detection = None
             for candidate in candidates:
@@ -369,6 +396,8 @@ class OptiScalerService:
 
             if detection:
                 target = detection["path"]
+            elif seen_dir:
+                target = seen_dir
             elif saved_target:
                 target = saved_target
             elif candidates:
@@ -397,6 +426,15 @@ class OptiScalerService:
                 "name": name or path.name,
                 "target": target,
                 "target_is_saved": bool(saved_target),
+                # The folder the game was seen rendering from (None: not seen),
+                # and whether that is now, so the page can say which.
+                "seen_exe_dir": seen_dir,
+                "seen_running": bool(running_dir),
+                # Installed beside another executable than the one that renders:
+                # OptiScaler loads from the renderer's folder, so likely not at all.
+                "installed_elsewhere": bool(
+                    detection and seen_dir and not _same_folder(detection["path"], seen_dir)
+                    and not live.status(detection["path"]).get("attached")),
                 "candidates": candidates,
                 "install": info,
                 "launch_option": installer.launch_option(info["filename"] or DEFAULT_PROXY),

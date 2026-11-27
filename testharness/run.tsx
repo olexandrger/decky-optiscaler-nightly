@@ -22,6 +22,9 @@ const detail = {
   name: "Cyberpunk 2077",
   target: "/games/Cyberpunk 2077/bin/x64",
   target_is_saved: false,
+  seen_exe_dir: null,
+  seen_running: false,
+  installed_elsewhere: false,
   candidates: [
     { path: "/games/Cyberpunk 2077/bin/x64", relative: "bin/x64", score: 53, executables: ["Cyberpunk2077.exe"] },
     { path: "/games/Cyberpunk 2077", relative: ".", score: -40, executables: ["REDprelauncher.exe"] },
